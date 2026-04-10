@@ -1,0 +1,29 @@
+[project]
+name = "pybluehost"
+version = "0.0.1"
+description = "A professional Python Bluetooth Host stack for testing, simulation and protocol education."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    {name = "PyBlueHost Contributors"},
+]
+keywords = ["bluetooth", "ble", "hci", "host", "stack"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Networking",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/xcode4096/pybluehost"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
