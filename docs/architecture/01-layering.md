@@ -40,9 +40,11 @@ pybluehost/
 │   ├── trace.py
 │   ├── errors.py
 │   ├── buffer.py             # PDU 构造/解析辅助
-│   ├── address.py            # BD_ADDR / BLE Address 类型
+│   ├── address.py            # BDAddress, AddressType（全栈唯一定义）
 │   ├── uuid.py               # UUID16 / UUID128，常量库
 │   ├── keys.py               # LinkKey / LTK / IRK 数据类
+│   ├── types.py              # IOCapability, ConnectionRole, LinkType 等跨层共享枚举
+│   ├── gap_common.py         # ClassOfDevice, ServiceClass, Appearance 等 GAP 特有类型
 │   └── sig_db.py             # SIG 官方 YAML 数据查表（UUID/Company ID/常量）
 ├── transport/
 │   ├── base.py               # Transport ABC + AsyncTransport mixin

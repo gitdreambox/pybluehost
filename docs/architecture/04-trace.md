@@ -172,7 +172,27 @@ class StateMachineTraceBridge(StateMachineObserver[S, E]):
 
 这意味着在 JSON trace 中，协议 PDU 和状态机转换交织在同一时间线上，复现问题时可以看到"收到什么包 → 状态怎么变"的完整因果链。
 
-## 4.7 性能考量
+## 4.7 可追踪边界矩阵
+
+并非所有 SAP 方法都产出相同类型的 trace。下表明确各边界的 trace 行为：
+
+| 边界 | 代表方法 | trace 类型 | `raw_bytes` | Sink 消费 |
+|------|----------|-----------|-------------|-----------|
+| Transport ↔ HCI | `send(bytes)` / `on_transport_data(bytes)` | PDU | 有，原始 HCI packet | 全部 Sink |
+| HCI ↔ L2CAP | `send_acl_data()` / `on_acl_data()` | PDU | 有，ACL payload | 全部 Sink |
+| L2CAP ↔ ATT/SMP | `channel.send()` / `on_data()` | PDU | 有，L2CAP payload | JsonSink, RingBuffer |
+| L2CAP ↔ SDP/RFCOMM | `channel.send()` / `on_data()` | PDU | 有，L2CAP payload | JsonSink, RingBuffer |
+| 状态机转换 | `StateMachine.transition()` | Runtime | 空 | JsonSink, RingBuffer |
+| 控制操作 | `pair()` / `register_fixed_channel()` / `open_le_coc()` | Runtime | 空 | JsonSink, RingBuffer |
+
+**说明**：
+
+- **PDU trace**：携带 `raw_bytes`，所有 Sink 均可消费。BtsnoopSink / PcapngSink 仅消费 `source_layer="transport"` 或 `source_layer="hci"` 的 PDU trace，因为 btsnoop/pcapng 格式仅定义了 HCI 层数据链路。
+- **Runtime trace**：`raw_bytes=b""`，`decoded` 字段携带结构化信息。BtsnoopSink / PcapngSink 自动忽略（按 `source_layer` 过滤）。JsonSink 和 RingBufferSink 同时消费 PDU 和 Runtime trace，在同一时间线上呈现完整因果链。
+
+TracingProxy 对两种 trace 使用相同的 `TraceEvent` 数据模型，不需要区分子类型。Sink 侧按 `source_layer` 和 `raw_bytes` 是否为空自行决定是否处理。
+
+## 4.8 性能考量
 
 | 场景 | 策略 |
 |------|------|

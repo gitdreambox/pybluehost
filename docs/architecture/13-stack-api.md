@@ -50,10 +50,10 @@ class Stack:
 
     # ── 生命周期 ──
     async def power_on(self) -> None:
-        """执行 HCI 初始化序列，启动协议栈"""
+        """重新执行 HCI 初始化序列（工厂方法已自动调用，通常无需手动调用）"""
 
     async def power_off(self) -> None:
-        """关闭所有连接，停止广播/扫描"""
+        """关闭所有连接，停止广播/扫描，保留 Transport 连接"""
 
     async def close(self) -> None:
         """释放所有资源，关闭 Transport"""
@@ -63,6 +63,13 @@ class Stack:
 
     async def __aexit__(self, *exc) -> None:
         await self.close()
+
+    # ── 运行模式 ──
+    @property
+    def mode(self) -> "StackMode": ...
+
+    @property
+    def is_powered(self) -> bool: ...
 
     # ── 层访问 ──
     @property
@@ -100,13 +107,49 @@ class Stack:
     def local_address(self) -> BDAddress: ...
 
     @property
-    def is_powered(self) -> bool: ...
-
-    @property
     def connections(self) -> list[HCIConnection]: ...
+
+class StackMode(Enum):
+    LIVE = "live"           # 真实 Controller 或 Loopback
+    REPLAY = "replay"       # btsnoop 回放，写操作抛 ReplayModeError
+    LOOPBACK = "loopback"   # VirtualController 双栈
 ```
 
-## 13.4 StackConfig
+## 13.4 生命周期与运行模式
+
+### 生命周期
+
+所有工厂方法（`from_usb()`、`from_uart()`、`from_tcp()`、`loopback()`、`from_btsnoop()`）返回**已就绪**的 Stack 实例——Transport 已打开、HCI 初始化已完成、各协议层已组装。调用方无需手动调用 `power_on()`。
+
+- **`power_on()`**：运行时重新启用无线电（类似手机开关蓝牙）。工厂方法内部已自动调用，通常无需手动使用。
+- **`power_off()`**：关闭所有连接、停止广播/扫描，但保持 Transport 连接。可随后调用 `power_on()` 重新启用。
+- **`close()`**：释放所有资源（含 Transport）。不可逆。推荐使用 `async with` 上下文管理器自动调用。
+
+### 运行模式
+
+`stack.mode` 返回当前模式。不同模式的能力差异：
+
+| 能力 | LIVE | LOOPBACK | REPLAY |
+|------|------|----------|--------|
+| 发送 HCI 命令 | 可 | 可 | 不可（抛 `ReplayModeError`） |
+| 广播 / 扫描 | 可 | 可 | 不可 |
+| 建立连接 | 可 | 可（双栈互联） | 不可 |
+| 接收 / 解析事件 | 可 | 可 | 可（按时间戳回放） |
+| Trace 输出 | 可 | 可 | 可（重新解析并输出） |
+
+### 断线重连
+
+当 `StackConfig.reconnect_policy` 不为 `NONE` 时，Transport 断线后自动重连。重连行为：
+
+1. Transport 层按策略重连（`IMMEDIATE` 立即 / `EXPONENTIAL_BACKOFF` 指数退避）
+2. 重连成功后自动重跑 HCI 初始化序列
+3. **所有现有连接失效**（蓝牙 Core Spec 规定 Controller reset 清除全部连接状态）
+4. 上层通过正常的 disconnect 回调收到通知
+5. 广播 / 扫描 / 白名单等需用户重新启动
+
+btsnoop 回放模式（`REPLAY`）不支持重连。
+
+## 13.5 StackConfig
 
 ```python
 @dataclass
@@ -226,7 +269,7 @@ async def test_gatt_read():
 stack = await Stack.from_btsnoop("capture.log")
 
 # 回放模式下：
-# - Transport 为 BtsnoopReplayTransport，按时间戳回放 HCI packet
+# - Transport 为 BtsnoopTransport，按时间戳回放 HCI packet
 # - 可注册 event handler 分析协议流程
 # - 不可发送命令（只读模式）
 # - 配合 TraceSystem 可重新解析并输出人类可读日志

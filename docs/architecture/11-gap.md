@@ -8,7 +8,11 @@ classic/gap.py       # Classic GAP
 core/gap_common.py   # 共享类型
 ```
 
-## 11.2 共享类型（`core/gap_common.py`）
+## 11.2 共享类型
+
+地址类型定义在 `core/address.py`（全栈唯一定义），GAP 特有类型定义在 `core/gap_common.py`。
+
+### `core/address.py`（地址相关，全栈共享）
 
 ```python
 class AddressType(IntEnum):
@@ -25,7 +29,11 @@ class BDAddress:
     def random(cls) -> "BDAddress": ...
     @property
     def is_rpa(self) -> bool: ...
+```
 
+### `core/gap_common.py`（GAP 特有类型）
+
+```python
 class ClassOfDevice: ...
 class ServiceClass(Flag): ...
 class Appearance(IntEnum): ...

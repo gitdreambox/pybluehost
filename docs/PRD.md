@@ -266,7 +266,7 @@ Stack.build(transport=..., trace_sink=...)   # 自定义组装
 - 并发模型：纯 `asyncio`，无线程（阻塞 IO 在 transport 层用 `run_in_executor` 隔离）
 - **平台**：Windows（主要）+ Linux；macOS v2.0 评估
 - **外部依赖**：
-  - 核心栈：无强制第三方依赖
+  - 核心栈：`pyyaml`（SIG 数据库加载、Profile YAML 定义解析）
   - USB transport：`pyusb`（可选，Windows 需 WinUSB 驱动；Linux 可选 `hci_user_channel` 零依赖路径）
   - v2.0 分析仪集成：`pywin32` / `comtypes`（Windows only，可选）
 - 构建工具：`uv` + `hatchling`
