@@ -1,0 +1,3 @@
+[submodule "pybluehost/lib/sig"]
+	path = pybluehost/lib/sig
+	url = https://bitbucket.org/bluetooth-SIG/public.git
