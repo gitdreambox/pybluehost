@@ -149,3 +149,23 @@ class TestStateMachineTimeout:
         assert sm.state == S.DONE
         await asyncio.sleep(0.1)
         assert sm.state == S.DONE  # timeout should NOT have fired
+
+    @pytest.mark.asyncio
+    async def test_timeout_handler_error_is_logged(self, caplog):
+        """Timeout firing into a state with no matching transition must not
+        produce an unobserved task exception — it must be logged."""
+        import logging
+
+        sm = StateMachine("errtest", S.IDLE)
+        sm.add_transition(S.IDLE, E.START, S.ACTIVE)
+        # ACTIVE has no transition for TIMEOUT → _fire_timeout will raise
+        sm.set_timeout(S.ACTIVE, 0.05, E.TIMEOUT)
+
+        with caplog.at_level(logging.ERROR, logger="pybluehost.core.statemachine"):
+            await sm.fire(E.START)
+            await asyncio.sleep(0.1)
+
+        assert any("errtest" in rec.message for rec in caplog.records), (
+            f"expected error log mentioning state machine name; got {caplog.records}"
+        )
+        assert sm.state == S.ACTIVE  # state unchanged since the timeout transition failed

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Awaitable, Callable, Generic, Protocol, TypeVar
 
 from pybluehost.core.errors import InvalidTransitionError
+
+_LOG = logging.getLogger(__name__)
 
 S = TypeVar("S", bound=Enum)
 E = TypeVar("E", bound=Enum)
@@ -104,12 +107,20 @@ class StateMachine(Generic[S, E]):
         seconds, timeout_event = timeout_cfg
 
         async def _fire_timeout() -> None:
-            await asyncio.sleep(seconds)
-            await self.fire(timeout_event)
+            try:
+                await asyncio.sleep(seconds)
+                await self.fire(timeout_event)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _LOG.exception(
+                    "StateMachine %r timeout handler failed", self._name
+                )
 
         self._timeout_task = asyncio.ensure_future(_fire_timeout())
 
     def _cancel_timeout(self) -> None:
-        if self._timeout_task is not None and not self._timeout_task.done():
-            self._timeout_task.cancel()
-            self._timeout_task = None
+        task = self._timeout_task
+        self._timeout_task = None
+        if task is not None and not task.done():
+            task.cancel()

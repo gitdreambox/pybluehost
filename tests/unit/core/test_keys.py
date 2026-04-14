@@ -15,18 +15,23 @@ class TestLinkKey:
 
 class TestLTK:
     def test_create(self):
-        ltk = LTK(value=bytes(16), ediv=0x1234, rand=0xABCD)
+        rand = bytes(range(8))
+        ltk = LTK(value=bytes(16), ediv=0x1234, rand=rand)
         assert ltk.ediv == 0x1234
-        assert ltk.rand == 0xABCD
+        assert ltk.rand == rand
         assert ltk.key_size == 16
 
     def test_custom_key_size(self):
-        ltk = LTK(value=bytes(16), ediv=0, rand=0, key_size=7)
+        ltk = LTK(value=bytes(16), ediv=0, rand=bytes(8), key_size=7)
         assert ltk.key_size == 7
 
     def test_wrong_length(self):
         with pytest.raises(ValueError, match="16 bytes"):
-            LTK(value=bytes(8), ediv=0, rand=0)
+            LTK(value=bytes(8), ediv=0, rand=bytes(8))
+
+    def test_rand_wrong_length(self):
+        with pytest.raises(ValueError, match="8 bytes"):
+            LTK(value=bytes(16), ediv=0, rand=bytes(4))
 
 
 class TestIRK:

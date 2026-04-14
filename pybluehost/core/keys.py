@@ -28,14 +28,16 @@ class LinkKey:
 
 @dataclass(frozen=True)
 class LTK:
-    """BLE Long Term Key."""
+    """BLE Long Term Key. rand is the 8-byte opaque random value per Core Spec Vol 3 Part H."""
     value: bytes
     ediv: int
-    rand: int
+    rand: bytes
     key_size: int = 16
 
     def __post_init__(self) -> None:
         _validate_16(self.value, "LTK")
+        if len(self.rand) != 8:
+            raise ValueError(f"LTK.rand requires 8 bytes, got {len(self.rand)}")
 
 
 @dataclass(frozen=True)
