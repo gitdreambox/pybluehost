@@ -3,12 +3,14 @@ import asyncio
 import json
 import tempfile
 from datetime import datetime, timezone
+from enum import Enum, auto
 from pathlib import Path
 
 import pytest
 
 import struct
 
+from pybluehost.core.statemachine import StateMachine
 from pybluehost.core.trace import (
     TraceEvent,
     Direction,
@@ -17,6 +19,7 @@ from pybluehost.core.trace import (
     CallbackSink,
     JsonSink,
     BtsnoopSink,
+    StateMachineTraceBridge,
 )
 
 
@@ -377,6 +380,44 @@ class TestBtsnoopSink:
 
         data = path.read_bytes()
         assert len(data) == 16  # header only, no records
+
+
+class _TS(Enum):
+    IDLE = auto()
+    ACTIVE = auto()
+
+
+class _TE(Enum):
+    GO = auto()
+
+
+class TestStateMachineTraceBridge:
+    @pytest.mark.asyncio
+    async def test_bridge_emits_trace_on_transition(self):
+        received: list[TraceEvent] = []
+
+        async def handler(event: TraceEvent) -> None:
+            received.append(event)
+
+        ts = TraceSystem()
+        ts.add_sink(CallbackSink(handler))
+        await ts.start()
+
+        bridge = StateMachineTraceBridge(ts)
+        sm = StateMachine("test_sm", _TS.IDLE)
+        sm.add_transition(_TS.IDLE, _TE.GO, _TS.ACTIVE)
+        sm.add_observer(bridge)
+
+        await sm.fire(_TE.GO)
+        await asyncio.sleep(0.05)
+        await ts.stop()
+
+        assert len(received) == 1
+        assert received[0].source_layer == "sm:test_sm"
+        assert received[0].raw_bytes == b""
+        assert received[0].decoded["from"] == "IDLE"
+        assert received[0].decoded["to"] == "ACTIVE"
+        assert received[0].decoded["event"] == "GO"
 
 
 def _make_event(layer: str, direction: Direction, raw: bytes) -> TraceEvent:

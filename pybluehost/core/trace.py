@@ -5,7 +5,7 @@ import json as _json
 import struct as _struct
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
@@ -219,3 +219,27 @@ class BtsnoopSink:
     async def close(self) -> None:
         if not self._file.closed:
             self._file.close()
+
+
+class StateMachineTraceBridge:
+    """Bridges StateMachine observer events into the TraceSystem."""
+
+    def __init__(self, trace: TraceSystem) -> None:
+        self._trace = trace
+
+    def on_transition(self, sm_name: str, transition: Any) -> None:
+        event = TraceEvent(
+            timestamp=transition.timestamp,
+            wall_clock=datetime.now(timezone.utc),
+            source_layer=f"sm:{sm_name}",
+            direction=Direction.UP,
+            raw_bytes=b"",
+            decoded={
+                "from": transition.from_state.name,
+                "to": transition.to_state.name,
+                "event": transition.event.name,
+            },
+            connection_handle=None,
+            metadata={},
+        )
+        self._trace.emit(event)
