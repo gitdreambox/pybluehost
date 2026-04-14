@@ -156,7 +156,7 @@ class JsonSink:
             "dir": event.direction.name.lower(),
             "hex": event.raw_bytes.hex(),
         }
-        if event.decoded is not None:
+        if self._decode and event.decoded is not None:
             obj["decoded"] = event.decoded
         if event.connection_handle is not None:
             obj["handle"] = event.connection_handle

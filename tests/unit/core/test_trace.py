@@ -206,6 +206,8 @@ class TestJsonSink:
         assert obj["layer"] == "hci"
         assert obj["dir"] == "down"
         assert obj["hex"] == "01030c00"
+        assert "ts" in obj
+        assert "wall" in obj
 
     @pytest.mark.asyncio
     async def test_multiple_events(self, tmp_path: Path):
@@ -241,6 +243,27 @@ class TestJsonSink:
         assert obj["decoded"] == {"opcode": "HCI_Reset"}
         assert obj["handle"] == 0x40
         assert obj["meta"] == {"extra": "info"}
+
+    @pytest.mark.asyncio
+    async def test_decode_false_omits_decoded(self, tmp_path: Path):
+        path = tmp_path / "trace.jsonl"
+        sink = JsonSink(str(path), decode=False)
+        event = TraceEvent(
+            timestamp=0.0,
+            wall_clock=datetime.now(timezone.utc),
+            source_layer="hci",
+            direction=Direction.DOWN,
+            raw_bytes=b"\x01",
+            decoded={"key": "value"},
+            connection_handle=None,
+            metadata={},
+        )
+        await sink.on_trace(event)
+        await sink.flush()
+        await sink.close()
+
+        obj = json.loads(path.read_text().strip())
+        assert "decoded" not in obj
 
 
 def _make_event(layer: str, direction: Direction, raw: bytes) -> TraceEvent:
