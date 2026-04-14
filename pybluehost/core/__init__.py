@@ -21,6 +21,7 @@ from pybluehost.core.trace import (
     Direction,
     JsonSink,
     RingBufferSink,
+    StateMachineTraceBridge,
     TraceEvent,
     TraceSystem,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "SMPError",
     "SIGDatabase",
     "StateMachine",
+    "StateMachineTraceBridge",
     "TimeoutError",
     "TraceEvent",
     "TraceSystem",
