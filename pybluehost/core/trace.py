@@ -208,12 +208,9 @@ class BtsnoopSink:
         wall_us = int(event.wall_clock.timestamp() * 1_000_000)
         ts = wall_us + _BTSNOOP_EPOCH_DELTA_US
 
-        self._file.write(_struct.pack(">I", orig_len))
-        self._file.write(_struct.pack(">I", incl_len))
-        self._file.write(_struct.pack(">I", flags))
-        self._file.write(_struct.pack(">I", drops))
-        self._file.write(_struct.pack(">q", ts))
-        self._file.write(payload)
+        self._file.write(
+            _struct.pack(">IIIIq", orig_len, incl_len, flags, drops, ts) + payload
+        )
 
     async def flush(self) -> None:
         if not self._file.closed:

@@ -342,11 +342,36 @@ class TestBtsnoopSink:
         assert flags2 == 1  # received
 
     @pytest.mark.asyncio
+    async def test_timestamp_encoding(self, tmp_path: Path):
+        path = tmp_path / "trace.cfa"
+        sink = BtsnoopSink(str(path))
+        fixed_dt = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        event = TraceEvent(
+            timestamp=0.0,
+            wall_clock=fixed_dt,
+            source_layer="hci",
+            direction=Direction.DOWN,
+            raw_bytes=b"\x01",
+            decoded=None,
+            connection_handle=None,
+            metadata={},
+        )
+        await sink.on_trace(event)
+        await sink.flush()
+        await sink.close()
+
+        data = path.read_bytes()
+        ts_bytes = data[32:40]  # after 16-byte header + 16-byte record prefix
+        ts_val = struct.unpack(">q", ts_bytes)[0]
+        expected = int(fixed_dt.timestamp() * 1_000_000) + 946684800_000_000
+        assert ts_val == expected
+
+    @pytest.mark.asyncio
     async def test_ignores_non_hci_events(self, tmp_path: Path):
         path = tmp_path / "trace.cfa"
         sink = BtsnoopSink(str(path))
         await sink.on_trace(_make_event("l2cap", Direction.DOWN, b"\x01"))
-        await sink.on_trace(_make_event("sm:conn", Direction.UP, b""))
+        await sink.on_trace(_make_event("sm:conn", Direction.UP, b"\x01"))
         await sink.flush()
         await sink.close()
 
