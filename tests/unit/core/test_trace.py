@@ -1,6 +1,9 @@
 # tests/unit/core/test_trace.py
 import asyncio
+import json
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +13,7 @@ from pybluehost.core.trace import (
     TraceSystem,
     RingBufferSink,
     CallbackSink,
+    JsonSink,
 )
 
 
@@ -185,6 +189,58 @@ class TestCallbackSink:
         event = _make_event("att", Direction.DOWN, b"\x01")
         await sink.on_trace(event)
         assert len(received) == 1
+
+
+class TestJsonSink:
+    @pytest.mark.asyncio
+    async def test_writes_jsonl(self, tmp_path: Path):
+        path = tmp_path / "trace.jsonl"
+        sink = JsonSink(str(path))
+        await sink.on_trace(_make_event("hci", Direction.DOWN, b"\x01\x03\x0c\x00"))
+        await sink.flush()
+        await sink.close()
+
+        lines = path.read_text().strip().split("\n")
+        assert len(lines) == 1
+        obj = json.loads(lines[0])
+        assert obj["layer"] == "hci"
+        assert obj["dir"] == "down"
+        assert obj["hex"] == "01030c00"
+
+    @pytest.mark.asyncio
+    async def test_multiple_events(self, tmp_path: Path):
+        path = tmp_path / "trace.jsonl"
+        sink = JsonSink(str(path))
+        await sink.on_trace(_make_event("hci", Direction.DOWN, b"\x01"))
+        await sink.on_trace(_make_event("l2cap", Direction.UP, b"\x02"))
+        await sink.flush()
+        await sink.close()
+
+        lines = path.read_text().strip().split("\n")
+        assert len(lines) == 2
+
+    @pytest.mark.asyncio
+    async def test_decoded_included(self, tmp_path: Path):
+        path = tmp_path / "trace.jsonl"
+        sink = JsonSink(str(path))
+        event = TraceEvent(
+            timestamp=0.0,
+            wall_clock=datetime.now(timezone.utc),
+            source_layer="hci",
+            direction=Direction.DOWN,
+            raw_bytes=b"\x01",
+            decoded={"opcode": "HCI_Reset"},
+            connection_handle=0x40,
+            metadata={"extra": "info"},
+        )
+        await sink.on_trace(event)
+        await sink.flush()
+        await sink.close()
+
+        obj = json.loads(path.read_text().strip())
+        assert obj["decoded"] == {"opcode": "HCI_Reset"}
+        assert obj["handle"] == 0x40
+        assert obj["meta"] == {"extra": "info"}
 
 
 def _make_event(layer: str, direction: Direction, raw: bytes) -> TraceEvent:

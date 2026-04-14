@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json as _json
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
 
@@ -136,3 +138,34 @@ class CallbackSink:
 
     async def close(self) -> None:
         pass
+
+
+class JsonSink:
+    """JSON Lines trace sink — one JSON object per line."""
+
+    def __init__(self, path: str | Path, decode: bool = True) -> None:
+        self._path = Path(path)
+        self._decode = decode
+        self._file = open(self._path, "w", encoding="utf-8")
+
+    async def on_trace(self, event: TraceEvent) -> None:
+        obj: dict[str, Any] = {
+            "ts": event.timestamp,
+            "wall": event.wall_clock.isoformat(),
+            "layer": event.source_layer,
+            "dir": event.direction.name.lower(),
+            "hex": event.raw_bytes.hex(),
+        }
+        if event.decoded is not None:
+            obj["decoded"] = event.decoded
+        if event.connection_handle is not None:
+            obj["handle"] = event.connection_handle
+        if event.metadata:
+            obj["meta"] = event.metadata
+        self._file.write(_json.dumps(obj) + "\n")
+
+    async def flush(self) -> None:
+        self._file.flush()
+
+    async def close(self) -> None:
+        self._file.close()
