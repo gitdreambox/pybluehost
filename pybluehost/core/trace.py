@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import struct as _struct
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -163,6 +164,56 @@ class JsonSink:
         if event.metadata:
             obj["meta"] = event.metadata
         self._file.write(_json.dumps(obj) + "\n")
+
+    async def flush(self) -> None:
+        if not self._file.closed:
+            self._file.flush()
+
+    async def close(self) -> None:
+        if not self._file.closed:
+            self._file.close()
+
+
+# btsnoop epoch: 2000-01-01 00:00:00 UTC in microseconds since Unix epoch
+_BTSNOOP_EPOCH_DELTA_US = 946684800_000_000
+
+
+class BtsnoopSink:
+    """Btsnoop file sink — Android/Wireshark compatible .cfa format."""
+
+    _HCI_LAYERS = {"transport", "hci"}
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+        self._file = open(self._path, "wb")
+        self._write_header()
+
+    def _write_header(self) -> None:
+        self._file.write(b"btsnoop\x00")
+        self._file.write(_struct.pack(">I", 1))
+        self._file.write(_struct.pack(">I", 1002))
+
+    async def on_trace(self, event: TraceEvent) -> None:
+        if event.source_layer not in self._HCI_LAYERS:
+            return
+        if not event.raw_bytes:
+            return
+
+        payload = event.raw_bytes
+        orig_len = len(payload)
+        incl_len = orig_len
+        flags = 0 if event.direction == Direction.DOWN else 1
+        drops = 0
+
+        wall_us = int(event.wall_clock.timestamp() * 1_000_000)
+        ts = wall_us + _BTSNOOP_EPOCH_DELTA_US
+
+        self._file.write(_struct.pack(">I", orig_len))
+        self._file.write(_struct.pack(">I", incl_len))
+        self._file.write(_struct.pack(">I", flags))
+        self._file.write(_struct.pack(">I", drops))
+        self._file.write(_struct.pack(">q", ts))
+        self._file.write(payload)
 
     async def flush(self) -> None:
         if not self._file.closed:

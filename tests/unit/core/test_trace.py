@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+import struct
+
 from pybluehost.core.trace import (
     TraceEvent,
     Direction,
@@ -14,6 +16,7 @@ from pybluehost.core.trace import (
     RingBufferSink,
     CallbackSink,
     JsonSink,
+    BtsnoopSink,
 )
 
 
@@ -283,6 +286,72 @@ class TestJsonSink:
 
         obj = json.loads(path.read_text().strip())
         assert "decoded" not in obj
+
+
+class TestBtsnoopSink:
+    @pytest.mark.asyncio
+    async def test_writes_valid_header(self, tmp_path: Path):
+        path = tmp_path / "trace.cfa"
+        sink = BtsnoopSink(str(path))
+        await sink.close()
+
+        data = path.read_bytes()
+        assert data[:8] == b"btsnoop\x00"
+        version = struct.unpack(">I", data[8:12])[0]
+        assert version == 1
+        datalink = struct.unpack(">I", data[12:16])[0]
+        assert datalink == 1002  # H4
+
+    @pytest.mark.asyncio
+    async def test_writes_packet_record(self, tmp_path: Path):
+        path = tmp_path / "trace.cfa"
+        sink = BtsnoopSink(str(path))
+
+        event = _make_event("hci", Direction.DOWN, b"\x01\x03\x0c\x00")
+        await sink.on_trace(event)
+        await sink.flush()
+        await sink.close()
+
+        data = path.read_bytes()
+        assert len(data) > 16  # header + at least one record
+
+        offset = 16
+        orig_len = struct.unpack(">I", data[offset : offset + 4])[0]
+        incl_len = struct.unpack(">I", data[offset + 4 : offset + 8])[0]
+        flags = struct.unpack(">I", data[offset + 8 : offset + 12])[0]
+        assert orig_len == incl_len
+        assert orig_len == 4
+        assert flags == 0  # sent (DOWN)
+
+    @pytest.mark.asyncio
+    async def test_direction_flags(self, tmp_path: Path):
+        path = tmp_path / "trace.cfa"
+        sink = BtsnoopSink(str(path))
+        await sink.on_trace(_make_event("hci", Direction.DOWN, b"\x01"))
+        await sink.on_trace(_make_event("hci", Direction.UP, b"\x02"))
+        await sink.flush()
+        await sink.close()
+
+        data = path.read_bytes()
+        flags1 = struct.unpack(">I", data[24:28])[0]
+        assert flags1 == 0  # sent
+
+        # Second record: offset = 16 (header) + 24 (record header) + 1 (payload)
+        rec2_offset = 16 + 24 + 1
+        flags2 = struct.unpack(">I", data[rec2_offset + 8 : rec2_offset + 12])[0]
+        assert flags2 == 1  # received
+
+    @pytest.mark.asyncio
+    async def test_ignores_non_hci_events(self, tmp_path: Path):
+        path = tmp_path / "trace.cfa"
+        sink = BtsnoopSink(str(path))
+        await sink.on_trace(_make_event("l2cap", Direction.DOWN, b"\x01"))
+        await sink.on_trace(_make_event("sm:conn", Direction.UP, b""))
+        await sink.flush()
+        await sink.close()
+
+        data = path.read_bytes()
+        assert len(data) == 16  # header only, no records
 
 
 def _make_event(layer: str, direction: Direction, raw: bytes) -> TraceEvent:
