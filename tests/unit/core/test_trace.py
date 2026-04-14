@@ -220,6 +220,10 @@ class TestJsonSink:
 
         lines = path.read_text().strip().split("\n")
         assert len(lines) == 2
+        obj0 = json.loads(lines[0])
+        obj1 = json.loads(lines[1])
+        assert obj1["layer"] != obj0["layer"]
+        assert obj1["layer"] == "l2cap"
 
     @pytest.mark.asyncio
     async def test_decoded_included(self, tmp_path: Path):
@@ -243,6 +247,21 @@ class TestJsonSink:
         assert obj["decoded"] == {"opcode": "HCI_Reset"}
         assert obj["handle"] == 0x40
         assert obj["meta"] == {"extra": "info"}
+
+    @pytest.mark.asyncio
+    async def test_close_is_idempotent(self, tmp_path: Path):
+        path = tmp_path / "trace.jsonl"
+        sink = JsonSink(str(path))
+        await sink.close()
+        await sink.close()  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_flush_after_close_is_safe(self, tmp_path: Path):
+        path = tmp_path / "trace.jsonl"
+        sink = JsonSink(str(path))
+        await sink.on_trace(_make_event("hci", Direction.DOWN, b"\x01"))
+        await sink.close()
+        await sink.flush()  # must not raise
 
     @pytest.mark.asyncio
     async def test_decode_false_omits_decoded(self, tmp_path: Path):
