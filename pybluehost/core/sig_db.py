@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
 import yaml
 
@@ -106,7 +106,7 @@ class SIGDatabase:
     def _ensure_companies(self) -> dict[int, str]:
         if self._companies is None:
             path = self._sig_root / "assigned_numbers" / "company_identifiers" / "company_identifiers.yaml"
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             self._companies = {}
             self._company_name_to_id = {}
@@ -120,7 +120,7 @@ class SIGDatabase:
     def _ensure_ad_types(self) -> dict[int, str]:
         if self._ad_types is None:
             path = self._sig_root / "assigned_numbers" / "core" / "ad_types.yaml"
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             self._ad_types = {e["value"]: e["name"] for e in data["ad_types"]}
         return self._ad_types
@@ -128,14 +128,14 @@ class SIGDatabase:
     def _ensure_appearances(self) -> dict[int, str]:
         if self._appearances is None:
             path = self._sig_root / "assigned_numbers" / "core" / "appearance_values.yaml"
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             self._appearances = {e["category"]: e["name"] for e in data["appearance_values"]}
         return self._appearances
 
     def _load_uuid_yaml(self, relative_path: str) -> dict[int, _UUIDEntry]:
         path = self._sig_root / "assigned_numbers" / relative_path
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return {
             entry["uuid"]: _UUIDEntry(
