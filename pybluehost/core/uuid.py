@@ -49,7 +49,15 @@ class UUID16:
 
 @dataclass(frozen=True)
 class UUID128:
-    """128-bit UUID."""
+    """128-bit UUID.
+
+    Internal `value` is stored in RFC 4122 big-endian byte order, matching
+    the hyphenated string form (e.g. ``0000180d-0000-1000-8000-00805f9b34fb``).
+
+    ATT/HCI wire encoding requires little-endian. Callers writing to the wire
+    must reverse the bytes; a future ATT layer is expected to provide a
+    ``to_bytes_le()`` helper or do the reversal inline.
+    """
 
     value: bytes
 

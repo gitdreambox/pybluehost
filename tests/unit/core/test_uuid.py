@@ -53,6 +53,7 @@ class TestUUID128:
     def test_from_string(self):
         u = UUID128.from_string("0000180d-0000-1000-8000-00805f9b34fb")
         assert len(u.value) == 16
+        assert u.value == bytes.fromhex("0000180d00001000800000805f9b34fb")
 
     def test_str(self):
         u = UUID128.from_string("0000180D-0000-1000-8000-00805F9B34FB")
@@ -67,6 +68,10 @@ class TestUUID128:
         val = bytes(range(16))
         u = UUID128.from_bytes(val)
         assert u.value == val
+
+    def test_from_bytes_wrong_length(self):
+        with pytest.raises(ValueError):
+            UUID128.from_bytes(bytes(15))
 
     def test_equality(self):
         a = UUID128.from_string("0000180d-0000-1000-8000-00805f9b34fb")
