@@ -1,3 +1,6 @@
 /pybluehost.egg-info
 /dist
 /.venv
+__pycache__
+.claude/settings.local.json
+.claude/worktrees/
