@@ -42,6 +42,9 @@ class UDPTransport(Transport):
                     await self._sink.on_data(data)
         except asyncio.CancelledError:
             raise
+        except Exception as exc:
+            from pybluehost.core.errors import TransportError
+            await self._notify_error(TransportError(str(exc)))
 
     async def close(self) -> None:
         if self._drain_task is not None:

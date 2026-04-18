@@ -61,6 +61,9 @@ class UARTTransport(Transport):
                         await self._sink.on_data(packet)
         except asyncio.CancelledError:
             raise
+        except Exception as exc:
+            from pybluehost.core.errors import TransportError
+            await self._notify_error(TransportError(str(exc)))
 
     @property
     def is_open(self) -> bool:

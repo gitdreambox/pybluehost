@@ -1,6 +1,7 @@
 """PyBlueHost transport layer."""
 
 from pybluehost.transport.base import (
+    ReconnectConfig,
     ReconnectPolicy,
     Transport,
     TransportInfo,
@@ -17,6 +18,7 @@ __all__ = [
     "BtsnoopTransport",
     "H4Framer",
     "LoopbackTransport",
+    "ReconnectConfig",
     "ReconnectPolicy",
     "TCPTransport",
     "Transport",

@@ -120,3 +120,27 @@ class TestTCPTransport:
         assert t.info.type == "tcp"
         assert t.info.details["host"] == host
         assert t.info.details["port"] == port
+
+    @pytest.mark.asyncio
+    async def test_read_loop_error_notifies_sink(self, echo_server):
+        host, port, push = echo_server
+        errors = []
+
+        class ErrSink:
+            async def on_data(self, data: bytes) -> None:
+                pass
+            async def on_transport_error(self, error) -> None:
+                errors.append(error)
+
+        t = TCPTransport(host, port)
+        t.set_sink(ErrSink())
+        await t.open()
+        # Push invalid H4 data to trigger framer ValueError
+        await push(b"\xff\x00\x00")
+        for _ in range(20):
+            if errors:
+                break
+            await asyncio.sleep(0.01)
+        await t.close()
+        assert len(errors) == 1
+        assert "H4" in str(errors[0]) or "indicator" in str(errors[0]).lower()

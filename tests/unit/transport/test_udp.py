@@ -80,3 +80,26 @@ class TestUDPTransport:
         assert t.info.type == "udp"
         assert t.info.details["host"] == host
         assert t.info.details["port"] == port
+
+    @pytest.mark.asyncio
+    async def test_drain_error_notifies_sink(self, echo_udp_server):
+        host, port = echo_udp_server
+        errors = []
+
+        class BrokenSink:
+            async def on_data(self, data: bytes) -> None:
+                raise RuntimeError("sink exploded")
+            async def on_transport_error(self, error) -> None:
+                errors.append(error)
+
+        t = UDPTransport(host, port)
+        t.set_sink(BrokenSink())
+        await t.open()
+        await t.send(b"\x01\x03\x0c\x00")
+        for _ in range(20):
+            if errors:
+                break
+            await asyncio.sleep(0.01)
+        await t.close()
+        assert len(errors) == 1
+        assert "sink exploded" in str(errors[0])

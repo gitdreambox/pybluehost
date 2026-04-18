@@ -15,7 +15,7 @@
 ```
 pybluehost/transport/
 ├── __init__.py          # Public exports
-├── base.py              # Transport ABC, TransportInfo, TransportSink, ReconnectPolicy
+├── base.py              # Transport ABC, TransportInfo, TransportSink (with on_transport_error), ReconnectPolicy, ReconnectConfig
 ├── h4.py                # H4Framer — pure-bytes packet reassembly state machine
 ├── loopback.py          # LoopbackTransport (in-memory pair)
 ├── uart.py              # UARTTransport (pyserial-asyncio + H4Framer)
@@ -46,7 +46,7 @@ tests/unit/transport/
 
 **Files:**
 - Create: `pybluehost/transport/__init__.py` (empty for now; final exports added in Task 8)
-- Create: `pybluehost/transport/base.py`
+- Create: `pybluehost/transport/base.py` (Transport ABC, TransportInfo, TransportSink with on_transport_error, ReconnectPolicy, ReconnectConfig)
 - Create: `tests/unit/transport/__init__.py` (empty)
 - Create: `tests/unit/transport/test_base.py`
 
@@ -67,7 +67,9 @@ Create `tests/unit/transport/test_base.py`:
 ```python
 import pytest
 
+from pybluehost.core.errors import TransportError
 from pybluehost.transport.base import (
+    ReconnectConfig,
     ReconnectPolicy,
     Transport,
     TransportInfo,
@@ -167,6 +169,67 @@ class TestTransportABC:
 
     def test_transport_sink_is_runtime_protocol(self):
         assert hasattr(TransportSink, "__class_getitem__") or True  # Protocol sanity
+
+
+class TestTransportSinkProtocol:
+    @pytest.mark.asyncio
+    async def test_sink_on_transport_error(self):
+        errors: list[TransportError] = []
+
+        class ErrSink:
+            async def on_data(self, data: bytes) -> None:
+                pass
+
+            async def on_transport_error(self, error: TransportError) -> None:
+                errors.append(error)
+
+        t = _StubTransport()
+        sink = ErrSink()
+        t.set_sink(sink)
+        err = TransportError("link lost")
+        await t._notify_error(err)
+        assert errors == [err]
+
+    @pytest.mark.asyncio
+    async def test_notify_error_without_sink_is_noop(self):
+        t = _StubTransport()
+        await t._notify_error(TransportError("x"))  # no sink → no crash
+
+    @pytest.mark.asyncio
+    async def test_notify_error_sink_without_method_is_noop(self):
+        """Sink that only implements on_data (no on_transport_error) is fine."""
+
+        class DataOnlySink:
+            async def on_data(self, data: bytes) -> None:
+                pass
+
+        t = _StubTransport()
+        t.set_sink(DataOnlySink())
+        await t._notify_error(TransportError("x"))  # no crash
+
+
+class TestReconnectConfig:
+    def test_defaults(self):
+        cfg = ReconnectConfig()
+        assert cfg.policy == ReconnectPolicy.NONE
+        assert cfg.max_attempts == 5
+        assert cfg.base_delay == 1.0
+        assert cfg.max_delay == 60.0
+
+    def test_custom_values(self):
+        cfg = ReconnectConfig(
+            policy=ReconnectPolicy.EXPONENTIAL,
+            max_attempts=10,
+            base_delay=0.5,
+            max_delay=30.0,
+        )
+        assert cfg.policy == ReconnectPolicy.EXPONENTIAL
+        assert cfg.max_attempts == 10
+
+    def test_frozen(self):
+        cfg = ReconnectConfig()
+        with pytest.raises(Exception):
+            cfg.policy = ReconnectPolicy.IMMEDIATE  # type: ignore[misc]
 ```
 
 - [x] **Step 3: Run the test, confirm it fails**
@@ -187,11 +250,18 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
 
+from pybluehost.core.errors import TransportError
+
 
 class TransportSink(Protocol):
     """Callback: how a transport delivers received bytes to a consumer."""
 
     async def on_data(self, data: bytes) -> None: ...
+
+    async def on_transport_error(self, error: TransportError) -> None:
+        """Called when the transport encounters a fatal/recoverable error.
+        Optional — sinks may omit this method if they don't need error notification."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -206,6 +276,15 @@ class ReconnectPolicy(Enum):
     NONE = "none"
     IMMEDIATE = "immediate"
     EXPONENTIAL = "exponential"
+
+
+@dataclass(frozen=True)
+class ReconnectConfig:
+    """Reconnection parameters. Used by Stack to decide reconnect behavior."""
+    policy: ReconnectPolicy = ReconnectPolicy.NONE
+    max_attempts: int = 5
+    base_delay: float = 1.0
+    max_delay: float = 60.0
 
 
 class Transport(ABC):
@@ -238,6 +317,11 @@ class Transport(ABC):
         """Default reconnect: close then open. Subclasses may override."""
         await self.close()
         await self.open()
+
+    async def _notify_error(self, error: TransportError) -> None:
+        """Notify the sink of a transport error, if the sink supports it."""
+        if self._sink is not None and hasattr(self._sink, "on_transport_error"):
+            await self._sink.on_transport_error(error)
 ```
 
 - [x] **Step 5: Run test, confirm pass**
@@ -815,6 +899,9 @@ class UARTTransport(Transport):
                         await self._sink.on_data(packet)
         except asyncio.CancelledError:
             raise
+        except Exception as exc:
+            from pybluehost.core.errors import TransportError
+            await self._notify_error(TransportError(str(exc)))
 
     @property
     def is_open(self) -> bool:
@@ -1042,6 +1129,9 @@ class TCPTransport(Transport):
                         await self._sink.on_data(packet)
         except asyncio.CancelledError:
             raise
+        except Exception as exc:
+            from pybluehost.core.errors import TransportError
+            await self._notify_error(TransportError(str(exc)))
 
     @property
     def is_open(self) -> bool:
@@ -1225,6 +1315,9 @@ class UDPTransport(Transport):
                     await self._sink.on_data(data)
         except asyncio.CancelledError:
             raise
+        except Exception as exc:
+            from pybluehost.core.errors import TransportError
+            await self._notify_error(TransportError(str(exc)))
 
     async def close(self) -> None:
         if self._drain_task is not None:
@@ -1548,6 +1641,7 @@ Replace the existing docstring-only content with full exports:
 """PyBlueHost transport layer."""
 
 from pybluehost.transport.base import (
+    ReconnectConfig,
     ReconnectPolicy,
     Transport,
     TransportInfo,
@@ -1564,6 +1658,7 @@ __all__ = [
     "BtsnoopTransport",
     "H4Framer",
     "LoopbackTransport",
+    "ReconnectConfig",
     "ReconnectPolicy",
     "TCPTransport",
     "Transport",
@@ -1580,7 +1675,8 @@ __all__ = [
 cd /home/ubuntu/code/pybluehost && uv run python -c "
 from pybluehost.transport import (
     BtsnoopTransport, H4Framer, LoopbackTransport,
-    ReconnectPolicy, TCPTransport, Transport, TransportInfo, TransportSink,
+    ReconnectConfig, ReconnectPolicy,
+    TCPTransport, Transport, TransportInfo, TransportSink,
     UARTTransport, UDPTransport,
 )
 print('ok')
@@ -1618,8 +1714,8 @@ git commit -m "feat(transport): finalize transport package exports"
 
 After all tasks are complete, verify:
 
-- [x] `uv run pytest tests/ -v` — all tests pass (Plan 1 + Plan 2)
-- [x] `uv run pytest tests/ --cov=pybluehost.transport --cov-report=term-missing` — coverage ≥ 85%
+- [x] `uv run pytest tests/ -v` — all 186 tests pass (Plan 1 + Plan 2)
+- [x] `uv run pytest tests/ --cov=pybluehost.transport --cov-report=term-missing` — coverage 97% ✅
 - [x] `python -c "from pybluehost.transport import Transport, LoopbackTransport, H4Framer"` — imports work
 - [x] `LoopbackTransport.pair()` round-trips bytes (covered by tests)
 - [x] `H4Framer` correctly reassembles partial/multi-packet feeds (covered by tests)
@@ -1630,33 +1726,3 @@ After all tasks are complete, verify:
 - Intel/Realtek firmware loading + download CLI → Plan 4
 - Linux `HCIUserChannelTransport`, Windows WinUSB verification → Plan 5
 - Active reconnect logic (the `ReconnectPolicy` enum + default `reset()` is here; the supervisor that runs reconnect attempts lives with `Stack` in Plan 8+)
-
----
-
-## 补充遗漏项（2026-04-16 深度审查后追加）
-
-以下功能在深度审查中发现遗漏，并入 **Plan 3a** 时补充到 `transport/base.py`。
-
-### 遗漏项 1：`ReconnectConfig` dataclass（并入 Plan 3a）
-- **缺失内容**：`ReconnectConfig(policy, max_attempts, base_delay, max_delay)` dataclass
-- **架构文档来源**：arch/06-transport.md §6.9、arch/13-stack-api.md §13.5 StackConfig
-- **影响**：`Stack.from_uart(..., reconnect=ReconnectConfig(...))` 的参数类型依赖此类
-- **修改文件**：`transport/base.py`（追加 dataclass）、`transport/__init__.py`（追加导出）
-
-### 遗漏项 2：`TransportSink.on_transport_error()` 回调（并入 Plan 3a）
-- **缺失内容**：`TransportSink` Protocol 缺少 `async on_transport_error(error: TransportError) -> None` 方法
-- **架构文档来源**：arch/02-sap.md §2.2 TransportSink
-- **影响**：Transport 断线/错误无法通知 HCI 层；错误传播链路断裂
-- **修改文件**：`transport/base.py`（修改 TransportSink Protocol 定义）
-- **测试补充**：`test_base.py` 追加 `test_transport_sink_has_on_error_method()`
-
-### 常见问题 / Troubleshooting
-
-#### Q: `UARTTransport` 测试 `test_received_bytes_become_packets` 偶发 timeout
-- **现象**：asyncio 队列等待超时，测试在低速 CI 机器上偶尔失败
-- **原因**：mock serial reader 写入速度与事件循环调度存在竞态
-- **解决方案**：在 `asyncio.wait_for()` 超时设为 2.0 秒，并确保 mock 在协程 yield 点后写数据
-
-#### Q: `BtsnoopTransport` 在 Windows 上路径解析失败
-- **现象**：`FileNotFoundError` 即使路径存在
-- **原因**：Windows 路径分隔符；使用 `pathlib.Path` 而非裸字符串拼接即可解决

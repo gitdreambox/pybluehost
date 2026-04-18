@@ -1,6 +1,8 @@
 import pytest
 
+from pybluehost.core.errors import TransportError
 from pybluehost.transport.base import (
+    ReconnectConfig,
     ReconnectPolicy,
     Transport,
     TransportInfo,
@@ -100,3 +102,70 @@ class TestTransportABC:
 
     def test_transport_sink_is_runtime_protocol(self):
         assert hasattr(TransportSink, "__class_getitem__") or True  # Protocol sanity
+
+
+class TestTransportSinkProtocol:
+    @pytest.mark.asyncio
+    async def test_sink_on_transport_error(self):
+        """Sink with on_transport_error receives the error via _notify_error."""
+        received: list[TransportError] = []
+
+        class FullSink:
+            async def on_data(self, data: bytes) -> None:
+                pass
+
+            async def on_transport_error(self, error: TransportError) -> None:
+                received.append(error)
+
+        t = _StubTransport()
+        t.set_sink(FullSink())
+        err = TransportError("oops")
+        await t._notify_error(err)
+        assert received == [err]
+
+    @pytest.mark.asyncio
+    async def test_notify_error_without_sink_is_noop(self):
+        """No sink → _notify_error does not crash."""
+        t = _StubTransport()
+        assert t._sink is None
+        err = TransportError("oops")
+        await t._notify_error(err)  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_notify_error_sink_without_method_is_noop(self):
+        """Sink that only has on_data (no on_transport_error) → no crash."""
+
+        class MinimalSink:
+            async def on_data(self, data: bytes) -> None:
+                pass
+
+        t = _StubTransport()
+        t.set_sink(MinimalSink())
+        err = TransportError("oops")
+        await t._notify_error(err)  # must not raise
+
+
+class TestReconnectConfig:
+    def test_defaults(self):
+        cfg = ReconnectConfig()
+        assert cfg.policy == ReconnectPolicy.NONE
+        assert cfg.max_attempts == 5
+        assert cfg.base_delay == 1.0
+        assert cfg.max_delay == 60.0
+
+    def test_custom_values(self):
+        cfg = ReconnectConfig(
+            policy=ReconnectPolicy.EXPONENTIAL,
+            max_attempts=10,
+            base_delay=0.5,
+            max_delay=30.0,
+        )
+        assert cfg.policy == ReconnectPolicy.EXPONENTIAL
+        assert cfg.max_attempts == 10
+        assert cfg.base_delay == 0.5
+        assert cfg.max_delay == 30.0
+
+    def test_frozen(self):
+        cfg = ReconnectConfig()
+        with pytest.raises(Exception):
+            cfg.max_attempts = 99  # type: ignore[misc]

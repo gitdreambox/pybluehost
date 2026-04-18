@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
+
+from pybluehost.core.errors import TransportError
 
 
 class TransportSink(Protocol):
     """Callback: how a transport delivers received bytes to a consumer."""
 
     async def on_data(self, data: bytes) -> None: ...
+
+    async def on_transport_error(self, error: TransportError) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,14 @@ class ReconnectPolicy(Enum):
     NONE = "none"
     IMMEDIATE = "immediate"
     EXPONENTIAL = "exponential"
+
+
+@dataclass(frozen=True)
+class ReconnectConfig:
+    policy: ReconnectPolicy = ReconnectPolicy.NONE
+    max_attempts: int = 5
+    base_delay: float = 1.0
+    max_delay: float = 60.0
 
 
 class Transport(ABC):
@@ -56,3 +68,8 @@ class Transport(ABC):
         """Default reconnect: close then open. Subclasses may override."""
         await self.close()
         await self.open()
+
+    async def _notify_error(self, error: TransportError) -> None:
+        """Notify the sink of a transport error if it supports on_transport_error."""
+        if self._sink is not None and hasattr(self._sink, "on_transport_error"):
+            await self._sink.on_transport_error(error)
