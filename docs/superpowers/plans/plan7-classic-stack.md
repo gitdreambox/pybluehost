@@ -406,3 +406,32 @@ git commit -m "feat(classic): finalize Classic package exports"
 git add docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 6 (Classic stack) complete in STATUS.md"
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+### 补充 1: RFCOMM RPN/RLS 控制命令（架构 10-classic-stack.md §10.3）
+
+当前 Plan 只覆盖 PN（Parameter Negotiation）和 MSC（Modem Status）。需要补充：
+
+- **RPN (Remote Port Negotiation)**: 串口参数协商（baudrate, data bits, stop bits, parity, flow control）
+  - 编解码测试 + 协商流程测试
+- **RLS (Remote Line Status)**: 远端线路状态通知（overrun, parity error, framing error）
+  - 编解码测试 + 状态通知测试
+
+这是 PRD §5.5 "串口仿真语义完整实现" 的要求。
+
+### 补充 2: SDP ServiceSearchAttributeRequest 测试
+
+`SDPClient.search_attributes()` 方法（组合 ServiceSearch + AttributeRequest）缺少专门测试。需要补充：
+- 发送 ServiceSearchAttributeRequest PDU 的编解码
+- 收到 Response 后的解析
+
+### 补充 3: SPP SDP 自动注册验证
+
+`make_rfcomm_service_record()` 注册后，需要 E2E 验证：通过 SDPClient 查询能找到该 record，且 RFCOMM channel 号正确。
+
+### 补充 4: profiles/classic/spp.py 归属说明
+
+架构 01-layering.md 包结构中存在 `profiles/classic/spp.py`（Profile 层封装），与本 Plan 的 `classic/spp.py`（协议层）是不同文件。Profile 层封装在 Plan 9b 中实现。

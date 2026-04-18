@@ -743,3 +743,87 @@ git checkout master
 git merge claude/eloquent-raman --ff-only
 git log --oneline -10
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+### 补充 1: NullTrace API 修正
+
+Plan 中 NullTrace 定义了 `log_hci_command`, `log_hci_event`, `log_acl` 方法，但实际 `core/trace.py` 的 `TraceSystem` API 是：
+- `emit(event: TraceEvent)` — 发送 trace 事件
+- `add_sink(sink: TraceSink)` — 添加 sink
+- `start()` / `stop()` — 生命周期
+
+NullTrace 应该匹配 TraceSystem 接口：
+
+```python
+class NullTrace:
+    """No-op trace for unit tests that don't need tracing."""
+    async def emit(self, event: TraceEvent) -> None:
+        pass
+    def add_sink(self, sink: TraceSink) -> None:
+        pass
+    async def start(self) -> None:
+        pass
+    async def stop(self) -> None:
+        pass
+```
+
+### 补充 2: FakeTransport.inject() 接口修正
+
+Plan 中 `FakeTransport.inject()` 调用 `self._sink.on_transport_data(data)`，这与实际接口一致（已在 2026-04-18 从 `on_data` 重命名为 `on_transport_data`）。确认无需修改。
+
+### 补充 3: 覆盖率逐模块门槛配置（架构 14-testing.md §14.6）
+
+架构文档定义的覆盖率要求：
+| 模块 | 目标覆盖率 |
+|------|-----------|
+| core/ | 95% |
+| hci/packets.py | 100% |
+| transport/ | 70% (已达 97%) |
+| l2cap/ | 85% |
+| ble/ | 80% |
+| classic/ | 80% |
+| profiles/ | 75% |
+
+需要在 `pyproject.toml` 中配置 `--cov-fail-under` 或在 CI 脚本中分模块检查。
+
+### 补充 4: BtsnoopTestData 工具类（架构 14-testing.md §14.3.2）
+
+```python
+class BtsnoopTestData:
+    """从 btsnoop 文件加载真实 HCI 数据作为测试输入。"""
+    def __init__(self, path: str | Path) -> None: ...
+    def load_packets(self) -> list[bytes]: ...
+    def load_commands(self) -> list[HCICommand]: ...
+    def load_events(self) -> list[HCIEvent]: ...
+    def load_acl(self) -> list[HCIACLData]: ...
+```
+
+### 补充 5: 测试数据文件（架构 14-testing.md §14.8）
+
+需要补充 4 个 btsnoop 测试数据文件：
+- `tests/data/android_ble_scan.btsnoop` — BLE 扫描流程
+- `tests/data/classic_spp_session.btsnoop` — Classic SPP 会话
+- `tests/data/smp_pairing_sc.btsnoop` — SMP Secure Connections 配对
+- `tests/data/l2cap_coc.btsnoop` — L2CAP LE CoC 连接
+
+这些文件可以从真实设备抓取或用 VirtualController 生成。
+
+### 补充 6: 硬件测试 fixtures（架构 14-testing.md §14.9.6）
+
+`tests/hardware/conftest.py` 需要实现完整 fixture：
+```python
+@pytest.fixture
+def adapter_vid_pid() -> tuple[int, int]: ...
+
+@pytest.fixture
+def uart_port() -> str: ...
+
+@pytest.fixture
+def target_address() -> BDAddress: ...
+
+@pytest.fixture
+async def usb_stack(adapter_vid_pid) -> AsyncIterator[Stack]: ...
+```

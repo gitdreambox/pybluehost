@@ -1572,3 +1572,73 @@ Edit `docs/superpowers/STATUS.md`: change Plan 3 from 🔄 to ✅, set Plan 4 as
 git add docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 3 (HCI) complete in STATUS.md"
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+以下事项在深度审查中发现遗漏，需要在执行时补充到对应 Task 中。
+
+### 补充 1: HCI ISO Data 解析（PRD §5.2, 架构 07-hci.md §7.3）
+
+需要在 packets.py 中增加 `HCIISOData` 数据类：
+
+```python
+@dataclass
+class HCIISOData:
+    handle: int        # 12 bits
+    pb_flag: int       # 2 bits
+    ts_flag: int       # 1 bit
+    data_length: int   # 14 bits
+    timestamp: int | None  # optional, 4 bytes if ts_flag=1
+    sequence_number: int | None  # optional
+    payload: bytes
+```
+
+v1.0 不实现上层 ISO 逻辑，但需要：
+- 在 `on_transport_data` 中识别 indicator 0x05 并解析
+- emit TraceEvent 记录
+- 增加 ISO 数据包的 encode/decode 往返测试
+
+### 补充 2: SCO 数据路由测试（架构 07-hci.md §7.4）
+
+`HCIController.on_transport_data` 的 `case 0x03` 分支需要测试：
+- SCO 数据能正确路由到 `HCIUpstream.on_sco_data()` 回调
+- connection handle 匹配/不匹配时的行为
+
+### 补充 3: Vendor 子包实现和测试
+
+`hci/vendor/intel.py` 和 `hci/vendor/realtek.py` 在文件结构中列出但无对应 Task。需要补充：
+- Intel Vendor Event 解析（用于固件加载响应）
+- Realtek Vendor Event 解析
+- Vendor event 路由机制（VendorEventRouter 或 EventRouter 的扩展）
+
+### 补充 4: TransportSource 引用修正
+
+Plan 中 `HCIController.__init__` 签名使用 `transport: TransportSource`，但 `TransportSource` 类不存在于实际代码中。应改为：
+
+```python
+def __init__(self, transport: Transport, trace: TraceSystem) -> None:
+```
+
+其中 `Transport` 从 `pybluehost.transport.base` 导入。HCIController 同时作为 TransportSink（实现 `on_transport_data` 和 `on_transport_error`）。
+
+### 补充 5: TransportSink 接口已更新
+
+**注意**：TransportSink 方法已从 `on_data` 重命名为 `on_transport_data`（2026-04-18）。Plan 中实现 TransportSink 的类需使用新名称。同时 TransportSink 新增了 `on_transport_error(error: TransportError)` 方法。
+
+### 补充 6: HCI_LE_Meta_Event struct.pack 格式修正
+
+测试代码中 `struct.pack("<BBHBBBBBBHHHBx", ...)` 的地址字段应使用 `6s` 格式而非 6 个独立 `B`，以匹配 `bytes(6)` 参数：
+
+```python
+struct.pack("<BBH6sHHHBx", subevent, num_reports, event_type, addr_bytes, ...)
+```
+
+### 补充 7: 拆分建议
+
+建议将本 Plan 拆分为：
+- **Plan 4a — HCI Packet Codec + Flow Control**: constants.py, packets.py（全部 packet 类型 + PacketRegistry + HCIISOData）, flow.py, vendor/intel.py, vendor/realtek.py。纯数据处理，无 asyncio 依赖。
+- **Plan 4b — HCI Controller + VirtualController**: controller.py（HCIController + EventRouter + ConnectionManager + 16 步初始化序列）, virtual.py。有状态逻辑 + asyncio。
+
+拆分依据：Packet Codec 是纯 bytes↔dataclass 转换，Controller 涉及状态机和异步 IO，技术风险不同。

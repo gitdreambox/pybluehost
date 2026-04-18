@@ -644,3 +644,64 @@ uv run pytest tests/ -v --tb=short
 git add tests/integration/
 git commit -m "test(integration): add HCI + L2CAP integration test with VirtualController"
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+以下事项在深度审查中发现遗漏，需要在执行时补充到对应 Task 中。
+
+### 补充 1: Streaming Mode 实现（PRD §5.3, 架构 08-l2cap.md §8.8）
+
+`ChannelMode.STREAMING = 0x04` 在 enum 中定义但缺少实现和测试。需要补充：
+- Streaming Mode 信道：仅发送端发 I-frame，无 ACK 无重传
+- 与 ERTM 的区别：无 S-frame、无重传队列
+- 测试：发送多个 I-frame，验证无 ACK 帧返回，验证顺序保持
+
+### 补充 2: Connection Parameter Update（架构 08-l2cap.md §8.9 LE Signaling）
+
+LE Signaling (CID 0x0005) 需要处理：
+- `Connection_Parameter_Update_Request` (code 0x12): 编解码 interval_min, interval_max, latency, timeout
+- `Connection_Parameter_Update_Response` (code 0x13): 编解码 result (0x0000=accepted, 0x0001=rejected)
+- 这是 GAP 层 `update_connection_parameters()` 的依赖（架构 11-gap.md §11.3）
+- 测试：请求编解码往返 + 响应编解码往返
+
+### 补充 3: L2CAPManager 自动注册 ATT+SMP 固定信道（架构 08-l2cap.md §8.5）
+
+`L2CAPManager.on_connection()` 被调用时，应对 LE 连接自动注册：
+- ATT 固定信道 (CID 0x0004)
+- SMP 固定信道 (CID 0x0006)
+
+需要补充测试：调用 `on_connection(handle, LE)` 后，验证 CID 0x0004 和 0x0006 已注册。
+
+### 补充 4: ERTMEngine 序列号 wraparound 修正
+
+当前 Plan 代码中 ACK 逻辑：
+```python
+acked = [s for s in self._unacked if s < req_seq or (req_seq < 32 and s > 32)]
+```
+
+**Bug**: 当 `req_seq=1` 且 `s=63` 时会错误 ACK。应使用模运算比较：
+
+```python
+def _seq_in_range(self, seq: int, start: int, end: int) -> bool:
+    """Check if seq is in [start, end) with mod-64 wraparound."""
+    if start <= end:
+        return start <= seq < end
+    return seq >= start or seq < end
+
+acked = [s for s in self._unacked if self._seq_in_range(s, self._last_acked, req_seq)]
+```
+
+### 补充 5: 多 handle 并发 SAR 隔离测试
+
+`Reassembler` 需要为每个 connection handle 维护独立的分段重组状态。需要补充测试：
+- 两个不同 handle 的分段数据交织到达
+- 验证各自独立重组，不互相污染
+
+### 补充 6: LE CoC credit 耗尽背压测试
+
+当 credit = 0 时 `send()` 应等待（或 raise），需要补充测试：
+- 发送直到 credit 耗尽
+- 验证后续 send 阻塞/等待
+- 对端发送 Flow Control Credit 后 send 恢复

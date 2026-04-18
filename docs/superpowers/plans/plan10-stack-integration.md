@@ -402,3 +402,99 @@ git commit -m "docs: mark Plan 9 (Stack integration) complete �?all plans done
 git checkout master
 git merge claude/eloquent-raman --ff-only
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+### 补充 1: 合并 Plan 10a (PcapngSink + 回放模式) 进本 Plan
+
+原计划单独的 Plan 10a 现合并进本 Plan，因为文件集高度重叠（core/trace.py + stack.py）。
+
+**新增内容**：
+
+1. **PcapngSink** — 在 `core/trace.py` 中追加：
+```python
+class PcapngSink(TraceSink):
+    """输出 pcapng 格式，可用 Wireshark 直接打开。"""
+    def __init__(self, path: str) -> None: ...
+    async def on_trace(self, event: TraceEvent) -> None: ...
+    async def flush(self) -> None: ...
+    async def close(self) -> None: ...
+```
+
+2. **Stack.from_btsnoop()** — 回放模式工厂方法：
+```python
+class StackMode(Enum):
+    LIVE = "live"
+    REPLAY = "replay"
+
+class ReplayModeError(PyBlueHostError):
+    """Raised when attempting write operations in replay mode."""
+
+@classmethod
+async def from_btsnoop(cls, path: str) -> "Stack":
+    """Create a Stack in replay mode from a btsnoop capture file."""
+    ...
+```
+
+3. **Stack.replay()** — 回放控制：
+```python
+async def replay(self, speed: float = 1.0) -> None:
+    """Replay the btsnoop file. speed=1.0 is realtime, speed=0 is as-fast-as-possible."""
+    ...
+```
+
+### 补充 2: Stack.build() 公开工厂方法（PRD §5.7, 架构 13-stack-api.md §13.3）
+
+```python
+@classmethod
+async def build(
+    cls,
+    transport: Transport,
+    *,
+    trace_sinks: list[TraceSink] | None = None,
+    config: StackConfig | None = None,
+) -> "Stack":
+    """Custom assembly — for advanced use cases."""
+    ...
+```
+
+### 补充 3: 断线重连后 HCI 重初始化（架构 13-stack-api.md §13.4）
+
+Transport 重连后需要：
+1. 自动重跑 HCI 16 步初始化序列
+2. 通过 disconnect 回调通知上层所有连接已失效
+3. 清空 ConnectionManager 状态
+
+需要补充测试：模拟 Transport 断线 → 重连 → 验证 HCI 重初始化 → 验证上层收到 disconnect 通知。
+
+### 补充 4: Stack.sig_db 属性（架构 13-stack-api.md §13.3）
+
+```python
+@property
+def sig_db(self) -> SIGDatabase:
+    return self._sig_db
+```
+
+### 补充 5: LoopbackTransport 接口修正
+
+Plan 中使用 `LoopbackTransport(virtual_controller=vc)` 但实际 LoopbackTransport 无此构造器。应改为：
+
+```python
+# 创建 Loopback 对
+host_transport, controller_transport = LoopbackTransport.pair()
+# VirtualController 连接到 controller 端
+vc = VirtualController()
+controller_transport.set_sink(vc)
+vc.set_transport(controller_transport)
+# Stack 使用 host 端
+stack = await Stack._build(host_transport, ...)
+```
+
+### 补充 6: Stack.power_off() vs close() 语义（架构 13-stack-api.md §13.4）
+
+- `power_off()`: 关闭连接和广播，保留 Transport（可再次 power_on）
+- `close()`: 释放全部资源（Transport.close() + 清理所有状态）
+
+需要分别测试两种行为。

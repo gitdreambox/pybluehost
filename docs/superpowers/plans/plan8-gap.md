@@ -474,3 +474,59 @@ git commit -m "feat(gap): add unified GAP layer — BLE Advertising/Scan/Connect
 git add docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 7 (GAP) complete in STATUS.md"
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+### 补充 1: Extended Advertising (AE)（PRD §5.6, 架构 11-gap.md §11.3）— 重大遗漏
+
+当前 Plan 只有 Legacy Advertising (BLEAdvertiser)，完全缺少 Extended Advertising。需要补充：
+
+```python
+class ExtendedAdvertiser:
+    """Bluetooth 5.0 Extended Advertising — 支持多广播集、长数据、多 PHY。"""
+    async def create_set(self, params: ExtAdvParams) -> int: ...  # 返回 adv_handle
+    async def set_data(self, adv_handle: int, data: bytes) -> None: ...
+    async def set_scan_response(self, adv_handle: int, data: bytes) -> None: ...
+    async def start(self, adv_handle: int, duration: float = 0) -> None: ...
+    async def stop(self, adv_handle: int) -> None: ...
+    async def remove_set(self, adv_handle: int) -> None: ...
+```
+
+涉及 HCI 命令：LE_Set_Extended_Advertising_Parameters, LE_Set_Extended_Advertising_Data, LE_Set_Extended_Scan_Response_Data, LE_Set_Extended_Advertising_Enable。
+
+### 补充 2: WhiteList / 过滤策略（PRD §5.6, 架构 11-gap.md §11.5）— 重大遗漏
+
+```python
+class WhiteList:
+    async def add(self, addr: BDAddress) -> None: ...
+    async def remove(self, addr: BDAddress) -> None: ...
+    async def clear(self) -> None: ...
+    @property
+    def entries(self) -> list[BDAddress]: ...
+```
+
+涉及 HCI 命令：LE_Add_Device_To_White_List, LE_Remove_Device_From_White_List, LE_Clear_White_List.
+
+### 补充 3: PrivacyManager (RPA) 完整实现（架构 11-gap.md §11.3）
+
+当前 Plan 只有 `resolve_rpa()` 静态方法。完整实现需要：
+- `enable() / disable()` — 开启/关闭隐私模式
+- `add_peer_irk(addr, irk)` — 添加对端 IRK 到 Resolving List
+- RPA 定期轮换（默认 15 分钟，通过 HCI LE_Set_Resolvable_Private_Address_Timeout）
+- Resolving List 管理（HCI LE_Add_Device_To_Resolving_List 等）
+
+### 补充 4: Classic GAP 缺失（架构 11-gap.md §11.4）— 在 Plan 8b 中实现
+
+以下功能不在本 Plan 范围内，将在 Plan 8b（待编写）中实现：
+- ClassicDiscovery（Inquiry + Remote Name Request）
+- ClassicDiscoverability（Write_Scan_Enable + EIR 设置）
+- ClassicConnectionManager（Create_Connection / Accept_Connection）
+- SSPManager（IO Capability Exchange + Numeric Comparison / Passkey / Just Works / OOB）
+- 统一 GAP 入口类 + set_pairing_delegate()
+
+### 补充 5: 拆分建议（已在 STATUS.md 标注）
+
+- **Plan 8a — BLE GAP**: core/gap_common.py + ble/gap.py（BLEAdvertiser + ExtendedAdvertiser + BLEScanner + BLEConnectionManager + PrivacyManager + WhiteList）
+- **Plan 8b — Classic GAP + 统一入口**: classic/gap.py + pybluehost/gap.py 统一类

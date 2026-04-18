@@ -1204,3 +1204,43 @@ git commit -m "feat(profiles): add HeartRateClient and BatteryClient with mock-f
 git add docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 8 (BLE Profiles) complete in STATUS.md"
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+### 补充 1: ServiceYAMLLoader.validate() 方法（架构 12-ble-profiles.md §12.4）
+
+需要补充实现和测试：
+
+```python
+class ServiceYAMLLoader:
+    @staticmethod
+    def validate(path: str | Path) -> list[str]:
+        """Validate YAML service definition, return list of error messages (empty = valid)."""
+        ...
+```
+
+验证规则：
+- UUID 格式正确（16-bit 或 128-bit）
+- Characteristic properties 合法（read/write/notify/indicate 等）
+- 必填字段存在
+
+### 补充 2: Profile E2E Loopback 测试（架构 14-testing.md §14.5）
+
+9 个内置 Profile 需要 Loopback E2E 测试：Server + Client 双角色完整交互。至少覆盖：
+- HRS: Client subscribe notify → Server update heart rate → Client receive notification
+- BAS: Client read battery level → 验证值正确
+- DIS: Client read manufacturer name → 验证字符串正确
+
+### 补充 3: Client 侧 Profile 实现
+
+Plan 文件结构提到了 Client 类但没有详细 Task。需要补充：
+- `HeartRateClient.subscribe_measurement()` → 接收 notification
+- `BatteryClient.read_level()` → 读取电池电量
+- Client 的 `discover()` 方法 + 缓存失效（Service Changed indication）
+
+### 补充 4: 拆分建议（已在 STATUS.md 标注）
+
+- **Plan 9a — Profile 框架**: base.py, decorators.py, yaml_loader.py（含 validate）, 9 个 YAML 定义文件
+- **Plan 9b — 内置 Profile 实现**: 9 个 Server .py + Client 类 + profiles/classic/spp.py + E2E Loopback 测试

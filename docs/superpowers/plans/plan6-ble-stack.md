@@ -808,3 +808,94 @@ git commit -m "feat(ble): finalize BLE package exports"
 git add docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 5 (BLE stack) complete in STATUS.md"
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+以下事项在深度审查中发现遗漏，需要在执行时补充到对应 Task 中。
+
+### 补充 1: GATT Service Changed Indication（PRD §5.4, 架构 09-ble-stack.md §9.3）
+
+GATT Service 0x1801 需要支持 Service Changed Characteristic (0x2A05):
+- 当 GATT 数据库动态更新时（添加/删除 service），发送 indication 给订阅了的 client
+- 包含受影响的 attribute handle 范围
+- Client 收到后应重新 discover services
+- 测试：GATTServer 增删 service → 验证 indication 发送 → Client 重新 discover
+
+### 补充 2: GATT Client Discovery 完整流程测试
+
+架构 09-ble-stack.md §9.3 定义了完整的 discovery API：
+- `discover_all_services()` → ATT_Read_By_Group_Type_Request
+- `discover_characteristics(service)` → ATT_Read_By_Type_Request
+- `discover_descriptors(char)` → ATT_Find_Information_Request
+
+需要补充完整 discovery 流程的 E2E 测试（通过 Loopback 双角色验证）。
+
+### 补充 3: SMP IO Capability 矩阵测试（架构 09-ble-stack.md §9.4）
+
+BT Core Spec Table 2.8 定义 5×5=25 种 IO Capability 组合，每种对应不同配对模型：
+- DisplayOnly × DisplayOnly → Just Works
+- DisplayYesNo × DisplayYesNo → Numeric Comparison (SC) / Just Works (Legacy)
+- KeyboardOnly × DisplayOnly → Passkey Entry
+- ...等
+
+至少需要覆盖 4 种配对模型各 1-2 个代表性组合的测试。
+
+### 补充 4: SecurityConfig + CTKDManager（架构 09-ble-stack.md §9.4）
+
+Plan 文件结构列出了 `ble/security.py` 但没有对应 Task。需要补充：
+
+```python
+@dataclass
+class SecurityConfig:
+    io_capability: IOCapability = IOCapability.NO_INPUT_NO_OUTPUT
+    mitm_required: bool = False
+    sc_only: bool = False
+    bond: bool = True
+    ctkd_enabled: bool = False
+
+class CTKDManager:
+    """Cross-Transport Key Derivation (h6/h7 functions)."""
+    async def derive_br_edr_key_from_le(self, ltk: LTK) -> LinkKey: ...
+    async def derive_le_key_from_br_edr(self, link_key: LinkKey) -> LTK: ...
+```
+
+- h6/h7 加密函数需要 Spec 附录 D 测试向量
+- CTKD 流程需要完整状态机测试
+
+### 补充 5: SMP c1 测试需要精确断言
+
+当前 c1 测试只检查 `len(result) == 16`，应对比 BT Core Spec 附录 D.1 的精确值：
+
+```python
+def test_smp_c1_spec_vector():
+    # Spec Appendix D.1 test vector
+    k = bytes.fromhex("00000000000000000000000000000000")
+    r = bytes.fromhex("e0 2e 70 c6 4e 27 88 63 0e 2e 69 85 d2 ea 03 24".replace(" ", ""))
+    preq = bytes.fromhex("07071000000100")
+    pres = bytes.fromhex("05000800000302")
+    iat = 0x01
+    rat = 0x00
+    ia = bytes.fromhex("a6 0a 71 47 a2 00".replace(" ", ""))
+    ra = bytes.fromhex("a1 ab 57 c1 23 00".replace(" ", ""))
+    expected = bytes.fromhex("86 3b c2 b8 e5 c4 86 36 72 98 16 e6 ee 2c 40 de".replace(" ", ""))
+    assert smp_c1(k, r, preq, pres, iat, rat, ia, ra) == expected
+```
+
+### 补充 6: SMP f5 测试地址截断说明
+
+Plan 中 `A2 = bytes.fromhex("00a713702dcfc1")[:6]` 截断了 7 字节到 6 字节。这是因为地址前缀包含地址类型字节（1 byte type + 6 bytes addr）。需要在注释中说明这一点，或改为：
+
+```python
+A2_type = 0x00  # public address
+A2_addr = bytes.fromhex("a713702dcfc1")
+A2 = bytes([A2_type]) + A2_addr  # 7 bytes: type + addr
+```
+
+### 补充 7: 拆分建议（已在 STATUS.md 标注）
+
+- **Plan 6a — ATT + GATT**: att.py（全部 PDU + ATTBearer 客户端+服务端）, gatt.py（AttributeDatabase + GATTServer + GATTClient + Service Changed）
+- **Plan 6b — SMP + Security**: smp.py（SMPManager + 9 个加密函数 + BondStorage + IO Capability 矩阵）, security.py（SecurityConfig + CTKDManager）
+
+可并行开发，技术风险不同（GATT = 数据库设计，SMP = 密码学正确性）。

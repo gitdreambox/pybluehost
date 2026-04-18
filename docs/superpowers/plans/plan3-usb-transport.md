@@ -478,3 +478,68 @@ uv run pytest tests/ -v --tb=short
 git add pyproject.toml docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 3 (USB Transport) complete in STATUS.md"
 ```
+
+---
+
+## 审查补充事项 (2026-04-18 审查后追加)
+
+以下事项在深度审查中发现遗漏，需要在执行时补充到对应 Task 中。
+
+### 补充 1: CLI 工具 `pybluehost fw ...`（架构 06-transport.md §6.4）
+
+**新增 Task**: 固件 CLI 工具
+
+**Files:**
+- Create: `pybluehost/cli/__init__.py`
+- Create: `pybluehost/cli/fw.py`
+- Modify: `pyproject.toml` (add `[project.scripts]` entry)
+
+CLI 命令列表（架构文档定义的 6 条）:
+- `pybluehost fw download intel` — 下载 Intel 固件
+- `pybluehost fw download realtek` — 下载 Realtek 固件
+- `pybluehost fw list` — 列出已安装的固件
+- `pybluehost fw info <path>` — 显示固件文件信息
+- `pybluehost fw auto` — 自动检测芯片并下载对应固件
+- `pybluehost fw clean` — 清理固件缓存
+
+### 补充 2: FirmwarePolicy.AUTO_DOWNLOAD 实现细节
+
+当前 Plan 只测试了 PROMPT 和 ERROR 策略。AUTO_DOWNLOAD 需要：
+- HTTP 下载逻辑（使用 urllib 或可选 httpx 依赖）
+- 下载后完整性校验（文件大小 + magic signature）
+- 网络超时配置（默认 30s）
+- 失败后 fallback 到 PROMPT 策略
+
+### 补充 3: KNOWN_CHIPS transport_class 字段
+
+Plan 中 `KNOWN_CHIPS` 列表的 `transport_class` 全部为 `None`，注释说 "filled after class defs"。需要在定义 `IntelUSBTransport` 和 `RealtekUSBTransport` 后，增加一个步骤填充这些值：
+
+```python
+# After IntelUSBTransport and RealtekUSBTransport are defined:
+for chip in KNOWN_CHIPS:
+    if chip.vendor == "intel":
+        object.__setattr__(chip, "transport_class", IntelUSBTransport)
+    elif chip.vendor == "realtek":
+        object.__setattr__(chip, "transport_class", RealtekUSBTransport)
+```
+
+或者改为在 `auto_detect()` 中根据 vendor 字段路由，避免 frozen dataclass 修改。
+
+### 补充 4: USB endpoint 路由测试
+
+需要补充 `USBTransport.send()` 的三路路由测试：
+- Command (0x01) → Control endpoint
+- ACL (0x02) → Bulk OUT endpoint  
+- SCO (0x03) → Isochronous OUT endpoint
+
+### 补充 5: TransportSink 接口已更新
+
+**注意**：TransportSink.on_data 已重命名为 `on_transport_data`（2026-04-18 接口修复）。Plan 中所有引用 `on_data` 的地方需要改为 `on_transport_data`。
+
+### 补充 6: 拆分建议
+
+建议将本 Plan 拆分为：
+- **Plan 3a — USB Transport 核心**: ChipInfo 注册表、USBTransport ABC、auto_detect、端点路由、WinUSB 验证、HCIUserChannelTransport
+- **Plan 3b — 固件管理系统**: FirmwarePolicy、FirmwareManager（搜索+下载+校验）、Intel/Realtek._initialize() 完整流程、CLI 工具
+
+拆分依据：两者文件集不重叠，可并行开发。
