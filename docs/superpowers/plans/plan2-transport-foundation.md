@@ -146,7 +146,7 @@ class TestTransportABC:
         received: list[bytes] = []
 
         class Sink:
-            async def on_data(self, data: bytes) -> None:
+            async def on_transport_data(self, data: bytes) -> None:
                 received.append(data)
 
         t = _StubTransport()
@@ -177,7 +177,7 @@ class TestTransportSinkProtocol:
         errors: list[TransportError] = []
 
         class ErrSink:
-            async def on_data(self, data: bytes) -> None:
+            async def on_transport_data(self, data: bytes) -> None:
                 pass
 
             async def on_transport_error(self, error: TransportError) -> None:
@@ -200,7 +200,7 @@ class TestTransportSinkProtocol:
         """Sink that only implements on_data (no on_transport_error) is fine."""
 
         class DataOnlySink:
-            async def on_data(self, data: bytes) -> None:
+            async def on_transport_data(self, data: bytes) -> None:
                 pass
 
         t = _StubTransport()
@@ -256,7 +256,7 @@ from pybluehost.core.errors import TransportError
 class TransportSink(Protocol):
     """Callback: how a transport delivers received bytes to a consumer."""
 
-    async def on_data(self, data: bytes) -> None: ...
+    async def on_transport_data(self, data: bytes) -> None: ...
 
     async def on_transport_error(self, error: TransportError) -> None:
         """Called when the transport encounters a fatal/recoverable error.
@@ -362,7 +362,7 @@ class _Collect:
     def __init__(self) -> None:
         self.received: list[bytes] = []
 
-    async def on_data(self, data: bytes) -> None:
+    async def on_transport_data(self, data: bytes) -> None:
         self.received.append(data)
 
 
@@ -466,7 +466,7 @@ class LoopbackTransport(Transport):
         if self._peer is None:
             raise RuntimeError("LoopbackTransport has no peer")
         if self._peer._open and self._peer._sink is not None:
-            await self._peer._sink.on_data(data)
+            await self._peer._sink.on_transport_data(data)
 
     @property
     def is_open(self) -> bool:
@@ -735,7 +735,7 @@ class _Collect:
     def __init__(self) -> None:
         self.received: list[bytes] = []
 
-    async def on_data(self, data: bytes) -> None:
+    async def on_transport_data(self, data: bytes) -> None:
         self.received.append(data)
 
 
@@ -896,7 +896,7 @@ class UARTTransport(Transport):
                     return
                 for packet in self._framer.feed(chunk):
                     if self._sink is not None:
-                        await self._sink.on_data(packet)
+                        await self._sink.on_transport_data(packet)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -956,7 +956,7 @@ class _Collect:
     def __init__(self) -> None:
         self.received: list[bytes] = []
 
-    async def on_data(self, data: bytes) -> None:
+    async def on_transport_data(self, data: bytes) -> None:
         self.received.append(data)
 
 
@@ -1126,7 +1126,7 @@ class TCPTransport(Transport):
                     return
                 for packet in self._framer.feed(chunk):
                     if self._sink is not None:
-                        await self._sink.on_data(packet)
+                        await self._sink.on_transport_data(packet)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -1188,7 +1188,7 @@ class _Collect:
     def __init__(self) -> None:
         self.received: list[bytes] = []
 
-    async def on_data(self, data: bytes) -> None:
+    async def on_transport_data(self, data: bytes) -> None:
         self.received.append(data)
 
 
@@ -1312,7 +1312,7 @@ class UDPTransport(Transport):
             while True:
                 data = await self._queue.get()
                 if self._sink is not None:
-                    await self._sink.on_data(data)
+                    await self._sink.on_transport_data(data)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -1400,7 +1400,7 @@ class _Collect:
     def __init__(self) -> None:
         self.received: list[bytes] = []
 
-    async def on_data(self, data: bytes) -> None:
+    async def on_transport_data(self, data: bytes) -> None:
         self.received.append(data)
 
 
@@ -1582,7 +1582,7 @@ class BtsnoopTransport(Transport):
                         await asyncio.sleep(delta)
                 last_ts_us = ts
                 if self._sink is not None and self._open:
-                    await self._sink.on_data(payload)
+                    await self._sink.on_transport_data(payload)
 
     async def close(self) -> None:
         self._open = False

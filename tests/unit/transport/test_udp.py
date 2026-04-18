@@ -10,7 +10,7 @@ class _Collect:
     def __init__(self) -> None:
         self.received: list[bytes] = []
 
-    async def on_data(self, data: bytes) -> None:
+    async def on_transport_data(self, data: bytes) -> None:
         self.received.append(data)
 
 
@@ -87,7 +87,7 @@ class TestUDPTransport:
         errors = []
 
         class BrokenSink:
-            async def on_data(self, data: bytes) -> None:
+            async def on_transport_data(self, data: bytes) -> None:
                 raise RuntimeError("sink exploded")
             async def on_transport_error(self, error) -> None:
                 errors.append(error)

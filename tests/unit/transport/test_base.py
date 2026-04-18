@@ -79,7 +79,7 @@ class TestTransportABC:
         received: list[bytes] = []
 
         class Sink:
-            async def on_data(self, data: bytes) -> None:
+            async def on_transport_data(self, data: bytes) -> None:
                 received.append(data)
 
         t = _StubTransport()
@@ -111,7 +111,7 @@ class TestTransportSinkProtocol:
         received: list[TransportError] = []
 
         class FullSink:
-            async def on_data(self, data: bytes) -> None:
+            async def on_transport_data(self, data: bytes) -> None:
                 pass
 
             async def on_transport_error(self, error: TransportError) -> None:
@@ -136,7 +136,7 @@ class TestTransportSinkProtocol:
         """Sink that only has on_data (no on_transport_error) → no crash."""
 
         class MinimalSink:
-            async def on_data(self, data: bytes) -> None:
+            async def on_transport_data(self, data: bytes) -> None:
                 pass
 
         t = _StubTransport()

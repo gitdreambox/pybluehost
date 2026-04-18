@@ -31,7 +31,7 @@ class LoopbackTransport(Transport):
         if self._peer is None:
             raise RuntimeError("LoopbackTransport has no peer")
         if self._peer._open and self._peer._sink is not None:
-            await self._peer._sink.on_data(data)
+            await self._peer._sink.on_transport_data(data)
 
     @property
     def is_open(self) -> bool:

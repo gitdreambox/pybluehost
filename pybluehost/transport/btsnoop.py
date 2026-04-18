@@ -44,7 +44,7 @@ class BtsnoopTransport(Transport):
                         await asyncio.sleep(delta)
                 last_ts_us = ts
                 if self._sink is not None and self._open:
-                    await self._sink.on_data(payload)
+                    await self._sink.on_transport_data(payload)
 
     async def close(self) -> None:
         self._open = False

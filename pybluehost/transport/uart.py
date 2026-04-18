@@ -58,7 +58,7 @@ class UARTTransport(Transport):
                     return
                 for packet in self._framer.feed(chunk):
                     if self._sink is not None:
-                        await self._sink.on_data(packet)
+                        await self._sink.on_transport_data(packet)
         except asyncio.CancelledError:
             raise
         except Exception as exc:

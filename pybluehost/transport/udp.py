@@ -39,7 +39,7 @@ class UDPTransport(Transport):
             while True:
                 data = await self._queue.get()
                 if self._sink is not None:
-                    await self._sink.on_data(data)
+                    await self._sink.on_transport_data(data)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
