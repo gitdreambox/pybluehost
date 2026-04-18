@@ -1,6 +1,6 @@
 # Plan 1: Core Infrastructure Implementation
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build the foundational `pybluehost/core/` package that all protocol layers depend on — errors, address types, UUID types, key types, byte buffer helpers, state machine framework, trace system, and SIG database.
 
@@ -49,7 +49,7 @@
 - Create: `tests/conftest.py`
 - Modify: `pyproject.toml`
 
-- [ ] **Step 1: Add pyyaml and pytest dependencies to pyproject.toml**
+- [x] **Step 1: Add pyyaml and pytest dependencies to pyproject.toml**
 
 ```toml
 [project]
@@ -97,12 +97,12 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 ```
 
-- [ ] **Step 2: Run `uv sync` to install dependencies**
+- [x] **Step 2: Run `uv sync` to install dependencies**
 
 Run: `uv sync`
 Expected: Dependencies installed, `.venv` updated.
 
-- [ ] **Step 3: Create directory structure and __init__.py files**
+- [x] **Step 3: Create directory structure and __init__.py files**
 
 Create `tests/__init__.py`, `tests/unit/__init__.py`, `tests/unit/core/__init__.py` — all empty files.
 
@@ -118,7 +118,7 @@ Create `pybluehost/core/__init__.py`:
 """PyBlueHost core infrastructure — shared by all protocol layers."""
 ```
 
-- [ ] **Step 4: Write the failing test for errors**
+- [x] **Step 4: Write the failing test for errors**
 
 ```python
 # tests/unit/core/test_errors.py
@@ -186,12 +186,12 @@ def test_timeout_error_inherits_base():
     assert err.timeout == 5.0
 ```
 
-- [ ] **Step 5: Run test to verify it fails**
+- [x] **Step 5: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_errors.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'pybluehost.core.errors'`
 
-- [ ] **Step 6: Write minimal implementation**
+- [x] **Step 6: Write minimal implementation**
 
 ```python
 # pybluehost/core/errors.py
@@ -254,12 +254,12 @@ class TimeoutError(PyBlueHostError):
         self.timeout = timeout
 ```
 
-- [ ] **Step 7: Run test to verify it passes**
+- [x] **Step 7: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_errors.py -v`
 Expected: All 8 tests PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add pyproject.toml pybluehost/core/__init__.py pybluehost/core/errors.py tests/ 
@@ -274,7 +274,7 @@ git commit -m "feat(core): add error hierarchy and project test setup"
 - Create: `pybluehost/core/address.py`
 - Create: `tests/unit/core/test_address.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/unit/core/test_address.py
@@ -369,12 +369,12 @@ class TestBDAddress:
         assert addr.type == AddressType.PUBLIC
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_address.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # pybluehost/core/address.py
@@ -423,12 +423,12 @@ class BDAddress:
         return ":".join(f"{b:02X}" for b in self.address)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_address.py -v`
 Expected: All 16 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/core/address.py tests/unit/core/test_address.py
@@ -443,7 +443,7 @@ git commit -m "feat(core): add BDAddress and AddressType"
 - Create: `pybluehost/core/uuid.py`
 - Create: `tests/unit/core/test_uuid.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/unit/core/test_uuid.py
@@ -555,12 +555,12 @@ class TestUUID128:
         assert u.to_uuid16() is None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_uuid.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # pybluehost/core/uuid.py
@@ -657,12 +657,12 @@ class UUID128:
         return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_uuid.py -v`
 Expected: All 18 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/core/uuid.py tests/unit/core/test_uuid.py
@@ -679,7 +679,7 @@ git commit -m "feat(core): add UUID16 and UUID128 types"
 - Create: `tests/unit/core/test_keys.py`
 - Create: `tests/unit/core/test_types.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/unit/core/test_keys.py
@@ -762,12 +762,12 @@ class TestLinkType:
         assert LinkType.LE == 0x03
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/unit/core/test_keys.py tests/unit/core/test_types.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementations**
+- [x] **Step 3: Write minimal implementations**
 
 ```python
 # pybluehost/core/keys.py
@@ -856,12 +856,12 @@ class LinkType(IntEnum):
     LE = 0x03
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/unit/core/test_keys.py tests/unit/core/test_types.py -v`
 Expected: All 14 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/core/keys.py pybluehost/core/types.py tests/unit/core/test_keys.py tests/unit/core/test_types.py
@@ -876,7 +876,7 @@ git commit -m "feat(core): add key types (LinkKey/LTK/IRK/CSRK) and shared enums
 - Create: `pybluehost/core/buffer.py`
 - Create: `tests/unit/core/test_buffer.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/unit/core/test_buffer.py
@@ -969,12 +969,12 @@ class TestByteBufferRead:
         assert buf.offset == 3
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_buffer.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # pybluehost/core/buffer.py
@@ -1058,12 +1058,12 @@ class ByteBuffer:
         return len(self._buf)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_buffer.py -v`
 Expected: All 16 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/core/buffer.py tests/unit/core/test_buffer.py
@@ -1078,7 +1078,7 @@ git commit -m "feat(core): add ByteBuffer for PDU construction and parsing"
 - Create: `pybluehost/core/statemachine.py`
 - Create: `tests/unit/core/test_statemachine.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/unit/core/test_statemachine.py
@@ -1235,12 +1235,12 @@ class TestStateMachineTimeout:
         assert sm.state == S.DONE  # timeout should NOT have fired
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_statemachine.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # pybluehost/core/statemachine.py
@@ -1361,12 +1361,12 @@ class StateMachine(Generic[S, E]):
             self._timeout_task = None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_statemachine.py -v`
 Expected: All 11 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/core/statemachine.py tests/unit/core/test_statemachine.py
@@ -1381,7 +1381,7 @@ git commit -m "feat(core): add StateMachine[S, E] framework with timeouts and ob
 - Create: `pybluehost/core/trace.py`
 - Create: `tests/unit/core/test_trace.py`
 
-- [ ] **Step 1: Write the failing tests for TraceEvent and TraceSystem**
+- [x] **Step 1: Write the failing tests for TraceEvent and TraceSystem**
 
 ```python
 # tests/unit/core/test_trace.py
@@ -1587,12 +1587,12 @@ def _make_event(layer: str, direction: Direction, raw: bytes) -> TraceEvent:
     )
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_trace.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # pybluehost/core/trace.py
@@ -1736,12 +1736,12 @@ class CallbackSink:
         pass
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_trace.py -v`
 Expected: All 14 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/core/trace.py tests/unit/core/test_trace.py
@@ -1756,7 +1756,7 @@ git commit -m "feat(core): add TraceSystem with RingBufferSink and CallbackSink"
 - Modify: `pybluehost/core/trace.py`
 - Modify: `tests/unit/core/test_trace.py`
 
-- [ ] **Step 1: Write the failing tests for JsonSink**
+- [x] **Step 1: Write the failing tests for JsonSink**
 
 Append to `tests/unit/core/test_trace.py`:
 
@@ -1818,12 +1818,12 @@ class TestJsonSink:
         assert obj["meta"] == {"extra": "info"}
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_trace.py::TestJsonSink -v`
 Expected: FAIL (JsonSink not yet fully implemented or not imported)
 
-- [ ] **Step 3: Add JsonSink implementation to trace.py**
+- [x] **Step 3: Add JsonSink implementation to trace.py**
 
 Add to `pybluehost/core/trace.py`:
 
@@ -1863,17 +1863,17 @@ class JsonSink:
         self._file.close()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_trace.py::TestJsonSink -v`
 Expected: All 3 tests PASS.
 
-- [ ] **Step 5: Run full trace test suite**
+- [x] **Step 5: Run full trace test suite**
 
 Run: `uv run pytest tests/unit/core/test_trace.py -v`
 Expected: All 17 tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/core/trace.py tests/unit/core/test_trace.py
@@ -1888,7 +1888,7 @@ git commit -m "feat(core): add JsonSink for JSONL trace output"
 - Modify: `pybluehost/core/trace.py`
 - Modify: `tests/unit/core/test_trace.py`
 
-- [ ] **Step 1: Write the failing tests for BtsnoopSink**
+- [x] **Step 1: Write the failing tests for BtsnoopSink**
 
 Append to `tests/unit/core/test_trace.py`:
 
@@ -1966,12 +1966,12 @@ class TestBtsnoopSink:
 
 Also add `BtsnoopSink` to the import at the top of the test file.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_trace.py::TestBtsnoopSink -v`
 Expected: FAIL
 
-- [ ] **Step 3: Add BtsnoopSink implementation to trace.py**
+- [x] **Step 3: Add BtsnoopSink implementation to trace.py**
 
 Add to `pybluehost/core/trace.py`:
 
@@ -2028,17 +2028,17 @@ class BtsnoopSink:
         self._file.close()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_trace.py::TestBtsnoopSink -v`
 Expected: All 4 tests PASS.
 
-- [ ] **Step 5: Run full trace test suite**
+- [x] **Step 5: Run full trace test suite**
 
 Run: `uv run pytest tests/unit/core/test_trace.py -v`
 Expected: All 21 tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/core/trace.py tests/unit/core/test_trace.py
@@ -2053,7 +2053,7 @@ git commit -m "feat(core): add BtsnoopSink for Wireshark-compatible HCI trace"
 - Modify: `pybluehost/core/trace.py`
 - Modify: `tests/unit/core/test_trace.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/unit/core/test_trace.py`:
 
@@ -2100,12 +2100,12 @@ class TestStateMachineTraceBridge:
         assert received[0].decoded["event"] == "GO"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_trace.py::TestStateMachineTraceBridge -v`
 Expected: FAIL
 
-- [ ] **Step 3: Add StateMachineTraceBridge to trace.py**
+- [x] **Step 3: Add StateMachineTraceBridge to trace.py**
 
 Add to `pybluehost/core/trace.py`:
 
@@ -2143,17 +2143,17 @@ Add missing import at top of `trace.py`:
 from datetime import datetime, timezone
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_trace.py::TestStateMachineTraceBridge -v`
 Expected: PASS
 
-- [ ] **Step 5: Run full test suite**
+- [x] **Step 5: Run full test suite**
 
 Run: `uv run pytest tests/unit/core/ -v`
 Expected: All tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/core/trace.py tests/unit/core/test_trace.py
@@ -2177,7 +2177,7 @@ The SIG YAML data is already available at `pybluehost/lib/sig/` as a git submodu
 - `assigned_numbers/core/ad_types.yaml`: `{ad_types: [{value: 0x01, name: "Flags", reference: "..."}, ...]}`
 - `assigned_numbers/core/appearance_values.yaml`: `{appearance_values: [{category: 0x000, name: "Unknown"}, ...]}`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/unit/core/test_sig_db.py
@@ -2301,12 +2301,12 @@ class TestSingleton:
         SIGDatabase._instance = None  # cleanup
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/unit/core/test_sig_db.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # pybluehost/core/sig_db.py
@@ -2459,17 +2459,17 @@ class SIGDatabase:
         }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/unit/core/test_sig_db.py -v`
 Expected: All 18 tests PASS.
 
-- [ ] **Step 5: Run full core test suite**
+- [x] **Step 5: Run full core test suite**
 
 Run: `uv run pytest tests/unit/core/ -v`
 Expected: All tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/core/sig_db.py tests/unit/core/test_sig_db.py
@@ -2484,7 +2484,7 @@ git commit -m "feat(core): add SIGDatabase with lazy-loaded YAML lookups"
 - Modify: `pybluehost/core/__init__.py`
 - Modify: `pybluehost/__init__.py`
 
-- [ ] **Step 1: Update core/__init__.py with public exports**
+- [x] **Step 1: Update core/__init__.py with public exports**
 
 ```python
 # pybluehost/core/__init__.py
@@ -2552,17 +2552,17 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 Run: `uv run pytest tests/ -v --tb=short`
 Expected: All tests PASS (approximately 80+ tests).
 
-- [ ] **Step 3: Run with coverage**
+- [x] **Step 3: Run with coverage**
 
 Run: `uv run pytest tests/ --cov=pybluehost.core --cov-report=term-missing`
 Expected: Core module coverage ≥ 85%.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add pybluehost/core/__init__.py pybluehost/__init__.py
@@ -2575,7 +2575,43 @@ git commit -m "feat(core): finalize core package exports"
 
 After all tasks are complete, verify:
 
-- [ ] `uv run pytest tests/ -v` — all tests pass
-- [ ] `uv run pytest tests/ --cov=pybluehost.core --cov-report=term-missing` — coverage ≥ 85%
-- [ ] `python -c "from pybluehost.core import StateMachine, TraceSystem, SIGDatabase, BDAddress, UUID16"` — imports work
-- [ ] `python -c "from pybluehost.core.sig_db import SIGDatabase; db = SIGDatabase.get(); print(db.service_name(0x180D))"` — prints "Heart Rate"
+- [x] `uv run pytest tests/ -v` — all tests pass
+- [x] `uv run pytest tests/ --cov=pybluehost.core --cov-report=term-missing` — coverage ≥ 85%
+- [x] `python -c "from pybluehost.core import StateMachine, TraceSystem, SIGDatabase, BDAddress, UUID16"` — imports work
+- [x] `python -c "from pybluehost.core.sig_db import SIGDatabase; db = SIGDatabase.get(); print(db.service_name(0x180D))"` — prints "Heart Rate"
+
+---
+
+## 补充遗漏项（2026-04-16 深度审查后追加）
+
+以下功能在 2026-04-16 深度审查中发现遗漏，需在后续 Plan 中补入。**不修改本 Plan 已完成的代码**，以追加任务的形式并入相关 Plan。
+
+### 遗漏项 1：`core/gap_common.py`（并入 Plan 8a）
+- **缺失内容**：`AdvertisingData`、`ClassOfDevice`、`Appearance`、`FilterPolicy`、`DeviceInfo` 类型定义
+- **架构文档来源**：arch/01-layering.md §1.2、arch/11-gap.md §11.2
+- **影响**：Plan 8a（BLE GAP）中需要修改 `core/` 层；建议将 `gap_common.py` 在 Plan 8a 中作为第一个任务创建
+- **测试**：需测试 `AdvertisingData` 的 AD type 序列化/反序列化
+
+### 遗漏项 2：`TracingProxy`（并入 Plan 4b）
+- **缺失内容**：装饰任意 SAP 实现、自动 emit `TraceEvent` 的透明代理类
+- **架构文档来源**：arch/04-trace.md §4.5
+- **影响**：Trace 零侵入机制的核心；HCI Controller 首次使用 Trace 时必须有此类
+- **测试**：需用 `StubSAP` + `TracingProxy` 验证 emit 调用链
+
+### 遗漏项 3：`PcapngSink`（并入 Plan 10a）
+- **缺失内容**：将 HCI 事件以 pcapng 格式写入文件，Wireshark 可直接打开
+- **架构文档来源**：arch/04-trace.md §4.4、PRD §5.7
+- **影响**：与 `BtsnoopSink` 并列的两种 Wireshark 格式，PRD 明确要求支持
+- **测试**：写入后验证 pcapng 文件头部 magic（`0x0A0D0D0A`）和 section block 格式
+
+### 常见问题 / Troubleshooting
+
+#### Q: SIG submodule 相关测试全部 SKIP
+- **现象**：`tests/unit/core/test_sig_db.py` 中 20 个测试显示 SKIPPED
+- **原因**：`pybluehost/lib/sig` submodule 未初始化
+- **解决方案**：`git submodule update --init`（需要访问 bitbucket.org）
+- **无网络环境**：用 PowerShell `New-Item -ItemType Junction` 将主仓库 sig 目录 junction 到 worktree
+
+#### Q: `pytest-asyncio` async fixture 报错
+- **现象**：async fixture 使用 `@pytest.fixture` 报 `ScopeMismatch` 或不执行
+- **解决方案**：async fixture 必须用 `@pytest_asyncio.fixture`，普通 fixture 用 `@pytest.fixture`
