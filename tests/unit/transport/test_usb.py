@@ -1,0 +1,194 @@
+"""Tests for USB transport: ChipInfo, KNOWN_CHIPS, USBTransport, auto_detect, endpoint routing."""
+
+import pytest
+from unittest.mock import MagicMock, patch
+
+from pybluehost.transport.usb import (
+    ChipInfo,
+    KNOWN_CHIPS,
+    USBTransport,
+    IntelUSBTransport,
+    RealtekUSBTransport,
+    NoBluetoothDeviceError,
+)
+from pybluehost.transport.firmware import FirmwarePolicy
+
+
+# --- ChipInfo & KNOWN_CHIPS ---
+
+def test_known_chips_not_empty():
+    assert len(KNOWN_CHIPS) >= 10
+
+
+def test_known_chips_intel_ax210():
+    ax210 = next((c for c in KNOWN_CHIPS if c.name == "AX210"), None)
+    assert ax210 is not None
+    assert ax210.vid == 0x8087
+    assert ax210.pid == 0x0032
+    assert ax210.vendor == "intel"
+
+
+def test_known_chips_realtek_rtl8761b():
+    rtl = next((c for c in KNOWN_CHIPS if c.name == "RTL8761B"), None)
+    assert rtl is not None
+    assert rtl.vid == 0x0BDA
+    assert rtl.pid == 0x8771
+    assert rtl.vendor == "realtek"
+
+
+def test_chip_info_dataclass():
+    chip = ChipInfo(
+        vendor="intel",
+        name="AX210",
+        vid=0x8087,
+        pid=0x0032,
+        firmware_pattern="ibt-0040-*",
+        transport_class=None,
+    )
+    assert chip.vid == 0x8087
+    assert chip.firmware_pattern == "ibt-0040-*"
+
+
+def test_chip_info_is_frozen():
+    chip = ChipInfo("intel", "Test", 0x1234, 0x5678, "fw-*", None)
+    with pytest.raises(AttributeError):
+        chip.name = "Changed"
+
+
+# --- auto_detect ---
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_no_device_raises(mock_usb):
+    mock_usb.core.find.return_value = []
+    with pytest.raises(NoBluetoothDeviceError):
+        USBTransport.auto_detect()
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_known_intel_chip(mock_usb):
+    mock_device = MagicMock()
+    mock_device.idVendor = 0x8087
+    mock_device.idProduct = 0x0032
+    mock_usb.core.find.return_value = [mock_device]
+    transport = USBTransport.auto_detect()
+    assert isinstance(transport, IntelUSBTransport)
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_known_realtek_chip(mock_usb):
+    mock_device = MagicMock()
+    mock_device.idVendor = 0x0BDA
+    mock_device.idProduct = 0x8771
+    mock_usb.core.find.return_value = [mock_device]
+    transport = USBTransport.auto_detect()
+    assert isinstance(transport, RealtekUSBTransport)
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_unknown_bt_device_class(mock_usb):
+    """Unknown VID/PID but Bluetooth device class → generic USBTransport."""
+    mock_device = MagicMock()
+    mock_device.idVendor = 0x9999
+    mock_device.idProduct = 0x0001
+    mock_device.bDeviceClass = 0xE0
+    mock_device.bDeviceSubClass = 0x01
+    mock_device.bDeviceProtocol = 0x01
+    # First find (known chips) returns no match; second find (by class) returns device
+    mock_usb.core.find.side_effect = [[], [mock_device]]
+    transport = USBTransport.auto_detect()
+    assert isinstance(transport, USBTransport)
+    assert not isinstance(transport, (IntelUSBTransport, RealtekUSBTransport))
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_nothing_at_all(mock_usb):
+    """No known chips and no BT class device → NoBluetoothDeviceError."""
+    mock_usb.core.find.side_effect = [[], []]
+    with pytest.raises(NoBluetoothDeviceError):
+        USBTransport.auto_detect()
+
+
+# --- Endpoint routing ---
+
+@pytest.mark.asyncio
+async def test_send_command_routes_to_control():
+    """H4 type 0x01 (HCI Command) routes to control endpoint."""
+    chip = ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport)
+    transport = USBTransport(device=MagicMock(), chip_info=chip)
+    control_calls = []
+
+    async def fake_control_out(data):
+        control_calls.append(data)
+
+    transport._control_out = fake_control_out
+    await transport.send(b"\x01\x03\x0c\x00")
+    assert len(control_calls) == 1
+    assert control_calls[0] == b"\x03\x0c\x00"
+
+
+@pytest.mark.asyncio
+async def test_send_acl_routes_to_bulk_out():
+    """H4 type 0x02 (ACL Data) routes to bulk OUT endpoint."""
+    chip = ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport)
+    transport = USBTransport(device=MagicMock(), chip_info=chip)
+    bulk_calls = []
+
+    async def fake_bulk_out(data):
+        bulk_calls.append(data)
+
+    transport._bulk_out = fake_bulk_out
+    await transport.send(b"\x02\x00\x20\x04\x00test")
+    assert len(bulk_calls) == 1
+    assert bulk_calls[0] == b"\x00\x20\x04\x00test"
+
+
+@pytest.mark.asyncio
+async def test_send_sco_routes_to_isoch_out():
+    """H4 type 0x03 (SCO Data) routes to isochronous OUT endpoint."""
+    chip = ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport)
+    transport = USBTransport(device=MagicMock(), chip_info=chip)
+    isoch_calls = []
+
+    async def fake_isoch_out(data):
+        isoch_calls.append(data)
+
+    transport._isoch_out = fake_isoch_out
+    await transport.send(b"\x03\x00\x10\x03abc")
+    assert len(isoch_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_send_unknown_type_raises():
+    """Unknown H4 packet type raises ValueError."""
+    chip = ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport)
+    transport = USBTransport(device=MagicMock(), chip_info=chip)
+    with pytest.raises(ValueError, match="Unknown H4 packet type"):
+        await transport.send(b"\x05\x00\x00")
+
+
+# --- Transport properties ---
+
+def test_usb_transport_info():
+    chip = ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport)
+    transport = USBTransport(device=MagicMock(), chip_info=chip)
+    info = transport.info
+    assert info.type == "usb"
+    assert "AX210" in info.description
+
+
+def test_usb_transport_is_open_default_false():
+    chip = ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport)
+    transport = USBTransport(device=MagicMock(), chip_info=chip)
+    assert transport.is_open is False
+
+
+def test_intel_transport_is_usb_transport():
+    chip = ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport)
+    transport = IntelUSBTransport(device=MagicMock(), chip_info=chip)
+    assert isinstance(transport, USBTransport)
+
+
+def test_realtek_transport_is_usb_transport():
+    chip = ChipInfo("realtek", "RTL8761B", 0x0BDA, 0x8771, "rtl_fw", RealtekUSBTransport)
+    transport = RealtekUSBTransport(device=MagicMock(), chip_info=chip)
+    assert isinstance(transport, USBTransport)
