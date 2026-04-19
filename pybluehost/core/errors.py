@@ -55,3 +55,7 @@ class TimeoutError(PyBlueHostError):
     def __init__(self, message: str, timeout: float = 0.0) -> None:
         super().__init__(message)
         self.timeout = timeout
+
+
+class CommandTimeoutError(HCIError):
+    """Raised when an HCI command does not receive a response within the timeout."""

@@ -18,6 +18,21 @@ from pybluehost.hci.constants import (
     HCI_RESET as HCI_RESET_OPCODE,
     HCI_SCO_PACKET,
     HCI_LE_SET_SCAN_ENABLE as HCI_LE_SET_SCAN_ENABLE_OPCODE,
+    HCI_READ_BD_ADDR,
+    HCI_READ_LOCAL_VERSION,
+    HCI_READ_BUFFER_SIZE,
+    HCI_LE_READ_BUFFER_SIZE,
+    HCI_SET_EVENT_MASK,
+    HCI_LE_SET_EVENT_MASK,
+    HCI_WRITE_LE_HOST_SUPPORTED,
+    HCI_WRITE_SIMPLE_PAIRING_MODE,
+    HCI_WRITE_SCAN_ENABLE,
+    HCI_HOST_BUFFER_SIZE,
+    HCI_LE_SET_SCAN_PARAMS,
+    HCI_LE_SET_RANDOM_ADDRESS,
+    HCI_READ_LOCAL_SUPPORTED_COMMANDS,
+    HCI_READ_LOCAL_SUPPORTED_FEATURES,
+    HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
     EventCode,
 )
 
@@ -230,6 +245,300 @@ class HCI_LE_Set_Scan_Enable(HCICommand):
     def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Scan_Enable:
         enable, dup = struct.unpack_from("<BB", parameters)
         return cls(le_scan_enable=enable, filter_duplicates=dup)
+
+
+@PacketRegistry.register_command(HCI_READ_BD_ADDR)
+@dataclass
+class HCI_Read_BD_ADDR_Command(HCICommand):
+    """HCI_Read_BD_ADDR command."""
+
+    opcode: int = field(default=HCI_READ_BD_ADDR, init=False)
+    parameters: bytes = field(default=b"", init=False)
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Read_BD_ADDR_Command:
+        return cls()
+
+
+@PacketRegistry.register_command(HCI_READ_LOCAL_VERSION)
+@dataclass
+class HCI_Read_Local_Version_Command(HCICommand):
+    """HCI_Read_Local_Version_Information command."""
+
+    opcode: int = field(default=HCI_READ_LOCAL_VERSION, init=False)
+    parameters: bytes = field(default=b"", init=False)
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Read_Local_Version_Command:
+        return cls()
+
+
+@PacketRegistry.register_command(HCI_READ_BUFFER_SIZE)
+@dataclass
+class HCI_Read_Buffer_Size_Command(HCICommand):
+    """HCI_Read_Buffer_Size command."""
+
+    opcode: int = field(default=HCI_READ_BUFFER_SIZE, init=False)
+    parameters: bytes = field(default=b"", init=False)
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Read_Buffer_Size_Command:
+        return cls()
+
+
+@PacketRegistry.register_command(HCI_LE_READ_BUFFER_SIZE)
+@dataclass
+class HCI_LE_Read_Buffer_Size_Command(HCICommand):
+    """HCI_LE_Read_Buffer_Size command."""
+
+    opcode: int = field(default=HCI_LE_READ_BUFFER_SIZE, init=False)
+    parameters: bytes = field(default=b"", init=False)
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Read_Buffer_Size_Command:
+        return cls()
+
+
+@PacketRegistry.register_command(HCI_READ_LOCAL_SUPPORTED_COMMANDS)
+@dataclass
+class HCI_Read_Local_Supported_Commands_Command(HCICommand):
+    """HCI_Read_Local_Supported_Commands command."""
+
+    opcode: int = field(default=HCI_READ_LOCAL_SUPPORTED_COMMANDS, init=False)
+    parameters: bytes = field(default=b"", init=False)
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Read_Local_Supported_Commands_Command:
+        return cls()
+
+
+@PacketRegistry.register_command(HCI_READ_LOCAL_SUPPORTED_FEATURES)
+@dataclass
+class HCI_Read_Local_Supported_Features_Command(HCICommand):
+    """HCI_Read_Local_Supported_Features command."""
+
+    opcode: int = field(default=HCI_READ_LOCAL_SUPPORTED_FEATURES, init=False)
+    parameters: bytes = field(default=b"", init=False)
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Read_Local_Supported_Features_Command:
+        return cls()
+
+
+@PacketRegistry.register_command(HCI_LE_READ_LOCAL_SUPPORTED_FEATURES)
+@dataclass
+class HCI_LE_Read_Local_Supported_Features_Command(HCICommand):
+    """HCI_LE_Read_Local_P_Supported_Features command."""
+
+    opcode: int = field(default=HCI_LE_READ_LOCAL_SUPPORTED_FEATURES, init=False)
+    parameters: bytes = field(default=b"", init=False)
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Read_Local_Supported_Features_Command:
+        return cls()
+
+
+@PacketRegistry.register_command(HCI_SET_EVENT_MASK)
+@dataclass
+class HCI_Set_Event_Mask_Command(HCICommand):
+    """HCI_Set_Event_Mask command."""
+
+    opcode: int = field(default=HCI_SET_EVENT_MASK, init=False)
+    event_mask: bytes = field(default=b"\x00" * 8)
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return self.event_mask
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Set_Event_Mask_Command:
+        return cls(event_mask=parameters[:8])
+
+
+@PacketRegistry.register_command(HCI_LE_SET_EVENT_MASK)
+@dataclass
+class HCI_LE_Set_Event_Mask_Command(HCICommand):
+    """HCI_LE_Set_Event_Mask command."""
+
+    opcode: int = field(default=HCI_LE_SET_EVENT_MASK, init=False)
+    le_event_mask: bytes = field(default=b"\x00" * 8)
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return self.le_event_mask
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Event_Mask_Command:
+        return cls(le_event_mask=parameters[:8])
+
+
+@PacketRegistry.register_command(HCI_WRITE_LE_HOST_SUPPORTED)
+@dataclass
+class HCI_Write_LE_Host_Supported_Command(HCICommand):
+    """HCI_Write_LE_Host_Supported command."""
+
+    opcode: int = field(default=HCI_WRITE_LE_HOST_SUPPORTED, init=False)
+    le_supported_host: int = 0
+    simultaneous_le_host: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return struct.pack("<BB", self.le_supported_host, self.simultaneous_le_host)
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Write_LE_Host_Supported_Command:
+        le_sup, sim = struct.unpack_from("<BB", parameters)
+        return cls(le_supported_host=le_sup, simultaneous_le_host=sim)
+
+
+@PacketRegistry.register_command(HCI_WRITE_SIMPLE_PAIRING_MODE)
+@dataclass
+class HCI_Write_Simple_Pairing_Mode_Command(HCICommand):
+    """HCI_Write_Simple_Pairing_Mode command."""
+
+    opcode: int = field(default=HCI_WRITE_SIMPLE_PAIRING_MODE, init=False)
+    simple_pairing_mode: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return struct.pack("<B", self.simple_pairing_mode)
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Write_Simple_Pairing_Mode_Command:
+        return cls(simple_pairing_mode=parameters[0])
+
+
+@PacketRegistry.register_command(HCI_WRITE_SCAN_ENABLE)
+@dataclass
+class HCI_Write_Scan_Enable_Command(HCICommand):
+    """HCI_Write_Scan_Enable command."""
+
+    opcode: int = field(default=HCI_WRITE_SCAN_ENABLE, init=False)
+    scan_enable: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return struct.pack("<B", self.scan_enable)
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Write_Scan_Enable_Command:
+        return cls(scan_enable=parameters[0])
+
+
+@PacketRegistry.register_command(HCI_HOST_BUFFER_SIZE)
+@dataclass
+class HCI_Host_Buffer_Size_Command(HCICommand):
+    """HCI_Host_Buffer_Size command."""
+
+    opcode: int = field(default=HCI_HOST_BUFFER_SIZE, init=False)
+    host_acl_data_packet_length: int = 0
+    host_synchronous_data_packet_length: int = 0
+    host_total_num_acl_data_packets: int = 0
+    host_total_num_synchronous_data_packets: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return struct.pack(
+            "<HBHH",
+            self.host_acl_data_packet_length,
+            self.host_synchronous_data_packet_length,
+            self.host_total_num_acl_data_packets,
+            self.host_total_num_synchronous_data_packets,
+        )
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Host_Buffer_Size_Command:
+        acl_len, sco_len, acl_num, sco_num = struct.unpack_from("<HBHH", parameters)
+        return cls(
+            host_acl_data_packet_length=acl_len,
+            host_synchronous_data_packet_length=sco_len,
+            host_total_num_acl_data_packets=acl_num,
+            host_total_num_synchronous_data_packets=sco_num,
+        )
+
+
+@PacketRegistry.register_command(HCI_LE_SET_SCAN_PARAMS)
+@dataclass
+class HCI_LE_Set_Scan_Parameters_Command(HCICommand):
+    """HCI_LE_Set_Scan_Parameters command."""
+
+    opcode: int = field(default=HCI_LE_SET_SCAN_PARAMS, init=False)
+    le_scan_type: int = 0
+    le_scan_interval: int = 0
+    le_scan_window: int = 0
+    own_address_type: int = 0
+    scanning_filter_policy: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return struct.pack(
+            "<BHHBB",
+            self.le_scan_type,
+            self.le_scan_interval,
+            self.le_scan_window,
+            self.own_address_type,
+            self.scanning_filter_policy,
+        )
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Scan_Parameters_Command:
+        scan_type, interval, window, addr_type, policy = struct.unpack_from("<BHHBB", parameters)
+        return cls(
+            le_scan_type=scan_type,
+            le_scan_interval=interval,
+            le_scan_window=window,
+            own_address_type=addr_type,
+            scanning_filter_policy=policy,
+        )
+
+
+@PacketRegistry.register_command(HCI_LE_SET_RANDOM_ADDRESS)
+@dataclass
+class HCI_LE_Set_Random_Address_Command(HCICommand):
+    """HCI_LE_Set_Random_Address command."""
+
+    opcode: int = field(default=HCI_LE_SET_RANDOM_ADDRESS, init=False)
+    random_address: bytes = field(default=b"\x00" * 6)
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return self.random_address
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Random_Address_Command:
+        return cls(random_address=parameters[:6])
 
 
 # ---------------------------------------------------------------------------

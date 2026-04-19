@@ -3,6 +3,7 @@
 from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.buffer import ByteBuffer
 from pybluehost.core.errors import (
+    CommandTimeoutError,
     GATTError,
     HCIError,
     InvalidTransitionError,
@@ -35,6 +36,7 @@ __all__ = [
     "ByteBuffer",
     "CSRK",
     "CallbackSink",
+    "CommandTimeoutError",
     "ConnectionRole",
     "Direction",
     "GATTError",
