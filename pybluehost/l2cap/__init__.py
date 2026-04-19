@@ -6,6 +6,12 @@ from pybluehost.l2cap.channel import (
     SimpleChannelEvents,
 )
 from pybluehost.l2cap.ble import FixedChannel, LECoCChannel
+from pybluehost.l2cap.classic import (
+    ChannelMode,
+    ClassicChannel,
+    ERTMEngine,
+    StreamingEngine,
+)
 from pybluehost.l2cap.constants import (
     CID_ATT,
     CID_CLASSIC_SIGNALING,
@@ -32,6 +38,11 @@ __all__ = [
     # ble
     "FixedChannel",
     "LECoCChannel",
+    # classic
+    "ChannelMode",
+    "ClassicChannel",
+    "ERTMEngine",
+    "StreamingEngine",
     # constants
     "CID_ATT",
     "CID_CLASSIC_SIGNALING",
