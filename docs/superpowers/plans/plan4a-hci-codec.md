@@ -32,7 +32,7 @@
 
 **Files:** Create `pybluehost/hci/constants.py`, `tests/unit/hci/__init__.py`, `tests/unit/hci/test_constants.py`
 
-- [ ] **Step 1: Write failing tests for opcode construction**
+- [x] **Step 1: Write failing tests for opcode construction**
 
 ```python
 # tests/unit/hci/test_constants.py
@@ -75,12 +75,12 @@ def test_error_codes():
     assert ErrorCode.CONNECTION_TIMEOUT == 0x08
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 ```bash
 uv run pytest tests/unit/hci/test_constants.py -v
 ```
 
-- [ ] **Step 3: Implement `pybluehost/hci/constants.py`**
+- [x] **Step 3: Implement `pybluehost/hci/constants.py`**
 
 ```python
 from enum import IntEnum
@@ -256,12 +256,12 @@ ACL_PB_FIRST_AUTO_FLUSH      = 0x02
 ACL_PB_COMPLETE_L2CAP        = 0x03
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 ```bash
 uv run pytest tests/unit/hci/test_constants.py -v
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/hci/constants.py tests/unit/hci/
 git commit -m "feat(hci): add HCI constants — opcodes, event codes, error codes"
@@ -273,7 +273,7 @@ git commit -m "feat(hci): add HCI constants — opcodes, event codes, error code
 
 **Files:** Modify `pybluehost/hci/packets.py`, `tests/unit/hci/test_packets.py`
 
-- [ ] **Step 1: Write failing tests for packet encode/decode**
+- [x] **Step 1: Write failing tests for packet encode/decode**
 
 ```python
 # tests/unit/hci/test_packets.py
@@ -371,9 +371,9 @@ def test_le_meta_connection_complete():
     assert pkt.subevent_code == 0x01
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `pybluehost/hci/packets.py`**
+- [x] **Step 3: Implement `pybluehost/hci/packets.py`**
 
 Key design:
 - `HCIPacket` base with `to_bytes()` / `from_bytes()` class method
@@ -387,9 +387,9 @@ Key design:
 - Concrete command classes: `HCI_Reset`, `HCI_LE_Set_Scan_Enable`, etc.
 - Concrete event classes: `HCI_Command_Complete_Event`, `HCI_Command_Status_Event`, `HCI_Connection_Complete_Event`, `HCI_Disconnection_Complete_Event`, `HCI_Number_Of_Completed_Packets_Event`, `HCI_LE_Meta_Event`, `HCI_LE_Connection_Complete_SubEvent`, `HCI_LE_Advertising_Report_SubEvent`
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/hci/packets.py tests/unit/hci/test_packets.py
 git commit -m "feat(hci): add HCI packet codec with PacketRegistry"
@@ -401,7 +401,7 @@ git commit -m "feat(hci): add HCI packet codec with PacketRegistry"
 
 **Files:** `pybluehost/hci/flow.py`, `tests/unit/hci/test_flow.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/hci/test_flow.py
@@ -468,9 +468,9 @@ def test_acl_segment():
     assert b"".join(s for s in segments) == data
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `pybluehost/hci/flow.py`**
+- [x] **Step 3: Implement `pybluehost/hci/flow.py`**
 
 ```python
 import asyncio
@@ -534,9 +534,9 @@ class ACLFlowController:
         return [data[i:i+size] for i in range(0, len(data), size)]
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/hci/flow.py tests/unit/hci/test_flow.py
 git commit -m "feat(hci): add CommandFlowController and ACLFlowController"
@@ -552,7 +552,7 @@ These vendor modules are consumed by `USBTransport` (Plan 2.5) during firmware l
 They re-use `make_opcode` and `OGF.VENDOR` from `constants.py` so that opcodes are
 guaranteed to match the bit layout expected by `PacketRegistry`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/hci/test_vendor.py
@@ -663,12 +663,12 @@ def test_realtek_rom_version_from_bytes_nonzero_status():
     assert rv.rom_version == 0x0000
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 ```bash
 uv run pytest tests/unit/hci/test_vendor.py -v
 ```
 
-- [ ] **Step 3: Implement `pybluehost/hci/vendor/__init__.py`**
+- [x] **Step 3: Implement `pybluehost/hci/vendor/__init__.py`**
 
 ```python
 # pybluehost/hci/vendor/__init__.py
@@ -697,7 +697,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: Implement `pybluehost/hci/vendor/intel.py`**
+- [x] **Step 4: Implement `pybluehost/hci/vendor/intel.py`**
 
 ```python
 # pybluehost/hci/vendor/intel.py
@@ -797,7 +797,7 @@ class IntelReadVersionResponse:
         )
 ```
 
-- [ ] **Step 5: Implement `pybluehost/hci/vendor/realtek.py`**
+- [x] **Step 5: Implement `pybluehost/hci/vendor/realtek.py`**
 
 ```python
 # pybluehost/hci/vendor/realtek.py
@@ -852,12 +852,12 @@ class RealtekROMVersion:
         return struct.pack(self._FORMAT, self.status, self.rom_version)
 ```
 
-- [ ] **Step 6: Run tests — verify they pass**
+- [x] **Step 6: Run tests — verify they pass**
 ```bash
 uv run pytest tests/unit/hci/test_vendor.py -v
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 ```bash
 git add pybluehost/hci/vendor/ tests/unit/hci/test_vendor.py
 git commit -m "feat(hci): add vendor subpackage with Intel and Realtek constants"
