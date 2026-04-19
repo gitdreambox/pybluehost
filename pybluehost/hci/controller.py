@@ -175,6 +175,68 @@ class HCIController:
     # ACL data sending
     # ------------------------------------------------------------------
 
+    async def initialize(self) -> None:
+        """Send the standard HCI initialization sequence (16 commands)."""
+        from pybluehost.hci.packets import (
+            HCI_Reset,
+            HCI_Read_Local_Version_Command,
+            HCI_Read_Local_Supported_Commands_Command,
+            HCI_Read_Local_Supported_Features_Command,
+            HCI_Read_BD_ADDR_Command,
+            HCI_Read_Buffer_Size_Command,
+            HCI_LE_Read_Buffer_Size_Command,
+            HCI_LE_Read_Local_Supported_Features_Command,
+            HCI_Set_Event_Mask_Command,
+            HCI_LE_Set_Event_Mask_Command,
+            HCI_Write_LE_Host_Supported_Command,
+            HCI_Write_Simple_Pairing_Mode_Command,
+            HCI_Write_Scan_Enable_Command,
+            HCI_Host_Buffer_Size_Command,
+            HCI_LE_Set_Scan_Parameters_Command,
+            HCI_LE_Set_Random_Address_Command,
+        )
+
+        EVENT_MASK_ALL = b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x3F"
+        LE_EVENT_MASK = b"\x1F\x00\x00\x00\x00\x00\x00\x00"
+        RANDOM_ADDRESS = bytes(6)
+
+        init_commands = [
+            HCI_Reset(),
+            HCI_Read_Local_Version_Command(),
+            HCI_Read_Local_Supported_Commands_Command(),
+            HCI_Read_Local_Supported_Features_Command(),
+            HCI_Read_BD_ADDR_Command(),
+            HCI_Read_Buffer_Size_Command(),
+            HCI_LE_Read_Buffer_Size_Command(),
+            HCI_LE_Read_Local_Supported_Features_Command(),
+            HCI_Set_Event_Mask_Command(event_mask=EVENT_MASK_ALL),
+            HCI_LE_Set_Event_Mask_Command(le_event_mask=LE_EVENT_MASK),
+            HCI_Write_LE_Host_Supported_Command(le_supported_host=0x01, simultaneous_le_host=0x00),
+            HCI_Write_Simple_Pairing_Mode_Command(simple_pairing_mode=0x01),
+            HCI_Write_Scan_Enable_Command(scan_enable=0x00),
+            HCI_Host_Buffer_Size_Command(
+                host_acl_data_packet_length=0x0200,
+                host_synchronous_data_packet_length=0xFF,
+                host_total_num_acl_data_packets=0x0014,
+                host_total_num_synchronous_data_packets=0x0000,
+            ),
+            HCI_LE_Set_Scan_Parameters_Command(
+                le_scan_type=0x01,
+                le_scan_interval=0x0010,
+                le_scan_window=0x0010,
+                own_address_type=0x00,
+                scanning_filter_policy=0x00,
+            ),
+            HCI_LE_Set_Random_Address_Command(random_address=RANDOM_ADDRESS),
+        ]
+
+        for cmd in init_commands:
+            await self.send_command(cmd)
+
+    # ------------------------------------------------------------------
+    # ACL data sending
+    # ------------------------------------------------------------------
+
     async def send_acl_data(self, handle: int, pb_flag: int, data: bytes) -> None:
         """Send ACL data, respecting controller flow control."""
         await self._acl_flow.acquire(handle)
