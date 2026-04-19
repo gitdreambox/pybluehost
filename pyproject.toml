@@ -34,6 +34,9 @@ dev = [
     "pyserial-asyncio>=0.6",
 ]
 
+[project.scripts]
+pybluehost = "pybluehost.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/xcode4096/pybluehost"
 
