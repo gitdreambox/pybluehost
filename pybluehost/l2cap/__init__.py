@@ -28,6 +28,7 @@ from pybluehost.l2cap.constants import (
     SignalingCode,
 )
 from pybluehost.l2cap.sar import Reassembler, Segmenter
+from pybluehost.l2cap.manager import L2CAPManager
 from pybluehost.l2cap.signaling import (
     ConnParamUpdateRequest,
     ConnParamUpdateResponse,
@@ -67,6 +68,8 @@ __all__ = [
     # sar
     "Reassembler",
     "Segmenter",
+    # manager
+    "L2CAPManager",
     # signaling
     "ConnParamUpdateRequest",
     "ConnParamUpdateResponse",
