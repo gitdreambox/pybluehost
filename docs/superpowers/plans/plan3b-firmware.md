@@ -26,7 +26,7 @@
 
 **Files:** `pybluehost/transport/firmware/__init__.py`, `tests/unit/transport/test_firmware.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/transport/test_firmware.py
@@ -81,9 +81,9 @@ def test_firmware_search_priority(tmp_path):
     assert result.read_bytes() == b"\x02"
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `pybluehost/transport/firmware/__init__.py`**
+- [x] **Step 3: Implement `pybluehost/transport/firmware/__init__.py`**
 
 ```python
 from enum import Enum
@@ -124,9 +124,9 @@ class FirmwareManager:
         """Build user-friendly message with download instructions."""
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/transport/firmware/ tests/unit/transport/test_firmware.py
 git commit -m "feat(transport): add FirmwarePolicy and FirmwareManager with priority search"
@@ -146,7 +146,7 @@ This task implements the firmware loading logic inside `IntelUSBTransport._initi
 
 **Files:** `pybluehost/transport/usb.py` (IntelUSBTransport), tests
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/transport/test_usb.py (additions)
@@ -183,9 +183,9 @@ async def test_intel_transport_initialize_sends_read_version(tmp_path):
     # vendor command payload: opcode bytes
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `IntelUSBTransport._initialize()`**
+- [x] **Step 3: Implement `IntelUSBTransport._initialize()`**
 
 ```python
 class IntelUSBTransport(USBTransport):
@@ -206,7 +206,7 @@ class IntelUSBTransport(USBTransport):
         """Send Intel vendor command (OGF=0x3F), await Command Complete Event."""
 ```
 
-- [ ] **Step 4: Implement `RealtekUSBTransport._initialize()`**
+- [x] **Step 4: Implement `RealtekUSBTransport._initialize()`**
 
 ```python
 class RealtekUSBTransport(USBTransport):
@@ -222,9 +222,9 @@ class RealtekUSBTransport(USBTransport):
         """
 ```
 
-- [ ] **Step 5: Run tests — verify they pass**
+- [x] **Step 5: Run tests — verify they pass**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 ```bash
 git add pybluehost/transport/usb.py
 git commit -m "feat(transport): add IntelUSBTransport and RealtekUSBTransport with firmware loading"
@@ -238,7 +238,7 @@ git commit -m "feat(transport): add IntelUSBTransport and RealtekUSBTransport wi
 
 **Files:** `pybluehost/cli/__init__.py`, `pybluehost/cli/fw.py`, `pyproject.toml`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/cli/test_fw.py
@@ -258,9 +258,9 @@ def test_fw_download_intel(tmp_path):
         MockFM.return_value.download.assert_called_once()
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement CLI commands**
+- [x] **Step 3: Implement CLI commands**
 
 CLI 命令列表（架构文档 §6.4 定义）:
 - `pybluehost fw download intel` — 下载 Intel 固件
@@ -270,16 +270,16 @@ CLI 命令列表（架构文档 §6.4 定义）:
 - `pybluehost fw auto` — 自动检测芯片并下载对应固件
 - `pybluehost fw clean` — 清理固件缓存
 
-- [ ] **Step 4: Add `[project.scripts]` to pyproject.toml**
+- [x] **Step 4: Add `[project.scripts]` to pyproject.toml**
 
 ```toml
 [project.scripts]
 pybluehost = "pybluehost.cli:main"
 ```
 
-- [ ] **Step 5: Run tests — verify they pass**
+- [x] **Step 5: Run tests — verify they pass**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 ```bash
 git add pybluehost/cli/ tests/unit/cli/ pyproject.toml
 git commit -m "feat(cli): add pybluehost fw CLI tools for firmware management"
@@ -289,17 +289,17 @@ git commit -m "feat(cli): add pybluehost fw CLI tools for firmware management"
 
 ## Task 4: Full Test Run + STATUS.md
 
-- [ ] **Step 1: Run all firmware + USB tests**
+- [x] **Step 1: Run all firmware + USB tests**
 ```bash
 uv run pytest tests/unit/transport/test_firmware.py tests/unit/transport/test_usb.py -v
 ```
 
-- [ ] **Step 2: Run full suite**
+- [x] **Step 2: Run full suite**
 ```bash
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 3: Update STATUS.md — mark Plan 3b complete**
+- [x] **Step 3: Update STATUS.md — mark Plan 3b complete**
 
 ---
 

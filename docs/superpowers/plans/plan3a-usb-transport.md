@@ -30,7 +30,7 @@ usb = ["pyusb>=1.2"]
 
 **Files:** `pybluehost/transport/usb.py` (ChipInfo + USBTransport base), tests
 
-- [ ] **Step 1: Write failing tests (using fake pyusb)**
+- [x] **Step 1: Write failing tests (using fake pyusb)**
 
 ```python
 # tests/unit/transport/test_usb.py
@@ -87,9 +87,9 @@ def test_auto_detect_known_chip(mock_usb):
     assert isinstance(transport, IntelUSBTransport)
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `ChipInfo`, `KNOWN_CHIPS`, `USBTransport` base**
+- [x] **Step 3: Implement `ChipInfo`, `KNOWN_CHIPS`, `USBTransport` base**
 
 ```python
 # pybluehost/transport/usb.py
@@ -170,7 +170,7 @@ class USBTransport(Transport):
         """Windows: check device is bound to WinUSB, not Microsoft Bluetooth driver."""
 ```
 
-- [ ] **Step 4: Implement `IntelUSBTransport` and `RealtekUSBTransport` transport class shells (no firmware loading logic — that is in Plan 3b)**
+- [x] **Step 4: Implement `IntelUSBTransport` and `RealtekUSBTransport` transport class shells (no firmware loading logic — that is in Plan 3b)**
 
 ```python
 class IntelUSBTransport(USBTransport):
@@ -186,7 +186,7 @@ class RealtekUSBTransport(USBTransport):
         """Placeholder — full firmware loading sequence implemented in Plan 3b."""
 ```
 
-- [ ] **Step 5: Fill `KNOWN_CHIPS` transport_class fields after subclass definitions (補充 3)**
+- [x] **Step 5: Fill `KNOWN_CHIPS` transport_class fields after subclass definitions (補充 3)**
 
 ```python
 # After IntelUSBTransport and RealtekUSBTransport are defined:
@@ -199,7 +199,7 @@ for chip in KNOWN_CHIPS:
 
 Note: Alternatively, route by `vendor` field in `auto_detect()` to avoid mutating frozen dataclass instances.
 
-- [ ] **Step 6: Add endpoint routing tests (補充 4)**
+- [x] **Step 6: Add endpoint routing tests (補充 4)**
 
 ```python
 # tests/unit/transport/test_usb.py (additions)
@@ -243,13 +243,13 @@ async def test_send_sco_routes_to_isoch_out(mock_usb):
     assert len(isoch_calls) == 1
 ```
 
-- [ ] **Step 7: Verify TransportSink uses `on_transport_data` (補充 5)**
+- [x] **Step 7: Verify TransportSink uses `on_transport_data` (補充 5)**
 
 **Note**: TransportSink.on_data has been renamed to `on_transport_data` (2026-04-18 interface fix). All references to `on_data` in USB transport code must use `on_transport_data` instead.
 
-- [ ] **Step 8: Run tests — verify they pass**
+- [x] **Step 8: Run tests — verify they pass**
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 ```bash
 git add pybluehost/transport/usb.py tests/unit/transport/test_usb.py
 git commit -m "feat(transport): add USBTransport base with KNOWN_CHIPS registry and auto_detect"
@@ -261,7 +261,7 @@ git commit -m "feat(transport): add USBTransport base with KNOWN_CHIPS registry 
 
 **Files:** `pybluehost/transport/hci_user_channel.py`, tests
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/transport/test_hci_user_channel.py
@@ -282,9 +282,9 @@ def test_transport_info():
     assert "hci0" in info.description
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `HCIUserChannelTransport`**
+- [x] **Step 3: Implement `HCIUserChannelTransport`**
 
 ```python
 class HCIUserChannelTransport(Transport):
@@ -302,9 +302,9 @@ class HCIUserChannelTransport(Transport):
     async def send(self, data: bytes) -> None: ...
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Update `transport/__init__.py` and commit**
+- [x] **Step 5: Update `transport/__init__.py` and commit**
 
 ```python
 # Add to __init__.py exports:
@@ -324,7 +324,7 @@ git commit -m "feat(transport): add HCIUserChannelTransport for Linux hci_user_c
 
 ## Task 3: pyproject.toml + Full Test Run
 
-- [ ] **Step 1: Add USB optional dependency to pyproject.toml**
+- [x] **Step 1: Add USB optional dependency to pyproject.toml**
 
 ```toml
 [project.optional-dependencies]
@@ -335,17 +335,17 @@ dev = [
 ]
 ```
 
-- [ ] **Step 2: Run all transport tests**
+- [x] **Step 2: Run all transport tests**
 ```bash
 uv run pytest tests/unit/transport/ -v --tb=short
 ```
 
-- [ ] **Step 3: Run full test suite**
+- [x] **Step 3: Run full test suite**
 ```bash
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 4: Update STATUS.md — mark Plan 3a complete**
+- [x] **Step 4: Update STATUS.md — mark Plan 3a complete**
 ```bash
 git add pyproject.toml docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 3a (USB Transport Core) complete in STATUS.md"
