@@ -33,6 +33,7 @@ from pybluehost.hci.constants import (
 )
 from pybluehost.hci.controller import ConnectionManager, HCIConnection, HCIController
 from pybluehost.hci.flow import ACLFlowController, CommandFlowController
+from pybluehost.hci.virtual import VirtualController
 from pybluehost.hci.packets import (
     HCIACLData,
     HCICommand,
@@ -137,4 +138,6 @@ __all__ = [
     "HCIConnection",
     "ConnectionManager",
     "HCIController",
+    # Virtual
+    "VirtualController",
 ]
