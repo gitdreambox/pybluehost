@@ -28,6 +28,13 @@ from pybluehost.l2cap.constants import (
     SignalingCode,
 )
 from pybluehost.l2cap.sar import Reassembler, Segmenter
+from pybluehost.l2cap.signaling import (
+    ConnParamUpdateRequest,
+    ConnParamUpdateResponse,
+    SignalingPacket,
+    decode_signaling,
+    encode_signaling,
+)
 
 __all__ = [
     # channel
@@ -60,4 +67,10 @@ __all__ = [
     # sar
     "Reassembler",
     "Segmenter",
+    # signaling
+    "ConnParamUpdateRequest",
+    "ConnParamUpdateResponse",
+    "SignalingPacket",
+    "decode_signaling",
+    "encode_signaling",
 ]
