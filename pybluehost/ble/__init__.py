@@ -1,4 +1,4 @@
-"""BLE layer — ATT protocol and GATT database/client/server."""
+"""BLE layer — ATT, GATT, SMP, and Security."""
 from pybluehost.ble.att import (
     ATTBearer,
     ATTError,
@@ -51,6 +51,29 @@ from pybluehost.ble.gatt import (
     UUID_PRIMARY_SERVICE,
     UUID_SECONDARY_SERVICE,
     UUID_SERVICE_CHANGED,
+)
+from pybluehost.ble.smp import (
+    AutoAcceptDelegate,
+    BondInfo,
+    BondStorage,
+    JsonBondStorage,
+    PairingDelegate,
+    SMPCode,
+    SMPCrypto,
+    SMPManager,
+    SMPPdu,
+    SMPPairingConfirm,
+    SMPPairingFailed,
+    SMPPairingRandom,
+    SMPPairingRequest,
+    SMPPairingResponse,
+    SMPSecurityRequest,
+    decode_smp_pdu,
+)
+from pybluehost.ble.security import (
+    CTKDDirection,
+    CTKDManager,
+    SecurityConfig,
 )
 
 __all__ = [
@@ -105,4 +128,25 @@ __all__ = [
     "UUID_PRIMARY_SERVICE",
     "UUID_SECONDARY_SERVICE",
     "UUID_SERVICE_CHANGED",
+    # smp
+    "AutoAcceptDelegate",
+    "BondInfo",
+    "BondStorage",
+    "JsonBondStorage",
+    "PairingDelegate",
+    "SMPCode",
+    "SMPCrypto",
+    "SMPManager",
+    "SMPPdu",
+    "SMPPairingConfirm",
+    "SMPPairingFailed",
+    "SMPPairingRandom",
+    "SMPPairingRequest",
+    "SMPPairingResponse",
+    "SMPSecurityRequest",
+    "decode_smp_pdu",
+    # security
+    "CTKDDirection",
+    "CTKDManager",
+    "SecurityConfig",
 ]
