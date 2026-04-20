@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 usb = ["pyusb>=1.2"]
 dev = [
+    "cryptography>=41.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
