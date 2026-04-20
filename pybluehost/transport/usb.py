@@ -61,18 +61,39 @@ class USBTransport(Transport):
         self._reader_tasks: list[asyncio.Task] = []  # type: ignore[type-arg]
 
     @classmethod
+    def _get_usb_backend(cls) -> Any:
+        """Return the best available pyusb backend for this platform.
+
+        On Windows, prefers libusb-package (bundles libusb-1.0.dll).
+        Falls back to pyusb default backend discovery on Linux/macOS.
+        """
+        if sys.platform == "win32":
+            try:
+                import libusb_package
+                import usb.backend.libusb1
+                be = usb.backend.libusb1.get_backend(
+                    find_library=libusb_package.find_library
+                )
+                if be is not None:
+                    return be
+            except ImportError:
+                pass
+        return None  # pyusb default discovery
+
+    @classmethod
     def auto_detect(
         cls,
         firmware_policy: FirmwarePolicy = FirmwarePolicy.PROMPT,
-    ) -> USBTransport:
+    ) -> "USBTransport":
         """Enumerate USB devices, match KNOWN_CHIPS, return correct subclass instance."""
         if usb is None:
             raise RuntimeError(
                 "pyusb not installed. Run: pip install pyusb"
             )
 
+        backend = cls._get_usb_backend()
         # 1. Search known chips by VID/PID
-        all_devices = list(usb.core.find(find_all=True))
+        all_devices = list(usb.core.find(find_all=True, backend=backend))
         for dev in all_devices:
             for chip in KNOWN_CHIPS:
                 if dev.idVendor == chip.vid and dev.idProduct == chip.pid:
@@ -87,6 +108,7 @@ class USBTransport(Transport):
         bt_devices = list(
             usb.core.find(
                 find_all=True,
+                backend=backend,
                 bDeviceClass=0xE0,
                 bDeviceSubClass=0x01,
                 bDeviceProtocol=0x01,
@@ -106,9 +128,43 @@ class USBTransport(Transport):
         if sys.platform == "win32":
             self._verify_winusb_driver()
 
-        # Claim HCI interface (interface 0)
-        # Locate endpoints: Control EP0, Interrupt IN, Bulk IN/OUT, Isoch IN/OUT
-        # These would be set up via pyusb in a real environment
+        # Claim HCI interface 0 (HCI Commands/Events/ACL)
+        import usb.util as usbutil
+        try:
+            self._device.set_configuration()
+        except Exception:
+            pass  # Already configured
+
+        cfg = self._device.get_active_configuration()
+        intf = cfg[(0, 0)]  # Interface 0, alternate setting 0
+
+        # Locate Interrupt IN endpoint (HCI Events)
+        self._ep_intr_in = usbutil.find_descriptor(
+            intf,
+            custom_match=lambda e: (
+                usbutil.endpoint_direction(e.bEndpointAddress) == usbutil.ENDPOINT_IN
+                and usbutil.endpoint_type(e.bmAttributes) == usbutil.ENDPOINT_TYPE_INTR
+            ),
+        )
+        # Locate Bulk IN/OUT endpoints (ACL Data)
+        self._ep_bulk_in = usbutil.find_descriptor(
+            intf,
+            custom_match=lambda e: (
+                usbutil.endpoint_direction(e.bEndpointAddress) == usbutil.ENDPOINT_IN
+                and usbutil.endpoint_type(e.bmAttributes) == usbutil.ENDPOINT_TYPE_BULK
+            ),
+        )
+        self._ep_bulk_out = usbutil.find_descriptor(
+            intf,
+            custom_match=lambda e: (
+                usbutil.endpoint_direction(e.bEndpointAddress) == usbutil.ENDPOINT_OUT
+                and usbutil.endpoint_type(e.bmAttributes) == usbutil.ENDPOINT_TYPE_BULK
+            ),
+        )
+
+        # Event queue for _wait_for_event
+        self._event_queue: asyncio.Queue[bytes] = asyncio.Queue()
+
         await self._initialize()
         self._is_open = True
 
@@ -117,6 +173,11 @@ class USBTransport(Transport):
         for task in self._reader_tasks:
             task.cancel()
         self._reader_tasks.clear()
+        try:
+            import usb.util as usbutil
+            usbutil.release_interface(self._device, 0)
+        except Exception:
+            pass
         self._is_open = False
 
     async def send(self, data: bytes) -> None:
@@ -161,22 +222,59 @@ class USBTransport(Transport):
         """Override in subclasses for firmware loading. Default: no-op."""
 
     async def _control_out(self, data: bytes) -> None:
-        """Send HCI command via USB control transfer (EP0)."""
-        # Real implementation uses usb.core.Device.ctrl_transfer
-        raise NotImplementedError("USB control transfer not available in mock")
+        """Send HCI command via USB control transfer (EP0, BT class request)."""
+        # HCI Command via control transfer:
+        # bmRequestType = 0x20 (Class | Interface | Host-to-Device)
+        # bRequest      = 0x00
+        # wValue        = 0x0000
+        # wIndex        = 0x0000 (interface 0)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: self._device.ctrl_transfer(
+                0x20,   # bmRequestType
+                0x00,   # bRequest
+                0x0000, # wValue
+                0x0000, # wIndex
+                data,
+            ),
+        )
 
     async def _bulk_out(self, data: bytes) -> None:
         """Send ACL data via USB bulk OUT endpoint."""
-        raise NotImplementedError("USB bulk transfer not available in mock")
+        if not hasattr(self, "_ep_bulk_out") or self._ep_bulk_out is None:
+            raise RuntimeError("Bulk OUT endpoint not found (call open() first)")
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: self._ep_bulk_out.write(data))
 
     async def _isoch_out(self, data: bytes) -> None:
-        """Send SCO data via USB isochronous OUT endpoint."""
-        raise NotImplementedError("USB isochronous transfer not available in mock")
+        """Send SCO data via USB isochronous OUT endpoint.
+        (Isochronous transfers not fully supported by libusb on Windows.)
+        """
+        raise NotImplementedError("Isochronous SCO transfers require OS-level access")
+
+    def read_interrupt_sync(self, size: int = 64, timeout: int = 5000) -> bytes:
+        """Blocking interrupt IN read (runs in executor thread)."""
+        if not hasattr(self, "_ep_intr_in") or self._ep_intr_in is None:
+            raise RuntimeError("Interrupt IN endpoint not found (call open() first)")
+        data = self._ep_intr_in.read(size, timeout=timeout)
+        return bytes(data)
+
+    async def read_interrupt(self, size: int = 64, timeout: float = 5.0) -> bytes:
+        """Async wrapper around interrupt IN read."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.read_interrupt_sync(size, int(timeout * 1000)),
+        )
 
     def _verify_winusb_driver(self) -> None:
-        """Windows: check device is bound to WinUSB, not Microsoft Bluetooth driver."""
-        # On Windows, we'd check the driver via registry or setupapi
-        # If bound to bthusb.sys, raise WinUSBDriverError with instructions
+        """Windows: check device is bound to WinUSB, not Microsoft Bluetooth driver.
+
+        On Windows, Intel BT devices bound to WinUSB are accessible via pyusb.
+        If the device is still on bthusb.sys, pyusb will get Access Denied.
+        We rely on pyusb raising USBError at open() time to surface this.
+        """
 
 
 class IntelUSBTransport(USBTransport):
@@ -284,11 +382,8 @@ class IntelUSBTransport(USBTransport):
         return [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
 
     async def _wait_for_event(self, timeout: float = 5.0) -> bytes:
-        """Wait for HCI event from device. Override in tests."""
-        raise NotImplementedError(
-            "Real USB event reading requires hardware. "
-            "Mock this method in tests."
-        )
+        """Wait for HCI event via interrupt IN endpoint."""
+        return await self.read_interrupt(size=64, timeout=timeout)
 
 
 class RealtekUSBTransport(USBTransport):
@@ -376,11 +471,8 @@ class RealtekUSBTransport(USBTransport):
         return [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
 
     async def _wait_for_event(self, timeout: float = 5.0) -> bytes:
-        """Wait for HCI event from device. Override in tests."""
-        raise NotImplementedError(
-            "Real USB event reading requires hardware. "
-            "Mock this method in tests."
-        )
+        """Wait for HCI event via interrupt IN endpoint."""
+        return await self.read_interrupt(size=64, timeout=timeout)
 
 
 # --- Known Bluetooth USB chips registry ---
@@ -388,12 +480,13 @@ class RealtekUSBTransport(USBTransport):
 
 KNOWN_CHIPS: list[ChipInfo] = [
     # Intel
-    ChipInfo("intel", "AX200", 0x8087, 0x0029, "ibt-20-*", IntelUSBTransport),
-    ChipInfo("intel", "AX201", 0x8087, 0x0026, "ibt-20-*", IntelUSBTransport),
-    ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport),
-    ChipInfo("intel", "AX211", 0x8087, 0x0033, "ibt-0040-*", IntelUSBTransport),
-    ChipInfo("intel", "AC9560", 0x8087, 0x0025, "ibt-18-*", IntelUSBTransport),
-    ChipInfo("intel", "AC8265", 0x8087, 0x0A2B, "ibt-12-*", IntelUSBTransport),
+    ChipInfo("intel", "AX200",  0x8087, 0x0029, "ibt-20-*",    IntelUSBTransport),
+    ChipInfo("intel", "AX201",  0x8087, 0x0026, "ibt-20-*",    IntelUSBTransport),
+    ChipInfo("intel", "AX210",  0x8087, 0x0032, "ibt-0040-*",  IntelUSBTransport),
+    ChipInfo("intel", "AX211",  0x8087, 0x0033, "ibt-0040-*",  IntelUSBTransport),
+    ChipInfo("intel", "AC9560", 0x8087, 0x0025, "ibt-18-*",    IntelUSBTransport),
+    ChipInfo("intel", "AC8265", 0x8087, 0x0A2B, "ibt-12-*",    IntelUSBTransport),
+    ChipInfo("intel", "BE200",  0x8087, 0x0036, "ibt-0040-*",  IntelUSBTransport),  # WiFi 7 / BT 5.4
     # Realtek
     ChipInfo("realtek", "RTL8761B", 0x0BDA, 0x8771, "rtl8761b_fw", RealtekUSBTransport),
     ChipInfo("realtek", "RTL8852AE", 0x0BDA, 0x2852, "rtl8852au_fw", RealtekUSBTransport),
