@@ -36,6 +36,14 @@ def test_known_chips_realtek_rtl8761b():
     assert rtl.vendor == "realtek"
 
 
+def test_known_chips_CSR8510():
+    csr = next((c for c in KNOWN_CHIPS if c.name == "CSR8510"), None)
+    assert csr is not None
+    assert csr.vid == 0x0A12
+    assert csr.pid == 0x0001
+    assert csr.vendor == "csr"
+
+
 def test_chip_info_dataclass():
     chip = ChipInfo(
         vendor="intel",
@@ -82,6 +90,56 @@ def test_auto_detect_known_realtek_chip(mock_usb):
     mock_usb.core.find.return_value = [mock_device]
     transport = USBTransport.auto_detect()
     assert isinstance(transport, RealtekUSBTransport)
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_known_csr_chip(mock_usb):
+    from pybluehost.transport.usb import CSRUSBTransport
+
+    mock_device = MagicMock()
+    mock_device.idVendor = 0x0A12
+    mock_device.idProduct = 0x0001
+    mock_usb.core.find.return_value = [mock_device]
+    transport = USBTransport.auto_detect()
+    assert isinstance(transport, CSRUSBTransport)
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_vendor_filter_selects_intel(mock_usb):
+    csr_device = MagicMock()
+    csr_device.idVendor = 0x0A12
+    csr_device.idProduct = 0x0001
+
+    intel_device = MagicMock()
+    intel_device.idVendor = 0x8087
+    intel_device.idProduct = 0x0032
+
+    mock_usb.core.find.return_value = [csr_device, intel_device]
+    transport = USBTransport.auto_detect(vendor="intel")
+    assert isinstance(transport, IntelUSBTransport)
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_vendor_filter_selects_csr(mock_usb):
+    from pybluehost.transport.usb import CSRUSBTransport
+
+    intel_device = MagicMock()
+    intel_device.idVendor = 0x8087
+    intel_device.idProduct = 0x0032
+
+    csr_device = MagicMock()
+    csr_device.idVendor = 0x0A12
+    csr_device.idProduct = 0x0001
+
+    mock_usb.core.find.return_value = [intel_device, csr_device]
+    transport = USBTransport.auto_detect(vendor="csr")
+    assert isinstance(transport, CSRUSBTransport)
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_invalid_vendor_raises_value_error(mock_usb):
+    with pytest.raises(ValueError, match="Unsupported USB vendor filter"):
+        USBTransport.auto_detect(vendor="broadcom")
 
 
 @patch("pybluehost.transport.usb.usb")
@@ -191,6 +249,14 @@ def test_intel_transport_is_usb_transport():
 def test_realtek_transport_is_usb_transport():
     chip = ChipInfo("realtek", "RTL8761B", 0x0BDA, 0x8771, "rtl_fw", RealtekUSBTransport)
     transport = RealtekUSBTransport(device=MagicMock(), chip_info=chip)
+    assert isinstance(transport, USBTransport)
+
+
+def test_csr_transport_is_usb_transport():
+    from pybluehost.transport.usb import CSRUSBTransport
+
+    chip = ChipInfo("csr", "CSR8510", 0x0A12, 0x0001, "", CSRUSBTransport)
+    transport = CSRUSBTransport(device=MagicMock(), chip_info=chip)
     assert isinstance(transport, USBTransport)
 
 

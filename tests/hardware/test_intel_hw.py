@@ -40,6 +40,8 @@ def _detect_intel_device():
         all_devs = list(usb.core.find(find_all=True, backend=be))
         for dev in all_devs:
             for chip in KNOWN_CHIPS:
+                if chip.vendor != "intel":
+                    continue
                 if dev.idVendor == chip.vid and dev.idProduct == chip.pid:
                     return dev, chip
     except Exception:
@@ -160,7 +162,7 @@ def test_auto_detect_finds_intel_device():
     """USBTransport.auto_detect() finds the Intel adapter."""
     from pybluehost.transport.usb import USBTransport, IntelUSBTransport
 
-    t = USBTransport.auto_detect()
+    t = USBTransport.auto_detect(vendor="intel")
     assert isinstance(t, IntelUSBTransport)
     info = t.info
     assert info.type == "usb"

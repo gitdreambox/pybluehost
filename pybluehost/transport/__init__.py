@@ -21,6 +21,7 @@ from pybluehost.transport.tcp import TCPTransport
 from pybluehost.transport.uart import UARTTransport
 from pybluehost.transport.udp import UDPTransport
 from pybluehost.transport.usb import (
+    CSRUSBTransport,
     ChipInfo,
     IntelUSBTransport,
     KNOWN_CHIPS,
@@ -31,6 +32,7 @@ from pybluehost.transport.usb import (
 
 __all__ = [
     "BtsnoopTransport",
+    "CSRUSBTransport",
     "ChipInfo",
     "FirmwareManager",
     "FirmwareNotFoundError",

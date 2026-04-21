@@ -89,6 +89,7 @@ class USBTransport(Transport):
     def auto_detect(
         cls,
         firmware_policy: FirmwarePolicy = FirmwarePolicy.PROMPT,
+        vendor: str | None = None,
     ) -> "USBTransport":
         """Enumerate USB devices, match KNOWN_CHIPS, return correct subclass instance."""
         if usb is None:
@@ -96,11 +97,23 @@ class USBTransport(Transport):
                 "pyusb not installed. Run: pip install pyusb"
             )
 
+        selected_vendor = vendor.lower() if vendor is not None else None
+        if selected_vendor is not None and selected_vendor not in {"intel", "realtek", "csr"}:
+            raise ValueError(
+                "Unsupported USB vendor filter: "
+                f"{vendor!r}. Expected one of: intel, realtek, csr."
+            )
+
         backend = cls._get_usb_backend()
+        chips = [
+            chip for chip in KNOWN_CHIPS
+            if selected_vendor is None or chip.vendor == selected_vendor
+        ]
+
         # 1. Search known chips by VID/PID
         all_devices = list(usb.core.find(find_all=True, backend=backend))
         for dev in all_devices:
-            for chip in KNOWN_CHIPS:
+            for chip in chips:
                 if dev.idVendor == chip.vid and dev.idProduct == chip.pid:
                     transport_cls = chip.transport_class or cls
                     return transport_cls(
@@ -109,22 +122,26 @@ class USBTransport(Transport):
                         firmware_policy=firmware_policy,
                     )
 
-        # 2. Fallback: look for BT device class (0xE0, 0x01, 0x01)
-        bt_devices = list(
-            usb.core.find(
-                find_all=True,
-                backend=backend,
-                bDeviceClass=0xE0,
-                bDeviceSubClass=0x01,
-                bDeviceProtocol=0x01,
+        # 2. Fallback: look for a generic Bluetooth USB device only when no vendor
+        # filter is requested. A vendor-specific call should not silently return
+        # a different adapter type.
+        if selected_vendor is None:
+            bt_devices = list(
+                usb.core.find(
+                    find_all=True,
+                    backend=backend,
+                    bDeviceClass=0xE0,
+                    bDeviceSubClass=0x01,
+                    bDeviceProtocol=0x01,
+                )
             )
-        )
-        if bt_devices:
-            dev = bt_devices[0]
-            return cls(device=dev, firmware_policy=firmware_policy)
+            if bt_devices:
+                dev = bt_devices[0]
+                return cls(device=dev, firmware_policy=firmware_policy)
 
+        target = f" {selected_vendor}" if selected_vendor is not None else ""
         raise NoBluetoothDeviceError(
-            "No supported Bluetooth USB device found. "
+            f"No supported{target} Bluetooth USB device found. "
             "Ensure your adapter is plugged in and (on Windows) has the WinUSB driver."
         )
 
@@ -878,6 +895,14 @@ class RealtekUSBTransport(USBTransport):
         return await self.read_interrupt(size=64, timeout=timeout)
 
 
+class CSRUSBTransport(USBTransport):
+    """CSR Bluetooth USB transport.
+
+    CSR8510 currently follows the standard Bluetooth USB HCI path, so it can
+    use the base USB transport behavior without vendor-specific initialization.
+    """
+
+
 # --- Known Bluetooth USB chips registry ---
 # Transport class references are resolved here after subclass definitions.
 
@@ -896,4 +921,6 @@ KNOWN_CHIPS: list[ChipInfo] = [
     ChipInfo("realtek", "RTL8852BE", 0x0BDA, 0x887B, "rtl8852bu_fw", RealtekUSBTransport),
     ChipInfo("realtek", "RTL8852CE", 0x0BDA, 0x4853, "rtl8852cu_fw", RealtekUSBTransport),
     ChipInfo("realtek", "RTL8723DE", 0x0BDA, 0xB009, "rtl8723d_fw", RealtekUSBTransport),
+    # CSR
+    ChipInfo("csr", "CSR8510", 0x0A12, 0x0001, "", CSRUSBTransport),
 ]
