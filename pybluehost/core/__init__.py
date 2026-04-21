@@ -27,6 +27,13 @@ from pybluehost.core.trace import (
     TraceSystem,
 )
 from pybluehost.core.types import ConnectionRole, IOCapability, LinkType
+from pybluehost.core.gap_common import (
+    Appearance,
+    AdvertisingData,
+    ClassOfDevice,
+    DeviceInfo,
+    FilterPolicy,
+)
 from pybluehost.core.uuid import UUID16, UUID128
 
 __all__ = [
@@ -63,4 +70,10 @@ __all__ = [
     "TransportError",
     "UUID16",
     "UUID128",
+    # gap_common
+    "Appearance",
+    "AdvertisingData",
+    "ClassOfDevice",
+    "DeviceInfo",
+    "FilterPolicy",
 ]

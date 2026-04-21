@@ -75,6 +75,21 @@ from pybluehost.ble.security import (
     CTKDManager,
     SecurityConfig,
 )
+from pybluehost.ble.gap import (
+    AdvertisingConfig,
+    BLEAdvertiser,
+    BLEConnection,
+    BLEConnectionConfig,
+    BLEConnectionManager,
+    BLEScanner,
+    ConnectionRole,
+    ExtAdvertisingConfig,
+    ExtendedAdvertiser,
+    PrivacyManager,
+    ScanConfig,
+    ScanResult,
+    WhiteList,
+)
 
 __all__ = [
     # att
@@ -149,4 +164,18 @@ __all__ = [
     "CTKDDirection",
     "CTKDManager",
     "SecurityConfig",
+    # gap
+    "AdvertisingConfig",
+    "BLEAdvertiser",
+    "BLEConnection",
+    "BLEConnectionConfig",
+    "BLEConnectionManager",
+    "BLEScanner",
+    "ConnectionRole",
+    "ExtAdvertisingConfig",
+    "ExtendedAdvertiser",
+    "PrivacyManager",
+    "ScanConfig",
+    "ScanResult",
+    "WhiteList",
 ]
