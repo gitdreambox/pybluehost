@@ -1,0 +1,9 @@
+service:
+  uuid: "0x1801"
+  name: Generic Attribute
+  type: primary
+  characteristics:
+    - uuid: "0x2A05"
+      name: Service Changed
+      properties:
+        indicate: true

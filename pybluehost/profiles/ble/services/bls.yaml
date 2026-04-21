@@ -1,0 +1,17 @@
+service:
+  uuid: "0x1810"
+  name: Blood Pressure
+  type: primary
+  characteristics:
+    - uuid: "0x2A35"
+      name: Blood Pressure Measurement
+      properties:
+        indicate: true
+    - uuid: "0x2A36"
+      name: Intermediate Cuff Pressure
+      properties:
+        notify: true
+    - uuid: "0x2A49"
+      name: Blood Pressure Feature
+      properties:
+        read: true

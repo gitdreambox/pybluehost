@@ -1,0 +1,13 @@
+service:
+  uuid: "0x1814"
+  name: Running Speed and Cadence
+  type: primary
+  characteristics:
+    - uuid: "0x2A53"
+      name: RSC Measurement
+      properties:
+        notify: true
+    - uuid: "0x2A54"
+      name: RSC Feature
+      properties:
+        read: true

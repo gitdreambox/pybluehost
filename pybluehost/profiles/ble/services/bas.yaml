@@ -1,0 +1,10 @@
+service:
+  uuid: "0x180F"
+  name: Battery Service
+  type: primary
+  characteristics:
+    - uuid: "0x2A19"
+      name: Battery Level
+      properties:
+        read: true
+        notify: true

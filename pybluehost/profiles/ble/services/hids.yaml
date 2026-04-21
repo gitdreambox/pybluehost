@@ -1,0 +1,22 @@
+service:
+  uuid: "0x1812"
+  name: Human Interface Device
+  type: primary
+  characteristics:
+    - uuid: "0x2A4A"
+      name: HID Information
+      properties:
+        read: true
+    - uuid: "0x2A4B"
+      name: Report Map
+      properties:
+        read: true
+    - uuid: "0x2A4D"
+      name: Report
+      properties:
+        notify: true
+        write: true
+    - uuid: "0x2A4C"
+      name: HID Control Point
+      properties:
+        write: true

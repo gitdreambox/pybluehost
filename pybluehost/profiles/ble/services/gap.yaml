@@ -1,0 +1,14 @@
+service:
+  uuid: "0x1800"
+  name: Generic Access
+  type: primary
+  characteristics:
+    - uuid: "0x2A00"
+      name: Device Name
+      properties:
+        read: true
+        write: true
+    - uuid: "0x2A01"
+      name: Appearance
+      properties:
+        read: true

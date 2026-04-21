@@ -1,0 +1,29 @@
+service:
+  uuid: "0x180A"
+  name: Device Information
+  type: primary
+  characteristics:
+    - uuid: "0x2A29"
+      name: Manufacturer Name String
+      properties:
+        read: true
+    - uuid: "0x2A24"
+      name: Model Number String
+      properties:
+        read: true
+    - uuid: "0x2A27"
+      name: Hardware Revision String
+      properties:
+        read: true
+    - uuid: "0x2A26"
+      name: Firmware Revision String
+      properties:
+        read: true
+    - uuid: "0x2A28"
+      name: Software Revision String
+      properties:
+        read: true
+    - uuid: "0x2A50"
+      name: PnP ID
+      properties:
+        read: true

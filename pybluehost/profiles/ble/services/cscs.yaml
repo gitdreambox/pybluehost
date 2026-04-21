@@ -1,0 +1,13 @@
+service:
+  uuid: "0x1816"
+  name: Cycling Speed and Cadence
+  type: primary
+  characteristics:
+    - uuid: "0x2A5B"
+      name: CSC Measurement
+      properties:
+        notify: true
+    - uuid: "0x2A5C"
+      name: CSC Feature
+      properties:
+        read: true

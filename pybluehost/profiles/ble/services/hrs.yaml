@@ -1,0 +1,17 @@
+service:
+  uuid: "0x180D"
+  name: Heart Rate
+  type: primary
+  characteristics:
+    - uuid: "0x2A37"
+      name: Heart Rate Measurement
+      properties:
+        notify: true
+    - uuid: "0x2A38"
+      name: Body Sensor Location
+      properties:
+        read: true
+    - uuid: "0x2A39"
+      name: Heart Rate Control Point
+      properties:
+        write: true
