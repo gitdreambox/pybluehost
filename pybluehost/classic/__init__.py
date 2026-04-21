@@ -1,4 +1,4 @@
-"""Classic Bluetooth stack — SDP, RFCOMM, and SPP."""
+"""Classic Bluetooth stack — SDP, RFCOMM, SPP, and GAP."""
 from pybluehost.classic.sdp import (
     DataElement,
     DataElementType,
@@ -24,6 +24,16 @@ from pybluehost.classic.spp import (
     SPPConnection,
     SPPService,
 )
+from pybluehost.classic.gap import (
+    ClassicConnection,
+    ClassicConnectionManager,
+    ClassicDiscoverability,
+    ClassicDiscovery,
+    InquiryConfig,
+    SSPManager,
+    SSPMethod,
+    ScanEnableFlags,
+)
 
 __all__ = [
     # sdp
@@ -48,4 +58,13 @@ __all__ = [
     "SPPClient",
     "SPPConnection",
     "SPPService",
+    # gap
+    "ClassicConnection",
+    "ClassicConnectionManager",
+    "ClassicDiscoverability",
+    "ClassicDiscovery",
+    "InquiryConfig",
+    "SSPManager",
+    "SSPMethod",
+    "ScanEnableFlags",
 ]
