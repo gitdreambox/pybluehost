@@ -89,3 +89,25 @@ class BLEProfileClient(ABC):
     def __init__(self) -> None:
         self._gatt: GATTClient | None = None
         self._char_handles: dict = {}
+
+    async def discover(self, gatt_client: GATTClient) -> None:
+        """Discover the profile service and cache characteristic handles."""
+        self._gatt = gatt_client
+        services = await gatt_client.discover_all_services()
+        service = next(
+            (s for s in services if s.uuid == self.service_uuid), None
+        )
+        if service is None:
+            raise ValueError(f"Service {self.service_uuid} not found")
+        chars = await gatt_client.discover_characteristics(service)
+        self._char_handles = {c.uuid: c for c in chars}
+
+    async def read(self, uuid: UUID16 | UUID128) -> bytes:
+        """Read a characteristic by UUID."""
+        char = self._char_handles[uuid]
+        return await self._gatt.read_characteristic(char)
+
+    async def write(self, uuid: UUID16 | UUID128, value: bytes) -> None:
+        """Write a characteristic by UUID."""
+        char = self._char_handles[uuid]
+        await self._gatt.write_characteristic(char, value)
