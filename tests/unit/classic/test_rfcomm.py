@@ -1,0 +1,169 @@
+"""Tests for RFCOMM frame codec and session management."""
+from __future__ import annotations
+
+from pybluehost.classic.rfcomm import (
+    RFCOMMChannel,
+    RFCOMMFrame,
+    RFCOMMFrameType,
+    RFCOMMManager,
+    RFCOMMSession,
+    calc_fcs,
+    decode_frame,
+    encode_frame,
+)
+
+
+# ---------------------------------------------------------------------------
+# Frame type enum
+# ---------------------------------------------------------------------------
+
+def test_rfcomm_frame_type_enum_completeness():
+    """All standard RFCOMM frame types must be defined."""
+    expected = {"SABM", "UA", "DM", "DISC", "UIH", "UI"}
+    assert expected.issubset({t.name for t in RFCOMMFrameType})
+
+
+# ---------------------------------------------------------------------------
+# FCS
+# ---------------------------------------------------------------------------
+
+def test_fcs_calculation():
+    fcs = calc_fcs(bytes([0x03, 0x2F, 0x01]))
+    assert isinstance(fcs, int)
+    assert 0 <= fcs <= 255
+
+
+def test_fcs_different_inputs_differ():
+    fcs1 = calc_fcs(bytes([0x03, 0x2F, 0x01]))
+    fcs2 = calc_fcs(bytes([0x03, 0xEF, 0x01]))
+    assert fcs1 != fcs2
+
+
+# ---------------------------------------------------------------------------
+# SABM
+# ---------------------------------------------------------------------------
+
+def test_sabm_frame_encode():
+    frame = RFCOMMFrame(dlci=0, frame_type=RFCOMMFrameType.SABM, pf=True, data=b"")
+    raw = encode_frame(frame)
+    assert raw[0] == 0x03  # address: DLCI=0, C/R=1, EA=1
+    assert raw[1] == 0x3F  # SABM|PF control byte
+    assert raw[2] == 0x01  # length: 0 bytes, EA=1
+    assert len(raw) == 4   # addr + ctrl + len + fcs
+
+
+def test_sabm_frame_decode():
+    frame = RFCOMMFrame(dlci=0, frame_type=RFCOMMFrameType.SABM, pf=True, data=b"")
+    raw = encode_frame(frame)
+    decoded = decode_frame(raw)
+    assert decoded.dlci == 0
+    assert decoded.frame_type == RFCOMMFrameType.SABM
+    assert decoded.pf is True
+
+
+# ---------------------------------------------------------------------------
+# UA
+# ---------------------------------------------------------------------------
+
+def test_ua_frame_encode_decode():
+    frame = RFCOMMFrame(dlci=0, frame_type=RFCOMMFrameType.UA, pf=True, data=b"")
+    raw = encode_frame(frame)
+    decoded = decode_frame(raw)
+    assert decoded.frame_type == RFCOMMFrameType.UA
+    assert decoded.dlci == 0
+    assert decoded.pf is True
+
+
+# ---------------------------------------------------------------------------
+# DM
+# ---------------------------------------------------------------------------
+
+def test_dm_frame_encode_decode():
+    frame = RFCOMMFrame(dlci=2, frame_type=RFCOMMFrameType.DM, pf=True, data=b"")
+    raw = encode_frame(frame)
+    decoded = decode_frame(raw)
+    assert decoded.frame_type == RFCOMMFrameType.DM
+    assert decoded.dlci == 2
+
+
+# ---------------------------------------------------------------------------
+# DISC
+# ---------------------------------------------------------------------------
+
+def test_disc_frame_encode_decode():
+    frame = RFCOMMFrame(dlci=4, frame_type=RFCOMMFrameType.DISC, pf=True, data=b"")
+    raw = encode_frame(frame)
+    decoded = decode_frame(raw)
+    assert decoded.frame_type == RFCOMMFrameType.DISC
+    assert decoded.dlci == 4
+
+
+# ---------------------------------------------------------------------------
+# UIH (data frames)
+# ---------------------------------------------------------------------------
+
+def test_uih_frame_encode():
+    frame = RFCOMMFrame(dlci=2, frame_type=RFCOMMFrameType.UIH, pf=False, data=b"hello")
+    raw = encode_frame(frame)
+    # Control byte: UIH without PF = 0xEF
+    assert raw[1] == 0xEF
+    assert b"hello" in raw
+
+
+def test_uih_frame_decode_data():
+    frame = RFCOMMFrame(dlci=2, frame_type=RFCOMMFrameType.UIH, pf=False, data=b"hello")
+    raw = encode_frame(frame)
+    decoded = decode_frame(raw)
+    assert decoded.frame_type == RFCOMMFrameType.UIH
+    assert decoded.data == b"hello"
+    assert decoded.dlci == 2
+
+
+def test_uih_frame_with_pf():
+    frame = RFCOMMFrame(dlci=2, frame_type=RFCOMMFrameType.UIH, pf=True, data=b"x")
+    raw = encode_frame(frame)
+    assert raw[1] == 0xFF  # UIH with PF
+    decoded = decode_frame(raw)
+    assert decoded.pf is True
+
+
+def test_uih_long_data():
+    """UIH with >127 bytes uses 2-byte length field."""
+    data = bytes(range(256)) * 2  # 512 bytes
+    frame = RFCOMMFrame(dlci=2, frame_type=RFCOMMFrameType.UIH, pf=False, data=data)
+    raw = encode_frame(frame)
+    decoded = decode_frame(raw)
+    assert decoded.data == data
+
+
+# ---------------------------------------------------------------------------
+# DLCI encoding
+# ---------------------------------------------------------------------------
+
+def test_dlci_encoding_high():
+    """DLCI values up to 61 should encode correctly in address byte."""
+    frame = RFCOMMFrame(dlci=30, frame_type=RFCOMMFrameType.SABM, pf=True, data=b"")
+    raw = encode_frame(frame)
+    decoded = decode_frame(raw)
+    assert decoded.dlci == 30
+
+
+# ---------------------------------------------------------------------------
+# Session/Channel/Manager existence
+# ---------------------------------------------------------------------------
+
+def test_rfcomm_session_construction():
+    session = RFCOMMSession(l2cap_channel=None)
+    assert session is not None
+
+
+def test_rfcomm_channel_properties():
+    ch = RFCOMMChannel(dlci=2, session=None, max_frame_size=127)
+    assert ch.dlci == 2
+    assert ch.server_channel == 1  # server_channel = dlci >> 1
+    assert ch.max_frame_size == 127
+
+
+def test_rfcomm_manager_construction():
+    mgr = RFCOMMManager(l2cap=None)
+    assert mgr is not None
