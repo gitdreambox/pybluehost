@@ -192,3 +192,43 @@ def test_realtek_transport_is_usb_transport():
     chip = ChipInfo("realtek", "RTL8761B", 0x0BDA, 0x8771, "rtl_fw", RealtekUSBTransport)
     transport = RealtekUSBTransport(device=MagicMock(), chip_info=chip)
     assert isinstance(transport, USBTransport)
+
+
+# --- IntelUSBTransport firmware variant parsing ---
+
+def test_parse_fw_variant_legacy_operational():
+    """Legacy: fw_variant at [9], value 0x03 = operational."""
+    t = IntelUSBTransport.__new__(IntelUSBTransport)
+    # Minimal Command Complete: 0e len 01 opcode(2) status hw_plt hw_var hw_rev fw_var
+    event = bytes([0x0E, 0x09, 0x01, 0x05, 0xFC, 0x00, 0x37, 0x10, 0x00, 0x03])
+    assert t._parse_fw_variant(event) == 0x03
+
+
+def test_parse_fw_variant_legacy_bootloader():
+    """Legacy: fw_variant at [9], value 0x06 = bootloader."""
+    t = IntelUSBTransport.__new__(IntelUSBTransport)
+    event = bytes([0x0E, 0x09, 0x01, 0x05, 0xFC, 0x00, 0x37, 0x10, 0x00, 0x06])
+    assert t._parse_fw_variant(event) == 0x06
+
+
+def test_parse_fw_variant_be200():
+    """BE200 real hardware response: fw_variant=0x89 at [9]."""
+    t = IntelUSBTransport.__new__(IntelUSBTransport)
+    event = bytes.fromhex("0e0d0105fc0037 1c a0 89 41 01 00 12 19".replace(" ", ""))
+    assert t._parse_fw_variant(event) == 0x89
+
+
+def test_is_operational_legacy():
+    """Legacy platform (hw_variant < 0x17): 0x03 = operational, 0x06 = not."""
+    t = IntelUSBTransport.__new__(IntelUSBTransport)
+    assert t._is_operational(hw_variant=0x10, fw_variant=0x03) is True
+    assert t._is_operational(hw_variant=0x10, fw_variant=0x06) is False
+    assert t._is_operational(hw_variant=0x10, fw_variant=0x89) is False
+
+
+def test_is_operational_new_platform():
+    """New platform (hw_variant >= 0x17, e.g. BE200=0x1C): 0x89 = operational."""
+    t = IntelUSBTransport.__new__(IntelUSBTransport)
+    assert t._is_operational(hw_variant=0x1C, fw_variant=0x89) is True
+    assert t._is_operational(hw_variant=0x1C, fw_variant=0x03) is False
+    assert t._is_operational(hw_variant=0x17, fw_variant=0x89) is True

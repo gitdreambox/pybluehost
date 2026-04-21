@@ -30,15 +30,15 @@ def test_firmware_manager_finds_file(tmp_path):
 def test_firmware_manager_missing_raises_on_error_policy():
     mgr = FirmwareManager(vendor="intel", policy=FirmwarePolicy.ERROR)
     with pytest.raises(FirmwareNotFoundError) as exc_info:
-        mgr.find("ibt-0040-0041.sfi")
-    assert "ibt-0040-0041.sfi" in str(exc_info.value)
+        mgr.find("nonexistent-fw-file-12345.sfi")
+    assert "nonexistent-fw-file-12345.sfi" in str(exc_info.value)
     assert "pybluehost fw download" in str(exc_info.value)
 
 
 def test_firmware_manager_prompt_policy():
     mgr = FirmwareManager(vendor="intel", policy=FirmwarePolicy.PROMPT)
     with pytest.raises(FirmwareNotFoundError) as exc_info:
-        mgr.find("ibt-0040-0041.sfi")
+        mgr.find("nonexistent-fw-file-12345.sfi")
     msg = str(exc_info.value)
     # Should contain download instructions
     assert "pybluehost fw download" in msg

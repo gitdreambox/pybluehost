@@ -23,23 +23,62 @@ def _make_intel_transport(tmp_path=None, fw_data=None):
     return transport
 
 
+# V2 Read Version returns "Unknown Command" (status=0x12) for legacy chips
+_V2_REJECT = bytes([
+    0x0E, 0x04, 0x01,  # Command Complete, 4 params, 1 cmd
+    0x05, 0xFC,         # Opcode echo: FC05
+    0x12,               # Status: Unknown Command
+])
+
+# Legacy Read Version: operational (fw_variant=0x03)
+_LEGACY_OPERATIONAL = bytes([
+    0x0E, 0x0B, 0x01,
+    0x05, 0xFC,
+    0x00,            # Status: success
+    0x37, 0x10,      # hw_platform, hw_variant (legacy, < 0x17)
+    0x00,            # hw_revision
+    0x03,            # fw_variant (0x03 = operational)
+    0x01, 0x00,
+])
+
+# Legacy Read Version: bootloader (fw_variant=0x06)
+_LEGACY_BOOTLOADER = bytes([
+    0x0E, 0x0B, 0x01,
+    0x05, 0xFC,
+    0x00,
+    0x37, 0x10,
+    0x00,
+    0x06,  # fw_variant (0x06 = bootloader)
+    0x01, 0x00,
+])
+
+
+def _make_response_sequence(*responses):
+    """Create an async mock that returns responses in order, cycling the last."""
+    idx = [0]
+
+    async def mock_event(*args, **kwargs):
+        i = min(idx[0], len(responses) - 1)
+        idx[0] += 1
+        return responses[i]
+
+    return mock_event
+
+
 # --- Intel Read Version ---
 
 @pytest.mark.asyncio
 async def test_intel_send_vendor_cmd_builds_correct_opcode():
     """_send_intel_vendor_cmd packs OGF=0x3F + OCF into a 3-byte HCI command header."""
     transport = _make_intel_transport()
-    # Mock _control_out to capture what's sent
     sent = []
     async def capture(data):
         sent.append(data)
     transport._control_out = capture
-    # Mock event response
     transport._wait_for_event = AsyncMock(return_value=b"\x0e\x04\x01\x05\xfc\x00")
 
-    await transport._send_intel_vendor_cmd(0x05)  # OCF=0x05 → Read Version
+    await transport._send_intel_vendor_cmd(0x05)
     assert len(sent) == 1
-    # Opcode: OCF=0x05, OGF=0x3F → 0xFC05 → little-endian: 0x05, 0xFC
     assert sent[0][0:2] == b"\x05\xfc"
 
 
@@ -51,24 +90,18 @@ async def test_intel_initialize_calls_read_version_first():
 
     async def capture(data):
         sent_opcodes.append(data[0:2])
-
     transport._control_out = capture
 
-    # Mock: Read Version response with hw_variant=0x17 (AX210), fw_variant=0x03 (operational)
-    read_version_response = bytes([
-        0x0e, 0x0b, 0x01,  # Event header: Command Complete, 11 params, 1 cmd
-        0x05, 0xfc,          # Opcode: FC05
-        0x00,                # Status: success
-        0x37, 0x01,          # hw_platform, hw_variant
-        0x03,                # fw_variant (0x03 = operational, no FW load needed)
-        0x01, 0x00, 0x00,    # fw_revision
-    ])
-    transport._wait_for_event = AsyncMock(return_value=read_version_response)
+    # V2 → rejected, then V1 → operational (no FW load)
+    transport._wait_for_event = _make_response_sequence(
+        _V2_REJECT, _LEGACY_OPERATIONAL
+    )
 
     await transport._initialize()
-    # First command should be Read Version (FC05)
-    assert len(sent_opcodes) >= 1
+    # Both V2 and V1 use opcode FC05
+    assert len(sent_opcodes) >= 2
     assert sent_opcodes[0] == b"\x05\xfc"
+    assert sent_opcodes[1] == b"\x05\xfc"
 
 
 @pytest.mark.asyncio
@@ -77,20 +110,14 @@ async def test_intel_initialize_skips_fw_load_if_operational():
     transport = _make_intel_transport()
     transport._control_out = AsyncMock()
 
-    # fw_variant=0x03 → operational
-    read_version_response = bytes([
-        0x0e, 0x0b, 0x01,
-        0x05, 0xfc,
-        0x00,
-        0x37, 0x17,
-        0x03,  # operational
-        0x01, 0x00, 0x00,
-    ])
-    transport._wait_for_event = AsyncMock(return_value=read_version_response)
+    # V2 → rejected, V1 → operational
+    transport._wait_for_event = _make_response_sequence(
+        _V2_REJECT, _LEGACY_OPERATIONAL
+    )
 
     await transport._initialize()
-    # Should only have sent Read Version, no firmware loading commands
-    assert transport._control_out.call_count == 1
+    # V2 call + V1 call = 2 control_out calls total
+    assert transport._control_out.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -98,63 +125,33 @@ async def test_intel_initialize_loads_fw_when_bootloader(tmp_path):
     """If fw_variant=0x06 (bootloader), perform full firmware loading sequence."""
     fw_dir = tmp_path / "intel"
     fw_dir.mkdir()
-    # Create a dummy firmware file matching the pattern
     fw_file = fw_dir / "ibt-0040-0032.sfi"
-    # Minimal firmware: 256-byte header + some data chunks
-    fw_header = b"\x00" * 128  # Simplified header
-    fw_body = b"\xAA" * 252 * 3  # 3 chunks of 252 bytes
-    fw_file.write_bytes(fw_header + fw_body)
+    fw_file.write_bytes(b"\x00" * 128 + b"\xAA" * 252 * 3)
 
     transport = _make_intel_transport(tmp_path=fw_dir)
     call_count = [0]
 
     async def mock_control(data):
         call_count[0] += 1
-
     transport._control_out = mock_control
 
-    # Read Version: fw_variant=0x06 (bootloader)
-    read_version_boot = bytes([
-        0x0e, 0x0b, 0x01,
-        0x05, 0xfc,
-        0x00,
-        0x37, 0x17,
-        0x06,  # bootloader — needs FW load
-        0x01, 0x00, 0x00,
-    ])
-    # Post-load Read Version: fw_variant=0x03 (operational)
-    read_version_operational = bytes([
-        0x0e, 0x0b, 0x01,
-        0x05, 0xfc,
-        0x00,
-        0x37, 0x17,
-        0x03,  # operational
-        0x01, 0x00, 0x00,
-    ])
+    # V2 → rejected, V1 → bootloader, then all subsequent → operational
+    transport._wait_for_event = _make_response_sequence(
+        _V2_REJECT, _LEGACY_BOOTLOADER, _LEGACY_OPERATIONAL
+    )
 
-    responses = [read_version_boot, read_version_operational]
-    call_idx = [0]
-
-    async def mock_wait_event(*args, **kwargs):
-        idx = min(call_idx[0], len(responses) - 1)
-        call_idx[0] += 1
-        return responses[idx]
-
-    transport._wait_for_event = mock_wait_event
-
-    # Patch FirmwareManager.find to return our dummy file
     with patch.object(
         type(transport), '_find_firmware', return_value=fw_file
     ):
         await transport._initialize()
 
-    # Should have sent: Read Version + Enter Mfg + chunks + Reset + Read Version
+    # V2 + V1 + Enter Mfg + chunks + Reset + verify = many calls
     assert call_count[0] > 2
 
 
 @pytest.mark.asyncio
 async def test_intel_fw_chunk_size():
-    """Firmware chunks should be ≤252 bytes."""
+    """Firmware chunks should be <=252 bytes."""
     transport = _make_intel_transport()
     chunks = transport._split_firmware(b"\xAA" * 1000)
     for chunk in chunks:

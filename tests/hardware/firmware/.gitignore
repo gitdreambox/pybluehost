@@ -1,0 +1,4 @@
+# Firmware binaries are not committed — download for hardware testing
+*.sfi
+*.ddc
+*.bseq

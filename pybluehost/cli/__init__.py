@@ -16,8 +16,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # Register fw subcommand
     from pybluehost.cli.fw import register_fw_commands
+    from pybluehost.cli.usb import register_usb_commands
 
     register_fw_commands(subparsers)
+    register_usb_commands(subparsers)
 
     args = parser.parse_args(argv)
     if args.command is None:

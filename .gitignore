@@ -4,3 +4,5 @@
 __pycache__
 .claude/settings.local.json
 .claude/worktrees/
+/.pytest_cache
+/.temp
