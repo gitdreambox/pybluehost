@@ -48,6 +48,28 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "unit: isolated unit tests (no real hardware, no network)",
+    "integration: multi-layer tests using VirtualController + Loopback",
+    "e2e: full-stack Loopback double-stack tests",
+    "btsnoop: btsnoop file replay tests",
+    "hardware: real USB Bluetooth adapter required (skipped in CI)",
+    "slow: tests taking >5s",
+]
+addopts = "--strict-markers -q"
+
+[tool.coverage.run]
+source = ["pybluehost"]
+omit = ["tests/*", "pybluehost/__main__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]
+fail_under = 85
 
 [dependency-groups]
 dev = [
