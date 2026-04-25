@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 
-from pybluehost.cli.fw import fw_list, fw_download, fw_info, fw_clean
+from pybluehost.cli.tools.fw import fw_list, fw_download, fw_info, fw_clean
 
 
 def test_fw_list_empty(tmp_path):
@@ -50,7 +50,7 @@ def test_fw_info_nonexistent_raises(tmp_path):
 def test_fw_download_intel(tmp_path):
     """fw_download for intel creates download directory."""
     # fw_download should at minimum not crash and create the target dir
-    with patch("pybluehost.cli.fw._download_firmware_files") as mock_dl:
+    with patch("pybluehost.cli.tools.fw._download_firmware_files") as mock_dl:
         mock_dl.return_value = []
         fw_download(vendor="intel", fw_dir=tmp_path)
         mock_dl.assert_called_once()
@@ -58,7 +58,7 @@ def test_fw_download_intel(tmp_path):
 
 def test_fw_download_realtek(tmp_path):
     """fw_download for realtek calls download helper."""
-    with patch("pybluehost.cli.fw._download_firmware_files") as mock_dl:
+    with patch("pybluehost.cli.tools.fw._download_firmware_files") as mock_dl:
         mock_dl.return_value = []
         fw_download(vendor="realtek", fw_dir=tmp_path)
         mock_dl.assert_called_once()

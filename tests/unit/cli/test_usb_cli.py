@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 
-from pybluehost.cli.usb import probe_usb_devices, _cmd_usb_probe
+from pybluehost.cli.tools.usb import probe_usb_devices, _cmd_usb_probe
 
 
 def _mock_usb_device(vid, pid, bus=1, addr=1, dev_class=0xE0, sub=0x01, proto=0x01):
@@ -21,7 +21,7 @@ def _mock_usb_device(vid, pid, bus=1, addr=1, dev_class=0xE0, sub=0x01, proto=0x
 
 # --- probe_usb_devices ---
 
-@patch("pybluehost.cli.usb.usb")
+@patch("pybluehost.cli.tools.usb.usb")
 def test_probe_finds_known_intel_chip(mock_usb):
     mock_usb.core.find.return_value = [_mock_usb_device(0x8087, 0x0036)]
     devices = probe_usb_devices()
@@ -31,7 +31,7 @@ def test_probe_finds_known_intel_chip(mock_usb):
     assert devices[0]["vid_pid"] == "8087:0036"
 
 
-@patch("pybluehost.cli.usb.usb")
+@patch("pybluehost.cli.tools.usb.usb")
 def test_probe_finds_known_realtek_chip(mock_usb):
     mock_usb.core.find.return_value = [_mock_usb_device(0x0BDA, 0x8771)]
     devices = probe_usb_devices()
@@ -40,7 +40,7 @@ def test_probe_finds_known_realtek_chip(mock_usb):
     assert devices[0]["chip_name"] == "RTL8761B"
 
 
-@patch("pybluehost.cli.usb.usb")
+@patch("pybluehost.cli.tools.usb.usb")
 def test_probe_unknown_bt_class_device(mock_usb):
     """Unknown VID/PID but Bluetooth device class → included as Unknown."""
     mock_usb.core.find.return_value = [
@@ -52,7 +52,7 @@ def test_probe_unknown_bt_class_device(mock_usb):
     assert devices[0]["chip_name"] == "Unknown BT Device"
 
 
-@patch("pybluehost.cli.usb.usb")
+@patch("pybluehost.cli.tools.usb.usb")
 def test_probe_skips_non_bt_device(mock_usb):
     """Non-BT USB device (e.g. mass storage) is skipped."""
     mock_usb.core.find.return_value = [
@@ -62,14 +62,14 @@ def test_probe_skips_non_bt_device(mock_usb):
     assert len(devices) == 0
 
 
-@patch("pybluehost.cli.usb.usb")
+@patch("pybluehost.cli.tools.usb.usb")
 def test_probe_no_devices(mock_usb):
     mock_usb.core.find.return_value = []
     devices = probe_usb_devices()
     assert devices == []
 
 
-@patch("pybluehost.cli.usb.usb")
+@patch("pybluehost.cli.tools.usb.usb")
 def test_probe_multiple_devices(mock_usb):
     mock_usb.core.find.return_value = [
         _mock_usb_device(0x8087, 0x0036),
@@ -82,14 +82,14 @@ def test_probe_multiple_devices(mock_usb):
 
 
 def test_probe_pyusb_not_installed():
-    with patch("pybluehost.cli.usb.usb", None):
+    with patch("pybluehost.cli.tools.usb.usb", None):
         with pytest.raises(RuntimeError, match="pyusb not installed"):
             probe_usb_devices()
 
 
 # --- _cmd_usb_probe handler ---
 
-@patch("pybluehost.cli.usb.probe_usb_devices")
+@patch("pybluehost.cli.tools.usb.probe_usb_devices")
 def test_cmd_probe_returns_0_with_devices(mock_probe, capsys):
     mock_probe.return_value = [
         {
@@ -112,7 +112,7 @@ def test_cmd_probe_returns_0_with_devices(mock_probe, capsys):
     assert "8087:0036" in out
 
 
-@patch("pybluehost.cli.usb.probe_usb_devices")
+@patch("pybluehost.cli.tools.usb.probe_usb_devices")
 def test_cmd_probe_returns_0_no_devices(mock_probe, capsys):
     mock_probe.return_value = []
     args = MagicMock()
@@ -124,7 +124,7 @@ def test_cmd_probe_returns_0_no_devices(mock_probe, capsys):
     assert "No USB Bluetooth devices" in out
 
 
-@patch("pybluehost.cli.usb.probe_usb_devices", side_effect=RuntimeError("pyusb not installed"))
+@patch("pybluehost.cli.tools.usb.probe_usb_devices", side_effect=RuntimeError("pyusb not installed"))
 def test_cmd_probe_returns_1_on_error(mock_probe, capsys):
     args = MagicMock()
     args.verbose = False
