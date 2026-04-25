@@ -36,7 +36,7 @@
 
 **Files:** `dis.py`, `bas.py`, `hrs.py`, `gap_service.py`, `tests/unit/profiles/test_builtin.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/profiles/test_builtin.py
@@ -112,9 +112,9 @@ async def test_gap_service_register_and_read_name():
     assert value == b"TestDevice"
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `dis.py`, `bas.py`, `hrs.py`, `gap_service.py`**
+- [x] **Step 3: Implement `dis.py`, `bas.py`, `hrs.py`, `gap_service.py`**
 
 ```python
 # dis.py
@@ -267,9 +267,9 @@ class GAPServiceServer(BLEProfileServer):
         return struct.pack("<H", self._appearance)
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Write package `__init__.py`**
+- [x] **Step 5: Write package `__init__.py`**
 
 ```python
 # profiles/ble/__init__.py
@@ -302,13 +302,13 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 6: Run all profile tests + full suite**
+- [x] **Step 6: Run all profile tests + full suite**
 ```bash
 uv run pytest tests/unit/profiles/ -v
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 ```bash
 git add pybluehost/profiles/ble/dis.py pybluehost/profiles/ble/bas.py \
         pybluehost/profiles/ble/hrs.py pybluehost/profiles/ble/gap_service.py \
@@ -332,7 +332,7 @@ git commit -m "feat(profiles): add DIS, BAS, HRS, GAP profile servers with updat
 - Create: `pybluehost/profiles/ble/gatt_service.py`
 - Test: `tests/unit/profiles/test_missing_profiles.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/profiles/test_missing_profiles.py
@@ -385,9 +385,9 @@ async def test_gatt_service_register():
     assert svc_changed_handle is not None
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement all five profiles**
+- [x] **Step 3: Implement all five profiles**
 
 ```python
 # bls.py
@@ -488,9 +488,9 @@ class GATTServiceServer(BLEProfileServer):
         return bytes([0x01, 0x00, 0xFF, 0xFF])  # start_handle=1, end_handle=65535
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/profiles/ble/bls.py pybluehost/profiles/ble/hids.py \
         pybluehost/profiles/ble/rscs.py pybluehost/profiles/ble/cscs.py \
@@ -512,7 +512,7 @@ git commit -m "feat(profiles): add BLS, HIDS, RSCS, CSCS, GATTService profiles w
 - Modify: `pybluehost/profiles/ble/bas.py` — BatteryClient already scaffolded in Task 3; expand here
 - Test: `tests/unit/profiles/test_clients.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/profiles/test_clients.py
@@ -560,9 +560,9 @@ async def test_battery_client_read_level():
     assert level == 85
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Verify/expand client implementations in `hrs.py` and `bas.py`**
+- [x] **Step 3: Verify/expand client implementations in `hrs.py` and `bas.py`**
 
 The `HeartRateClient` and `BatteryClient` scaffolded in Task 3 should already cover these tests. Verify the `discover()` signature matches `BLEProfileClient.discover(gatt_client)` and the `read()` method routes through `gatt_client.read_characteristic(char)`.
 
@@ -599,15 +599,15 @@ class BatteryClient(BLEProfileClient):
         await self.subscribe(UUID16(0x2A19), _parse)
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Run full suite**
+- [x] **Step 5: Run full suite**
 ```bash
 uv run pytest tests/unit/profiles/ -v
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 6: Commit + update STATUS.md**
+- [x] **Step 6: Commit + update STATUS.md**
 ```bash
 git add pybluehost/profiles/ tests/unit/profiles/
 git commit -m "feat(profiles): add HeartRateClient and BatteryClient with mock-friendly discover API"

@@ -35,7 +35,7 @@
 
 **Files:** `pybluehost/l2cap/constants.py`, `pybluehost/l2cap/sar.py`, tests
 
-- [ ] **Step 1: Write failing SAR tests**
+- [x] **Step 1: Write failing SAR tests**
 
 ```python
 # tests/unit/l2cap/test_sar.py
@@ -92,9 +92,9 @@ def test_segmenter_multi():
         assert pb == ACL_PB_CONTINUING
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `constants.py` and `sar.py`**
+- [x] **Step 3: Implement `constants.py` and `sar.py`**
 
 ```python
 # constants.py
@@ -131,9 +131,9 @@ class SignalingCode(IntEnum):
     CONN_PARAM_UPDATE_RSP = 0x13
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/l2cap/constants.py pybluehost/l2cap/sar.py tests/unit/l2cap/
 git commit -m "feat(l2cap): add L2CAP constants and SAR engine"
@@ -145,7 +145,7 @@ git commit -m "feat(l2cap): add L2CAP constants and SAR engine"
 
 **Files:** `pybluehost/l2cap/channel.py`, `pybluehost/l2cap/ble.py`, tests
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/l2cap/test_ble.py
@@ -191,9 +191,9 @@ def test_fixed_channel_state():
     assert ch.connection_handle == 0x0040
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `channel.py` and `ble.py`**
+- [x] **Step 3: Implement `channel.py` and `ble.py`**
 
 `channel.py`: `ChannelState(Enum)`, `Channel(ABC)` with `cid`, `peer_cid`, `mtu`, `connection_handle`, `state` properties + `send(data)`, `close()`, `set_events(events)` methods. `ChannelEvents(Protocol)` with `on_data`, `on_close`, `on_mtu_changed`. `SimpleChannelEvents` dataclass for testing.
 
@@ -201,9 +201,9 @@ def test_fixed_channel_state():
 - `FixedChannel(Channel)`: always OPEN, no SAR, wraps payload in L2CAP basic header (len+CID), sends via HCI ACL
 - `LECoCChannel(Channel)`: credit-based CoC, MPS segmentation, SDU length header on first segment
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/l2cap/channel.py pybluehost/l2cap/ble.py tests/unit/l2cap/test_ble.py
 git commit -m "feat(l2cap): add Channel ABC, FixedChannel and LECoCChannel"
@@ -215,7 +215,7 @@ git commit -m "feat(l2cap): add Channel ABC, FixedChannel and LECoCChannel"
 
 **Files:** `pybluehost/l2cap/classic.py`, `tests/unit/l2cap/test_classic.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/l2cap/test_classic.py
@@ -282,9 +282,9 @@ def test_ertm_on_iframe_returns_rr_sframe():
     assert (sframe[0] >> 2) & 0x3F == 1  # req_seq=1
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `classic.py`**
+- [x] **Step 3: Implement `classic.py`**
 
 `ChannelMode(IntEnum)`: BASIC=0, ERTM=3, STREAMING=4.
 
@@ -348,9 +348,9 @@ class ERTMEngine:
                 await self._send_fn(frame)
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/l2cap/classic.py tests/unit/l2cap/test_classic.py
 git commit -m "feat(l2cap): add ClassicChannel with Basic and ERTM modes"
@@ -362,7 +362,7 @@ git commit -m "feat(l2cap): add ClassicChannel with Basic and ERTM modes"
 
 **Files:** `pybluehost/l2cap/signaling.py`, `tests/unit/l2cap/test_signaling.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/l2cap/test_signaling.py
@@ -396,18 +396,18 @@ def test_le_credit_connection_request_encode():
     assert raw[0] == SignalingCode.LE_CREDIT_CONN_REQ
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `signaling.py`**
+- [x] **Step 3: Implement `signaling.py`**
 
 `SignalingPacket(dataclass)`: `code`, `identifier`, `data`.
 `encode_signaling(pkt) -> bytes`: pack code(1) + ident(1) + length(2 LE) + data.
 `decode_signaling(data) -> SignalingPacket`: inverse.
 `SignalingHandler`: processes incoming signaling PDUs (on CID 0x0001 or 0x0005), dispatches by command code, coordinates with `L2CAPManager` to accept/reject connections.
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/l2cap/signaling.py tests/unit/l2cap/test_signaling.py
 git commit -m "feat(l2cap): add L2CAP signaling packet codec and handler"
@@ -419,7 +419,7 @@ git commit -m "feat(l2cap): add L2CAP signaling packet codec and handler"
 
 **Files:** `pybluehost/l2cap/manager.py`, `pybluehost/l2cap/__init__.py`, `tests/unit/l2cap/test_manager.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/l2cap/test_manager.py
@@ -478,9 +478,9 @@ async def test_on_disconnection_cleans_up(manager):
     assert 0x0040 not in m._connections
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `manager.py`**
+- [x] **Step 3: Implement `manager.py`**
 
 `L2CAPManager`:
 - `__init__(hci, trace)`: stores refs, init `_connections: dict[int, dict[int, Channel]]`, `_sar = Reassembler()`
@@ -492,7 +492,7 @@ async def test_on_disconnection_cleans_up(manager):
 - `open_le_coc(handle, psm, mtu)`: send LE_Credit_Conn_Req via signaling, await response → return LECoCChannel
 - `open_classic_channel(handle, psm, mode, mtu)`: send Connection_Request via signaling
 
-- [ ] **Step 4: Write `__init__.py`**
+- [x] **Step 4: Write `__init__.py`**
 
 ```python
 from pybluehost.l2cap.constants import (
@@ -506,13 +506,13 @@ from pybluehost.l2cap.classic import ClassicChannel, ChannelMode
 from pybluehost.l2cap.manager import L2CAPManager
 ```
 
-- [ ] **Step 5: Run all L2CAP tests + full suite**
+- [x] **Step 5: Run all L2CAP tests + full suite**
 ```bash
 uv run pytest tests/unit/l2cap/ -v
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 6: Commit + update STATUS.md**
+- [x] **Step 6: Commit + update STATUS.md**
 ```bash
 git add pybluehost/l2cap/ tests/unit/l2cap/
 git commit -m "feat(l2cap): add L2CAPManager with connection tracking and channel routing"
@@ -528,7 +528,7 @@ git commit -m "docs: mark Plan 4 (L2CAP) complete in STATUS.md"
 
 **Files:** `tests/integration/__init__.py`, `tests/integration/test_hci_l2cap.py`
 
-- [ ] **Step 1: Write the integration test**
+- [x] **Step 1: Write the integration test**
 
 ```python
 # tests/integration/test_hci_l2cap.py
@@ -628,18 +628,18 @@ async def test_hci_l2cap_acl_routes_to_att_channel(hci_l2cap_pair):
     assert received == [payload]
 ```
 
-- [ ] **Step 2: Run integration tests**
+- [x] **Step 2: Run integration tests**
 ```bash
 uv run pytest tests/integration/test_hci_l2cap.py -v --tb=short
 ```
 Expected: PASS — ATT and SMP channels registered, ACL data routed correctly.
 
-- [ ] **Step 3: Run full test suite — no regressions**
+- [x] **Step 3: Run full test suite — no regressions**
 ```bash
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add tests/integration/
 git commit -m "test(integration): add HCI + L2CAP integration test with VirtualController"

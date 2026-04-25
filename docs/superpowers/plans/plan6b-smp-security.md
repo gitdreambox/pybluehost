@@ -27,7 +27,7 @@
 
 **Files:** `pybluehost/ble/smp.py`, `tests/unit/ble/test_smp.py`
 
-- [ ] **Step 1: Write failing SMP tests**
+- [x] **Step 1: Write failing SMP tests**
 
 ```python
 # tests/unit/ble/test_smp.py
@@ -191,9 +191,9 @@ async def test_auto_accept_delegate_confirms_everything():
     assert await delegate.confirm_pairing(1, None) is True
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `smp.py`**
+- [x] **Step 3: Implement `smp.py`**
 
 - `SMPCode(IntEnum)`: PAIRING_REQUEST=0x01 through KEYPRESS_NOTIFICATION=0x0E
 - `SMPPdu` base class with `to_bytes()` / `decode_smp_pdu()`
@@ -326,9 +326,9 @@ async def test_auto_accept_delegate_confirms_everything():
 
 **Note:** Add `cryptography>=41.0` to pyproject.toml dev dependencies for AES-CMAC / ECDH.
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/ble/smp.py tests/unit/ble/test_smp.py pyproject.toml
 git commit -m "feat(ble): add SMP pairing state machine, crypto, and bond storage"
@@ -344,7 +344,7 @@ git commit -m "feat(ble): add SMP pairing state machine, crypto, and bond storag
 
 **Files:** `pybluehost/ble/security.py`, `tests/unit/ble/test_security.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/ble/test_security.py
@@ -387,12 +387,12 @@ def test_ctkd_round_trip():
     assert ltk2.key == ltk.key
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 ```bash
 uv run pytest tests/unit/ble/test_security.py -v
 ```
 
-- [ ] **Step 3: Implement `pybluehost/ble/security.py`**
+- [x] **Step 3: Implement `pybluehost/ble/security.py`**
 
 ```python
 from __future__ import annotations
@@ -435,12 +435,12 @@ class CTKDManager:
         return LTK(key=key, rand=bytes(8), ediv=0, authenticated=True, sc=True)
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 ```bash
 uv run pytest tests/unit/ble/test_security.py -v
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/ble/security.py tests/unit/ble/test_security.py
 git commit -m "feat(ble): add SecurityConfig and CTKDManager for cross-transport key derivation"
@@ -452,15 +452,15 @@ git commit -m "feat(ble): add SecurityConfig and CTKDManager for cross-transport
 
 ## Task 3: Package Exports + Final Validation
 
-- [ ] **Step 1: Update `pybluehost/ble/__init__.py`** to export SMP + Security symbols
+- [x] **Step 1: Update `pybluehost/ble/__init__.py`** to export SMP + Security symbols
 
-- [ ] **Step 2: Run all SMP + Security tests**
+- [x] **Step 2: Run all SMP + Security tests**
 ```bash
 uv run pytest tests/unit/ble/test_smp.py tests/unit/ble/test_security.py -v
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 3: Commit + update STATUS.md**
+- [x] **Step 3: Commit + update STATUS.md**
 
 ---
 

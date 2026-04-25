@@ -25,7 +25,7 @@
 
 **Files:** `pybluehost/core/gap_common.py`, `tests/unit/core/test_gap_common.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/core/test_gap_common.py
@@ -78,9 +78,9 @@ def test_class_of_device():
     assert cod.to_int() == (0x200 << 13) | (0x01 << 8) | (0x04 << 2)
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `gap_common.py`**
+- [x] **Step 3: Implement `gap_common.py`**
 
 ```python
 class Appearance(IntEnum):
@@ -125,9 +125,9 @@ class AdvertisingData:
     def from_bytes(cls, data: bytes) -> "AdvertisingData": ...
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/core/gap_common.py tests/unit/core/test_gap_common.py
 git commit -m "feat(core): add gap_common types — AdvertisingData, Appearance, ClassOfDevice"
@@ -139,7 +139,7 @@ git commit -m "feat(core): add gap_common types — AdvertisingData, Appearance,
 
 **Files:** `pybluehost/ble/gap.py`, `tests/unit/ble/test_gap.py`
 
-- [ ] **Step 1: Write failing BLE GAP tests**
+- [x] **Step 1: Write failing BLE GAP tests**
 
 ```python
 # tests/unit/ble/test_gap.py
@@ -257,9 +257,9 @@ def test_ble_connection_dataclass():
     assert conn.att is None
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `ble/gap.py`**
+- [x] **Step 3: Implement `ble/gap.py`**
 
 ```python
 @dataclass
@@ -371,15 +371,15 @@ class ExtendedAdvertiser:
 #   HCI_LE_SET_EXTENDED_ADVERTISING_ENABLE  = make_opcode(OGF.LE, 0x39)
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/ble/gap.py tests/unit/ble/test_gap.py
 git commit -m "feat(ble): add BLE GAP — Advertiser, Scanner, ConnectionManager, PrivacyManager"
 ```
 
-- [ ] **Step 6: Run full BLE GAP test suite + update STATUS.md**
+- [x] **Step 6: Run full BLE GAP test suite + update STATUS.md**
 ```bash
 uv run pytest tests/unit/ble/test_gap.py tests/unit/core/test_gap_common.py -v
 uv run pytest tests/ -v --tb=short

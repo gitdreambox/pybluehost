@@ -29,7 +29,7 @@
 
 **Files:** `base.py`, `decorators.py`, `tests/unit/profiles/test_base.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/profiles/test_base.py
@@ -126,9 +126,9 @@ def test_on_notify_decorator_sets_metadata():
     assert Srv.hrm._att_notify == UUID16(0x2A37)
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `base.py`**
+- [x] **Step 3: Implement `base.py`**
 
 ```python
 from abc import ABC, abstractmethod
@@ -202,7 +202,7 @@ class BLEProfileClient(ABC):
         await self._gatt.subscribe_notifications(char, handler)
 ```
 
-- [ ] **Step 4: Implement `decorators.py`**
+- [x] **Step 4: Implement `decorators.py`**
 
 ```python
 # decorators.py — complete implementation
@@ -255,9 +255,9 @@ def on_indicate(uuid: int | str):
 
 `BLEProfileServer.register()` introspects the instance for methods decorated with `_att_read`/`_att_write`/`_att_notify`/`_att_indicate`, builds `ServiceDefinition`, calls `gatt_server.add_service()`, then calls `gatt_server.on_read(uuid, callback)` etc. for each.
 
-- [ ] **Step 5: Run tests — verify they pass**
+- [x] **Step 5: Run tests — verify they pass**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 ```bash
 git add pybluehost/profiles/ble/base.py pybluehost/profiles/ble/decorators.py tests/unit/profiles/
 git commit -m "feat(profiles): add BLEProfileServer base and on_read/write/notify/indicate decorators"
@@ -271,7 +271,7 @@ git commit -m "feat(profiles): add BLEProfileServer base and on_read/write/notif
 
 **Files:** `yaml_loader.py`, `services/*.yaml`
 
-- [ ] **Step 1: Write tests**
+- [x] **Step 1: Write tests**
 
 ```python
 # tests/unit/profiles/test_yaml_loader.py
@@ -313,9 +313,9 @@ def test_yaml_loader_validate_bad_yaml():
     assert len(errors) > 0
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `yaml_loader.py`**
+- [x] **Step 3: Implement `yaml_loader.py`**
 
 ```python
 from pathlib import Path
@@ -402,7 +402,7 @@ class ServiceYAMLLoader:
         return ServiceDefinition(uuid=uuid, characteristics=chars)
 ```
 
-- [ ] **Step 4: Create YAML service files**
+- [x] **Step 4: Create YAML service files**
 
 ```yaml
 # services/dis.yaml
@@ -602,9 +602,9 @@ service:
         read: true
 ```
 
-- [ ] **Step 5: Run tests — verify they pass**
+- [x] **Step 5: Run tests — verify they pass**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 ```bash
 git add pybluehost/profiles/ble/yaml_loader.py pybluehost/profiles/ble/services/
 git commit -m "feat(profiles): add ServiceYAMLLoader and built-in service YAML definitions"
@@ -616,12 +616,12 @@ git commit -m "feat(profiles): add ServiceYAMLLoader and built-in service YAML d
 
 ## Task 3: Final Validation
 
-- [ ] **Step 1: Run all framework tests**
+- [x] **Step 1: Run all framework tests**
 ```bash
 uv run pytest tests/unit/profiles/test_base.py tests/unit/profiles/test_yaml_loader.py -v
 ```
 
-- [ ] **Step 2: Commit + update STATUS.md**
+- [x] **Step 2: Commit + update STATUS.md**
 
 ---
 

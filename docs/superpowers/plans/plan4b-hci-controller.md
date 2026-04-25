@@ -29,7 +29,7 @@
 
 **Files:** `pybluehost/hci/controller.py`, `tests/unit/hci/test_controller.py`
 
-- [ ] **Step 1: Write failing tests using FakeTransport (including ConnectionManager tests)**
+- [x] **Step 1: Write failing tests using FakeTransport (including ConnectionManager tests)**
 
 ```python
 # tests/unit/hci/test_controller.py
@@ -155,9 +155,9 @@ def test_connection_manager_disconnect_missing_handle_returns_none():
     assert result is None
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `pybluehost/hci/controller.py`**
+- [x] **Step 3: Implement `pybluehost/hci/controller.py`**
 
 Design:
 - `HCIConnection` dataclass and `ConnectionManager` class (see below)
@@ -280,9 +280,9 @@ class HCIController:
         self._trace.error(f"Transport error: {error}")
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Add `CommandTimeoutError` to `core/errors.py` if missing, then commit**
+- [x] **Step 5: Add `CommandTimeoutError` to `core/errors.py` if missing, then commit**
 ```bash
 git add pybluehost/hci/controller.py tests/unit/hci/test_controller.py
 git commit -m "feat(hci): add HCIController with command/ACL flow, event routing, and ConnectionManager"
@@ -298,7 +298,7 @@ git commit -m "feat(hci): add HCIController with command/ACL flow, event routing
 
 **Files:** `pybluehost/hci/virtual.py`, `tests/unit/hci/test_virtual.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/hci/test_virtual.py
@@ -354,9 +354,9 @@ async def test_le_read_buffer_size(vc):
     assert event.return_parameters[0] == ErrorCode.SUCCESS
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `pybluehost/hci/virtual.py`**
+- [x] **Step 3: Implement `pybluehost/hci/virtual.py`**
 
 Design:
 - `VirtualController(address: BDAddress)`
@@ -366,9 +366,9 @@ Design:
 - Unknown opcode → `Command_Complete` with `UNKNOWN_COMMAND` status
 - `connect_to(other: VirtualController)`: wire loopback for ACL
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/hci/virtual.py tests/unit/hci/test_virtual.py
 git commit -m "feat(hci): add VirtualController with basic command dispatch"
@@ -384,7 +384,7 @@ git commit -m "feat(hci): add VirtualController with basic command dispatch"
 
 **Files:** `pybluehost/hci/__init__.py`, full test suite run
 
-- [ ] **Step 1: Write `pybluehost/hci/__init__.py`**
+- [x] **Step 1: Write `pybluehost/hci/__init__.py`**
 
 ```python
 from pybluehost.hci.constants import (
@@ -422,17 +422,17 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 2: Run all HCI tests**
+- [x] **Step 2: Run all HCI tests**
 ```bash
 uv run pytest tests/unit/hci/ -v --tb=short
 ```
 
-- [ ] **Step 3: Run full test suite — no regressions**
+- [x] **Step 3: Run full test suite — no regressions**
 ```bash
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add pybluehost/hci/__init__.py
 git commit -m "feat(hci): finalize HCI package exports"
@@ -452,7 +452,7 @@ This test wires a real `HCIController` to a `VirtualController` via a `LoopbackT
 and verifies that `controller.initialize()` issues all 16 mandatory init commands.
 It serves as a smoke test that the full HCI stack can come up without errors.
 
-- [ ] **Step 1: Write the integration test**
+- [x] **Step 1: Write the integration test**
 
 ```python
 # tests/integration/test_hci_init.py
@@ -631,12 +631,12 @@ async def test_hci_init_sequence_timeout_raises():
         await controller.initialize()
 ```
 
-- [ ] **Step 2: Run the integration test — verify it fails (initialize() not yet implemented)**
+- [x] **Step 2: Run the integration test — verify it fails (initialize() not yet implemented)**
 ```bash
 uv run pytest tests/integration/test_hci_init.py -v
 ```
 
-- [ ] **Step 3: Implement `HCIController.initialize()` in `controller.py`**
+- [x] **Step 3: Implement `HCIController.initialize()` in `controller.py`**
 
 Add the following method to `HCIController`.  It sends each of the 16 init commands in
 sequence, using `send_command()` (which already handles credit flow and timeouts).
@@ -716,23 +716,23 @@ async def initialize(self) -> None:
         await self.send_command(cmd)
 ```
 
-- [ ] **Step 4: Run the integration test — verify it passes**
+- [x] **Step 4: Run the integration test — verify it passes**
 ```bash
 uv run pytest tests/integration/test_hci_init.py -v
 ```
 
-- [ ] **Step 5: Run the full test suite — no regressions**
+- [x] **Step 5: Run the full test suite — no regressions**
 ```bash
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 ```bash
 git add tests/integration/ pybluehost/hci/controller.py
 git commit -m "test(hci): add integration test for HCI init sequence (16 commands)"
 ```
 
-- [ ] **Step 7: Update STATUS.md — mark Plan 3 complete**
+- [x] **Step 7: Update STATUS.md — mark Plan 3 complete**
 
 Edit `docs/superpowers/STATUS.md`: change Plan 3 from 🔄 to ✅, set Plan 4 as current.
 

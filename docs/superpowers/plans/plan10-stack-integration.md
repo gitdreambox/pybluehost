@@ -26,7 +26,7 @@
 
 **Files:** `pybluehost/stack.py` (StackConfig only), tests
 
-- [ ] **Step 1: Write failing StackConfig tests**
+- [x] **Step 1: Write failing StackConfig tests**
 
 ```python
 # tests/unit/test_stack_config.py
@@ -50,9 +50,9 @@ def test_stack_mode_enum():
     assert StackMode.REPLAY == "replay"
 ```
 
-- [ ] **Step 2: Run tests �?verify they fail**
+- [x] **Step 2: Run tests �?verify they fail**
 
-- [ ] **Step 3: Implement `StackConfig` + `StackMode`**
+- [x] **Step 3: Implement `StackConfig` + `StackMode`**
 
 ```python
 from dataclasses import dataclass, field
@@ -96,10 +96,10 @@ def test_stack_config_security_field():
     assert isinstance(config.security, SecurityConfig)
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**�?from pybluehost.ble.security
-- [ ] **Step 4: Run tests — verify they pass** �?verify they pass**
+- [x] **Step 4: Run tests — verify they pass**�?from pybluehost.ble.security
+- [x] **Step 4: Run tests — verify they pass** �?verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/stack.py tests/unit/test_stack_config.py
 git commit -m "feat(stack): add StackConfig and StackMode"
@@ -111,7 +111,7 @@ git commit -m "feat(stack): add StackConfig and StackMode"
 
 **Files:** `pybluehost/stack.py` (Stack class), tests
 
-- [ ] **Step 1: Write failing Stack lifecycle tests**
+- [x] **Step 1: Write failing Stack lifecycle tests**
 
 ```python
 # tests/unit/test_stack_lifecycle.py
@@ -161,9 +161,9 @@ async def test_stack_exposes_layers(vc):
     await stack.close()
 ```
 
-- [ ] **Step 2: Run tests �?verify they fail**
+- [x] **Step 2: Run tests �?verify they fail**
 
-- [ ] **Step 3: Implement `Stack._build()` and public factory methods**
+- [x] **Step 3: Implement `Stack._build()` and public factory methods**
 
 Assembly order (per architecture doc 13.5):
 1. `TraceSystem(config.trace_sinks)`
@@ -269,9 +269,9 @@ class Stack:
     def mode(self) -> StackMode: ...
 ```
 
-- [ ] **Step 4: Run tests — verify they pass** �?verify they pass**
+- [x] **Step 4: Run tests — verify they pass** �?verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/stack.py tests/unit/test_stack_lifecycle.py
 git commit -m "feat(stack): add Stack factory and lifecycle management"
@@ -283,7 +283,7 @@ git commit -m "feat(stack): add Stack factory and lifecycle management"
 
 **Files:** `tests/e2e/test_loopback.py`
 
-- [ ] **Step 1: Write integration tests**
+- [x] **Step 1: Write integration tests**
 
 ```python
 # tests/e2e/test_loopback.py
@@ -349,17 +349,17 @@ async def test_loopback_gatt_read():
     await stack_b.close()
 ```
 
-- [ ] **Step 2: Run integration tests**
+- [x] **Step 2: Run integration tests**
 ```bash
 uv run pytest tests/e2e/ -v --tb=short
 ```
 
-- [ ] **Step 3: Run full test suite �?no regressions**
+- [x] **Step 3: Run full test suite �?no regressions**
 ```bash
 uv run pytest tests/ -v --tb=short --cov=pybluehost --cov-report=term-missing
 ```
 
-- [ ] **Step 4: Update `pybluehost/__init__.py`**
+- [x] **Step 4: Update `pybluehost/__init__.py`**
 
 ```python
 from pybluehost.stack import Stack, StackConfig, StackMode
@@ -367,7 +367,7 @@ from pybluehost.stack import Stack, StackConfig, StackMode
 __all__ = ["Stack", "StackConfig", "StackMode"]
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add tests/e2e/ pybluehost/__init__.py
 git commit -m "test(integration): add Loopback full-stack integration tests"
@@ -377,17 +377,17 @@ git commit -m "test(integration): add Loopback full-stack integration tests"
 
 ## Task 4: Final Polish + STATUS Update
 
-- [ ] **Step 1: Ensure all tests pass**
+- [x] **Step 1: Ensure all tests pass**
 ```bash
 uv run pytest tests/ -v
 ```
 
-- [ ] **Step 2: Check test coverage**
+- [x] **Step 2: Check test coverage**
 ```bash
 uv run pytest tests/ --cov=pybluehost --cov-report=html
 ```
 
-- [ ] **Step 3: Update STATUS.md �?all plans complete**
+- [x] **Step 3: Update STATUS.md �?all plans complete**
 
 Edit `docs/superpowers/STATUS.md`: all plans �?
 
@@ -396,7 +396,7 @@ git add docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 9 (Stack integration) complete �?all plans done"
 ```
 
-- [ ] **Step 4: Merge worktree to master**
+- [x] **Step 4: Merge worktree to master**
 ```bash
 # From main repo (not worktree)
 git checkout master

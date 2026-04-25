@@ -26,7 +26,7 @@
 
 **Files:** `pybluehost/classic/gap.py`, `tests/unit/classic/test_gap.py`
 
-- [ ] **Step 1: Write failing Classic GAP tests**
+- [x] **Step 1: Write failing Classic GAP tests**
 
 ```python
 # tests/unit/classic/test_gap.py
@@ -63,13 +63,13 @@ async def test_set_device_name():
     assert HCI_WRITE_LOCAL_NAME in opcodes
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `classic/gap.py`**
+- [x] **Step 3: Implement `classic/gap.py`**
 
 `ClassicDiscovery`, `ClassicDiscoverability`, `ClassicConnectionManager`, `SSPManager` — each wraps the relevant HCI commands and handles the corresponding HCI events.
 
-- [ ] **Step 4: Implement unified `GAP` class** (can live in `ble/gap.py` or a top-level `gap.py`)
+- [x] **Step 4: Implement unified `GAP` class** (can live in `ble/gap.py` or a top-level `gap.py`)
 
 ```python
 class GAP:
@@ -99,13 +99,13 @@ class GAP:
     def set_pairing_delegate(self, delegate) -> None: ...
 ```
 
-- [ ] **Step 5: Run all GAP tests + full suite**
+- [x] **Step 5: Run all GAP tests + full suite**
 ```bash
 uv run pytest tests/unit/ble/test_gap.py tests/unit/classic/test_gap.py tests/unit/core/test_gap_common.py -v
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 6: Commit + update STATUS.md**
+- [x] **Step 6: Commit + update STATUS.md**
 ```bash
 git add pybluehost/classic/gap.py pybluehost/ble/gap.py pybluehost/core/gap_common.py tests/
 git commit -m "feat(gap): add unified GAP layer — BLE Advertising/Scan/Connect + Classic Inquiry/SSP"

@@ -29,7 +29,7 @@
 
 **Files:** `pybluehost/classic/sdp.py` (DataElement + codec), tests
 
-- [ ] **Step 1: Write failing SDP tests**
+- [x] **Step 1: Write failing SDP tests**
 
 ```python
 # tests/unit/classic/test_sdp.py
@@ -125,9 +125,9 @@ def test_sdp_client_search_attributes():
     assert "attr_ids" in params
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement SDP data model**
+- [x] **Step 3: Implement SDP data model**
 
 ```python
 class DataElementType(IntEnum):
@@ -165,7 +165,7 @@ def make_rfcomm_service_record(service_uuid: int, channel: int, name: str) -> Se
     """Build standard SPP-style SDP record for an RFCOMM service."""
 ```
 
-- [ ] **Step 4: Implement `SDPServer` + `SDPClient` stubs**
+- [x] **Step 4: Implement `SDPServer` + `SDPClient` stubs**
 
 `SDPServer`:
 - `register(record) -> int`: assign handle, store
@@ -178,9 +178,9 @@ def make_rfcomm_service_record(service_uuid: int, channel: int, name: str) -> Se
 - `search_attributes(target, uuid, attr_ids) -> dict`: send ServiceSearchAttributeRequest (combines search + get_attributes in one PDU); `attr_ids` is list of int attribute IDs or `(start, end)` range tuples
 - `find_rfcomm_channel(target, service_uuid) -> int | None`: convenience
 
-- [ ] **Step 5: Run tests — verify they pass**
+- [x] **Step 5: Run tests — verify they pass**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 ```bash
 git add pybluehost/classic/sdp.py tests/unit/classic/test_sdp.py
 git commit -m "feat(classic): add SDP data model, encode/decode, SDPServer, SDPClient"
@@ -192,7 +192,7 @@ git commit -m "feat(classic): add SDP data model, encode/decode, SDPServer, SDPC
 
 **Files:** `pybluehost/classic/rfcomm.py`, `tests/unit/classic/test_rfcomm.py`
 
-- [ ] **Step 1: Write failing RFCOMM frame tests**
+- [x] **Step 1: Write failing RFCOMM frame tests**
 
 ```python
 # tests/unit/classic/test_rfcomm.py
@@ -263,9 +263,9 @@ def test_rfcomm_frame_type_enum_completeness():
     assert expected.issubset({t.name for t in RFCOMMFrameType})
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement RFCOMM frame codec**
+- [x] **Step 3: Implement RFCOMM frame codec**
 
 RFCOMM frame structure:
 - Address byte: EA(1) | C/R(1) | DLCI(6)
@@ -296,7 +296,7 @@ def decode_frame(data: bytes) -> RFCOMMFrame: ...
 
 `calc_fcs(data: bytes) -> int`: CRC-8 with polynomial 0xE0 (TS 07.10 standard table).
 
-- [ ] **Step 4: Implement `RFCOMMSession` and `RFCOMMChannel`**
+- [x] **Step 4: Implement `RFCOMMSession` and `RFCOMMChannel`**
 
 `RFCOMMSession`:
 - `async open()`: send SABM on DLCI 0, await UA
@@ -311,9 +311,9 @@ def decode_frame(data: bytes) -> RFCOMMFrame: ...
 - `async connect(acl_handle, server_channel) -> RFCOMMChannel`
 - `async listen(server_channel, handler)`: register incoming connection handler
 
-- [ ] **Step 5: Run tests — verify they pass**
+- [x] **Step 5: Run tests — verify they pass**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 ```bash
 git add pybluehost/classic/rfcomm.py tests/unit/classic/test_rfcomm.py
 git commit -m "feat(classic): add RFCOMM frame codec, Session and Channel"
@@ -325,7 +325,7 @@ git commit -m "feat(classic): add RFCOMM frame codec, Session and Channel"
 
 **Files:** `pybluehost/classic/spp.py`, `tests/unit/classic/test_spp.py`
 
-- [ ] **Step 1: Write failing SPP tests**
+- [x] **Step 1: Write failing SPP tests**
 
 ```python
 # tests/unit/classic/test_spp.py
@@ -354,9 +354,9 @@ async def test_spp_connection_context_manager():
     channel.close.assert_called_once()
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `spp.py`**
+- [x] **Step 3: Implement `spp.py`**
 
 ```python
 @dataclass
@@ -391,9 +391,9 @@ class SPPClient:
         # 3. Wrap in SPPConnection
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit + package exports + STATUS update**
+- [x] **Step 5: Commit + package exports + STATUS update**
 ```bash
 git add pybluehost/classic/ tests/unit/classic/
 git commit -m "feat(classic): add SPP profile (SPPService + SPPClient + SPPConnection)"

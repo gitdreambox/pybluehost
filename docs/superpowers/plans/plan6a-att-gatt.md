@@ -27,7 +27,7 @@
 
 **Files:** `pybluehost/ble/att.py` (PDU types only), `tests/unit/ble/test_att.py`
 
-- [ ] **Step 1: Write failing ATT PDU tests**
+- [x] **Step 1: Write failing ATT PDU tests**
 
 ```python
 # tests/unit/ble/test_att.py
@@ -89,9 +89,9 @@ def test_error_response_decode():
     assert pdu.error_code == 0x0A  # Attribute Not Found
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement ATT PDU codec in `att.py`**
+- [x] **Step 3: Implement ATT PDU codec in `att.py`**
 
 ```python
 class ATTOpcode(IntEnum):
@@ -127,7 +127,7 @@ class ATTOpcode(IntEnum):
 
 Each PDU is a `@dataclass` with `to_bytes()` + `decode_att_pdu()` dispatcher.
 
-- [ ] **Step 4: Implement `ATTBearer` class**
+- [x] **Step 4: Implement `ATTBearer` class**
 
 ```python
 class ATTBearer:
@@ -179,9 +179,9 @@ async def test_att_bearer_read_blob():
     assert int.from_bytes(raw[3:5], "little") == 5
 ```
 
-- [ ] **Step 5: Run tests — verify they pass**
+- [x] **Step 5: Run tests — verify they pass**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 ```bash
 git add pybluehost/ble/att.py tests/unit/ble/test_att.py
 git commit -m "feat(ble): add ATT PDU codec and ATTBearer request/response machinery"
@@ -193,7 +193,7 @@ git commit -m "feat(ble): add ATT PDU codec and ATTBearer request/response machi
 
 **Files:** `pybluehost/ble/gatt.py`, `tests/unit/ble/test_gatt.py`
 
-- [ ] **Step 1: Write failing GATT tests**
+- [x] **Step 1: Write failing GATT tests**
 
 ```python
 # tests/unit/ble/test_gatt.py
@@ -287,9 +287,9 @@ async def test_gatt_server_notify():
     assert notifications[0][1] == bytes([0x00, 72])
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
-- [ ] **Step 3: Implement `gatt.py`**
+- [x] **Step 3: Implement `gatt.py`**
 
 - `Permissions(Flag)`: READABLE, WRITABLE, READABLE_ENCRYPTED, WRITABLE_ENCRYPTED
 - `CharProperties(Flag)`: READ, WRITE, NOTIFY, INDICATE, WRITE_WITHOUT_RESPONSE, etc.
@@ -313,9 +313,9 @@ async def test_gatt_server_notify():
   ```
 - `GATTClient`: async methods wrapping ATTBearer calls + parsing response PDUs
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add pybluehost/ble/gatt.py tests/unit/ble/test_gatt.py
 git commit -m "feat(ble): add GATT AttributeDatabase, GATTServer and GATTClient"
@@ -325,7 +325,7 @@ git commit -m "feat(ble): add GATT AttributeDatabase, GATTServer and GATTClient"
 
 ## Task 3: Package Exports + Final Validation
 
-- [ ] **Step 1: Write `pybluehost/ble/__init__.py`** (ATT + GATT exports)
+- [x] **Step 1: Write `pybluehost/ble/__init__.py`** (ATT + GATT exports)
 
 ```python
 from pybluehost.ble.att import (
@@ -355,13 +355,13 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 2: Run all ATT + GATT tests + full suite**
+- [x] **Step 2: Run all ATT + GATT tests + full suite**
 ```bash
 uv run pytest tests/unit/ble/test_att.py tests/unit/ble/test_gatt.py -v
 uv run pytest tests/ -v --tb=short
 ```
 
-- [ ] **Step 3: Commit + update STATUS.md**
+- [x] **Step 3: Commit + update STATUS.md**
 ```bash
 git add pybluehost/ble/__init__.py
 git commit -m "feat(ble): finalize ATT + GATT package exports"
