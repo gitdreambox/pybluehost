@@ -42,7 +42,7 @@
 
 **Files:** `tests/fakes/transport.py`, `tests/fakes/hci.py`, `tests/fakes/l2cap.py`, `tests/fakes/trace.py`, `tests/fakes/__init__.py`
 
-- [ ] **Step 1: Write tests that use the fakes** (self-validating)
+- [x] **Step 1: Write tests that use the fakes** (self-validating)
 
 ```python
 # tests/unit/test_fakes.py
@@ -102,12 +102,12 @@ def test_null_trace_does_not_raise():
     trace.log_acl(handle=0x0001, direction="tx", data=b"\x02")
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 ```bash
 uv run pytest tests/unit/test_fakes.py -v
 ```
 
-- [ ] **Step 3: Implement `tests/fakes/transport.py`**
+- [x] **Step 3: Implement `tests/fakes/transport.py`**
 
 ```python
 # tests/fakes/transport.py
@@ -152,7 +152,7 @@ class FakeTransport(Transport):
         self.sent.clear()
 ```
 
-- [ ] **Step 4: Implement `tests/fakes/hci.py`**
+- [x] **Step 4: Implement `tests/fakes/hci.py`**
 
 ```python
 # tests/fakes/hci.py
@@ -189,7 +189,7 @@ class FakeHCIDownstream:
         return self.commands[-1].opcode if self.commands else None
 ```
 
-- [ ] **Step 5: Implement `tests/fakes/l2cap.py`**
+- [x] **Step 5: Implement `tests/fakes/l2cap.py`**
 
 ```python
 # tests/fakes/l2cap.py
@@ -218,7 +218,7 @@ class FakeChannelEvents:
         self.mtu_changed_to = None
 ```
 
-- [ ] **Step 6: Implement `tests/fakes/trace.py`**
+- [x] **Step 6: Implement `tests/fakes/trace.py`**
 
 ```python
 # tests/fakes/trace.py
@@ -235,7 +235,7 @@ class NullTrace(TraceSystem):
     def log_acl(self, handle: int, direction: str, data: bytes) -> None: pass
 ```
 
-- [ ] **Step 7: Implement `tests/fakes/__init__.py`**
+- [x] **Step 7: Implement `tests/fakes/__init__.py`**
 
 ```python
 from tests.fakes.transport import FakeTransport
@@ -246,12 +246,12 @@ from tests.fakes.trace import NullTrace
 __all__ = ["FakeTransport", "FakeHCIDownstream", "FakeChannelEvents", "NullTrace"]
 ```
 
-- [ ] **Step 8: Run tests — verify they pass**
+- [x] **Step 8: Run tests — verify they pass**
 ```bash
 uv run pytest tests/unit/test_fakes.py -v
 ```
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 ```bash
 git add tests/fakes/ tests/unit/test_fakes.py
 git commit -m "test(infra): add shared test fakes — FakeTransport, FakeHCIDownstream, FakeChannelEvents, NullTrace"
@@ -263,7 +263,7 @@ git commit -m "test(infra): add shared test fakes — FakeTransport, FakeHCIDown
 
 **Files:** `tests/conftest.py`, `tests/unit/conftest.py`, `tests/integration/conftest.py`, `tests/e2e/conftest.py`, `tests/hardware/conftest.py`, `pyproject.toml`
 
-- [ ] **Step 1: Update `pyproject.toml`** with markers, asyncio mode, coverage config
+- [x] **Step 1: Update `pyproject.toml`** with markers, asyncio mode, coverage config
 
 ```toml
 # pyproject.toml additions (merge into existing [tool.pytest.ini_options]):
@@ -293,7 +293,7 @@ exclude_lines = [
 fail_under = 85
 ```
 
-- [ ] **Step 2: Write `tests/conftest.py`**
+- [x] **Step 2: Write `tests/conftest.py`**
 
 ```python
 # tests/conftest.py
@@ -306,7 +306,7 @@ def pytest_configure(config):
     pass
 ```
 
-- [ ] **Step 3: Write `tests/unit/conftest.py`**
+- [x] **Step 3: Write `tests/unit/conftest.py`**
 
 ```python
 # tests/unit/conftest.py
@@ -328,7 +328,7 @@ def null_trace():
     return NullTrace()
 ```
 
-- [ ] **Step 4: Write `tests/integration/conftest.py`**
+- [x] **Step 4: Write `tests/integration/conftest.py`**
 
 ```python
 # tests/integration/conftest.py
@@ -386,7 +386,7 @@ async def l2cap_with_hci(hci_with_vc):
     return l2cap
 ```
 
-- [ ] **Step 5: Write `tests/e2e/conftest.py`**
+- [x] **Step 5: Write `tests/e2e/conftest.py`**
 
 ```python
 # tests/e2e/conftest.py
@@ -415,7 +415,7 @@ async def single_loopback_stack():
     await stack.close()
 ```
 
-- [ ] **Step 6: Write `tests/hardware/conftest.py`**
+- [x] **Step 6: Write `tests/hardware/conftest.py`**
 
 ```python
 # tests/hardware/conftest.py
@@ -439,12 +439,12 @@ async def usb_stack(hardware_required):
     await stack.close()
 ```
 
-- [ ] **Step 7: Run tests to verify conftest fixtures load**
+- [x] **Step 7: Run tests to verify conftest fixtures load**
 ```bash
 uv run pytest tests/ --collect-only -q 2>&1 | head -30
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 ```bash
 git add pyproject.toml tests/conftest.py tests/unit/conftest.py tests/integration/conftest.py tests/e2e/conftest.py tests/hardware/conftest.py
 git commit -m "test(infra): add conftest hierarchy, pytest markers, coverage config"
@@ -456,7 +456,7 @@ git commit -m "test(infra): add conftest hierarchy, pytest markers, coverage con
 
 **Files:** `tests/data/hci_reset.btsnoop`, `tests/btsnoop/test_replay.py`
 
-- [ ] **Step 1: Generate minimal btsnoop fixture**
+- [x] **Step 1: Generate minimal btsnoop fixture**
 
 ```python
 # Run this script once to generate tests/data/hci_reset.btsnoop
@@ -506,7 +506,7 @@ mkdir -p tests/data
 uv run python pybluehost/tools/gen_btsnoop_fixture.py
 ```
 
-- [ ] **Step 2: Write btsnoop replay tests**
+- [x] **Step 2: Write btsnoop replay tests**
 
 ```python
 # tests/btsnoop/test_replay.py
@@ -565,12 +565,12 @@ async def test_btsnoop_replay_second_packet_is_cc_reset():
     assert pkt.return_parameters[0] == ErrorCode.SUCCESS
 ```
 
-- [ ] **Step 3: Run btsnoop tests**
+- [x] **Step 3: Run btsnoop tests**
 ```bash
 uv run pytest tests/btsnoop/ -v -m btsnoop --tb=short
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add tests/data/ tests/btsnoop/ pybluehost/tools/gen_btsnoop_fixture.py
 git commit -m "test(infra): add btsnoop fixture data and replay tests"
@@ -582,7 +582,7 @@ git commit -m "test(infra): add btsnoop fixture data and replay tests"
 
 **Files:** `tests/hardware/test_usb_smoke.py`
 
-- [ ] **Step 1: Write hardware smoke tests**
+- [x] **Step 1: Write hardware smoke tests**
 
 ```python
 # tests/hardware/test_usb_smoke.py
@@ -617,13 +617,13 @@ async def test_usb_stack_reset(usb_stack):
     assert usb_stack.is_powered
 ```
 
-- [ ] **Step 2: Verify hardware tests are skipped in normal runs**
+- [x] **Step 2: Verify hardware tests are skipped in normal runs**
 ```bash
 uv run pytest tests/hardware/ -v
 ```
 Expected: all tests SKIPPED with "Pass --hardware to run hardware tests"
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 ```bash
 git add tests/hardware/
 git commit -m "test(infra): add hardware smoke tests (skipped unless --hardware)"
@@ -635,7 +635,7 @@ git commit -m "test(infra): add hardware smoke tests (skipped unless --hardware)
 
 **Files:** `.github/workflows/test.yml`
 
-- [ ] **Step 1: Write GitHub Actions CI workflow**
+- [x] **Step 1: Write GitHub Actions CI workflow**
 
 ```yaml
 # .github/workflows/test.yml
@@ -696,12 +696,12 @@ jobs:
           fail_ci_if_error: false
 ```
 
-- [ ] **Step 2: Verify workflow file is valid YAML**
+- [x] **Step 2: Verify workflow file is valid YAML**
 ```bash
 python -c "import yaml; yaml.safe_load(open('.github/workflows/test.yml'))" && echo "Valid YAML"
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 ```bash
 mkdir -p .github/workflows
 git add .github/workflows/test.yml
@@ -712,18 +712,18 @@ git commit -m "ci: add GitHub Actions test workflow (Python 3.10/3.11/3.12, cove
 
 ## Task 6: Final Verification + STATUS Update
 
-- [ ] **Step 1: Run full test suite — no regressions**
+- [x] **Step 1: Run full test suite — no regressions**
 ```bash
 uv run pytest tests/ -v --tb=short -m "not hardware" --cov=pybluehost --cov-report=term-missing
 ```
 Expected: all tests pass, coverage ≥85%
 
-- [ ] **Step 2: Run with all markers to verify nothing is accidentally skipped**
+- [x] **Step 2: Run with all markers to verify nothing is accidentally skipped**
 ```bash
 uv run pytest tests/ --collect-only -q -m "not hardware" 2>&1 | tail -5
 ```
 
-- [ ] **Step 3: Update STATUS.md — Plan 10 complete, all plans done**
+- [x] **Step 3: Update STATUS.md — Plan 10 complete, all plans done**
 
 Edit `docs/superpowers/STATUS.md`:
 - Add Plan 10 row with ✅
@@ -735,7 +735,7 @@ git add docs/superpowers/STATUS.md
 git commit -m "docs: mark Plan 10 (Test Infrastructure) complete — all plans done"
 ```
 
-- [ ] **Step 4: Merge worktree to master**
+- [x] **Step 4: Merge worktree to master**
 ```bash
 # From the MAIN REPO directory (not inside the worktree):
 cd H:/WUQI/code/pybluehost
