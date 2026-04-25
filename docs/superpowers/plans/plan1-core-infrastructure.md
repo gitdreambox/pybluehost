@@ -86,7 +86,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/xcode4096/pybluehost"
+Homepage = "https://github.com/gitdreambox/pybluehost"
 
 [build-system]
 requires = ["hatchling"]
