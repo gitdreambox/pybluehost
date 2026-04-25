@@ -12,3 +12,5 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     # Sub-commands registered as we add them
     from pybluehost.cli.app.ble_scan import register_ble_scan_command
     register_ble_scan_command(app_subs)
+    from pybluehost.cli.app.ble_adv import register_ble_adv_command
+    register_ble_adv_command(app_subs)
