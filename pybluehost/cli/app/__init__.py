@@ -14,3 +14,5 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_ble_scan_command(app_subs)
     from pybluehost.cli.app.ble_adv import register_ble_adv_command
     register_ble_adv_command(app_subs)
+    from pybluehost.cli.app.classic_inquiry import register_classic_inquiry_command
+    register_classic_inquiry_command(app_subs)
