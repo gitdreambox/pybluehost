@@ -233,6 +233,40 @@ Stack.build(transport=..., trace_sink=...)   # 自定义组装
 - `hci_pair` fixture：两个互联的 VirtualController，模拟两端设备
 - 每层提供独立可用的 Fake SAP 实现，用于单层测试
 
+### 5.8 CLI（命令行工具）
+
+提供开箱即用的命令行工具，让用户**无需编写 Python 代码**即可验证协议栈、调试外部蓝牙设备、做离线工具计算。
+
+**两个命名空间，分类原则：**
+| Namespace | 判定 | 用途 |
+|-----------|------|------|
+| `pybluehost app <cmd>` | 需要打开 HCI transport（loopback / USB / UART） | 真实蓝牙功能：扫描、广播、连接、GATT/SDP 浏览、profile server |
+| `pybluehost tools <cmd>` | 不打开 transport，纯离线/HTTP/libusb 枚举 | 包解码、RPA 计算、固件管理、USB 诊断 |
+
+**命令清单：**
+
+`app/`（共 8 条，统一 `--transport {loopback,usb,uart:...}` 必填）：
+- `ble-scan`（长跑，Ctrl+C 结束，去重打印广播）
+- `ble-adv`（长跑，启动可配置广播）
+- `classic-inquiry`（长跑，循环 inquiry 去重打印）
+- `gatt-browser`（一次性，连接 → 发现 → 打印 GATT 树 → 退出）
+- `sdp-browser`（一次性，连接 → 查 SDP → 打印 → 退出）
+- `gatt-server`（长跑，注册 Battery + HRS，等连接）
+- `hr-monitor`（长跑，HRS server 推送随机心率）
+- `spp-echo`（长跑，RFCOMM ch1 echo server）
+
+`tools/`（共 4 条子族）：
+- `decode <hex>`（从 hex 字符串解码 HCI 包）
+- `rpa {gen-irk, gen-rpa, verify}`（IRK / Resolvable Private Address 生成与校验）
+- `fw {list, download, info, clean}`（固件管理，从 `cli/fw.py` 迁入）
+- `usb {scan, probe}`（USB 设备诊断，从 `cli/usb.py` 迁入）
+
+**Loopback 双模行为：** 客户端类命令（`gatt-browser`、`sdp-browser`、`ble-scan`、`classic-inquiry`）在 `--transport loopback` 时自动在同进程起一个内置对端，让用户无硬件即可验证全流程；真硬件 transport 下则需 `--target <BD_ADDR>`。
+
+**v1.0 不做：** `--json` 输出格式 / 配置文件 / shell completion / 进度条 / 重试参数。
+
+**详细设计：** [docs/superpowers/specs/cli-app-tools-design.md](superpowers/specs/cli-app-tools-design.md)
+
 ---
 
 ## 6. 版本路线图
