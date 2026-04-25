@@ -1,0 +1,29 @@
+import pytest
+from pybluehost.cli._target import parse_target_arg
+from pybluehost.core.address import BDAddress, AddressType
+
+
+def test_parse_default_public():
+    addr, atype = parse_target_arg("AA:BB:CC:DD:EE:FF")
+    assert addr == BDAddress.from_string("AA:BB:CC:DD:EE:FF")
+    assert atype == AddressType.PUBLIC
+
+
+def test_parse_explicit_public():
+    addr, atype = parse_target_arg("AA:BB:CC:DD:EE:FF/public")
+    assert atype == AddressType.PUBLIC
+
+
+def test_parse_random():
+    addr, atype = parse_target_arg("AA:BB:CC:DD:EE:FF/random")
+    assert atype == AddressType.RANDOM
+
+
+def test_parse_invalid_address_raises():
+    with pytest.raises(ValueError):
+        parse_target_arg("ZZZZZZ")
+
+
+def test_parse_invalid_type_raises():
+    with pytest.raises(ValueError, match="Unknown address type"):
+        parse_target_arg("AA:BB:CC:DD:EE:FF/bogus")
