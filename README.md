@@ -266,16 +266,46 @@ config = StackConfig(
 
 ## 命令行工具
 
-```bash
-# 查看帮助
-uv run pybluehost --help
+PyBlueHost CLI 分为两个命名空间：
 
-# 固件管理（Intel/Realtek USB 适配器）
-uv run pybluehost fw list
-uv run pybluehost fw download <chip>
+- `pybluehost app <cmd>` — 需要打开 HCI transport，跑真实蓝牙功能
+- `pybluehost tools <cmd>` — 离线工具，不需要 transport
+
+### app（蓝牙功能，必填 `--transport`）
+
+```bash
+# 长跑命令（Ctrl+C 结束）
+uv run pybluehost app ble-scan --transport usb
+uv run pybluehost app ble-adv --transport usb --name MyDevice
+uv run pybluehost app classic-inquiry --transport usb
+uv run pybluehost app gatt-server --transport loopback
+uv run pybluehost app hr-monitor --transport loopback
+uv run pybluehost app spp-echo --transport usb
+
+# 一次性命令
+uv run pybluehost app gatt-browser --transport loopback
+uv run pybluehost app sdp-browser --transport loopback
+```
+
+`--transport` 接受 `loopback` / `usb` / `usb:vendor=intel` / `uart:/dev/ttyUSB0[@115200]`。
+
+### tools（离线工具）
+
+```bash
+# HCI 包解码
+uv run pybluehost tools decode 01030c00
+
+# RPA 计算
+uv run pybluehost tools rpa gen-irk
+uv run pybluehost tools rpa gen-rpa --irk <32-hex>
+uv run pybluehost tools rpa verify --irk <32-hex> --addr AA:BB:CC:DD:EE:FF
+
+# 固件管理
+uv run pybluehost tools fw list
+uv run pybluehost tools fw download <chip>
 
 # USB 诊断
-uv run pybluehost usb scan
+uv run pybluehost tools usb scan
 ```
 
 ---

@@ -1,5 +1,5 @@
+# pybluehost/cli/__init__.py
 """PyBlueHost CLI entry point."""
-
 from __future__ import annotations
 
 import argparse
@@ -14,17 +14,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # Register fw subcommand
-    from pybluehost.cli.tools.fw import register_fw_commands
-    from pybluehost.cli.tools.usb import register_usb_commands
+    from pybluehost.cli.app import register_app_commands
+    from pybluehost.cli.tools import register_tools_commands
 
-    register_fw_commands(subparsers)
-    register_usb_commands(subparsers)
+    register_app_commands(subparsers)
+    register_tools_commands(subparsers)
 
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
         return 0
+
+    if not hasattr(args, "func"):
+        # Top-level namespace given without subcommand
+        parser.print_help()
+        return 2
 
     return args.func(args)
 
