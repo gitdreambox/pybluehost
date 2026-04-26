@@ -65,20 +65,36 @@ def fw_download(vendor: str, fw_dir: Path | None = None) -> list[Path]:
 
 
 def _download_firmware_files(vendor: str, fw_dir: Path) -> list[Path]:
-    """Download firmware files from upstream sources.
+    """Download firmware files from upstream sources."""
+    from pybluehost.transport.firmware.downloader import FirmwareDownloader
 
-    Currently a placeholder — actual HTTP download logic will be
-    implemented when AUTO_DOWNLOAD policy is fully supported.
-    """
-    # TODO: Implement actual download from linux-firmware.git or vendor sites
-    # For now, print instructions
-    print(f"Firmware download for '{vendor}' is not yet implemented.")
-    print(f"Please manually place firmware files in: {fw_dir}")
+    downloaded: list[Path] = []
+
     if vendor == "intel":
-        print("Intel firmware: https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/intel")
+        files = [
+            "ibt-0291-0291.sfi",
+            "ibt-0291-0291.ddc",
+            "ibt-0040-0041.sfi",
+            "ibt-0040-0041.ddc",
+        ]
     elif vendor == "realtek":
-        print("Realtek firmware: https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/tree/rtl_bt")
-    return []
+        files = [
+            "rtl8761b_fw.bin",
+            "rtl8761b_config.bin",
+        ]
+    else:
+        print(f"Unknown vendor: {vendor}")
+        return downloaded
+
+    for filename in files:
+        try:
+            path = FirmwareDownloader.download(filename, vendor, fw_dir)
+            downloaded.append(path)
+            print(f"  ok {filename}")
+        except Exception as e:
+            print(f"  fail {filename}: {e}")
+
+    return downloaded
 
 
 def fw_info(path: Path) -> dict:
