@@ -22,3 +22,5 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_sdp_browser_command(app_subs)
     from pybluehost.cli.app.gatt_server import register_gatt_server_command
     register_gatt_server_command(app_subs)
+    from pybluehost.cli.app.hr_monitor import register_hr_monitor_command
+    register_hr_monitor_command(app_subs)
