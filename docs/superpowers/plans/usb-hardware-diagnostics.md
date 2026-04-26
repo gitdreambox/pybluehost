@@ -1,38 +1,106 @@
-# USB Hardware Diagnostics + Firmware Auto-Download Implementation Plan
+# USB 硬件诊断 + 固件自动下载实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **面向智能体工作者：** 必须使用 superpowers:subagent-driven-development 技能逐任务实现。步骤使用复选框 (`- [ ]`) 语法跟踪。
 
-**Goal:** Add USB device access diagnostics with clear user guidance, and implement firmware auto-download for Intel/Realtek chips.
+**目标：** 添加 USB 设备访问诊断（中文用户指引），并实现 Intel/Realtek 芯片固件自动下载。
 
-**Architecture:** A new `USBDeviceDiagnostics` class analyzes USB open failures by errno/driver state and produces structured reports. A new `FirmwareDownloader` fetches `.sfi`/`.bin` files from linux-firmware.git over HTTP. Both integrate into existing `USBTransport.open()` and `FirmwareManager.find()`.
+**架构：** `USBDeviceDiagnostics` 类通过 errno/驱动状态分析 USB 打开失败原因，生成结构化报告。`FirmwareDownloader` 从 linux-firmware.git 通过 HTTP 获取 `.sfi`/`.bin` 文件。两者集成到 `USBTransport.open()` 和 `FirmwareManager.find()` 中。
 
-**Tech Stack:** Python 3.10+, pyusb, urllib.request, pytest, pytest-asyncio
+**技术栈：** Python 3.10+, pyusb, urllib.request, pytest, pytest-asyncio
 
 ---
 
-## File Map
+## 文件映射
 
-| File | Responsibility |
-|------|---------------|
-| `pybluehost/core/errors.py` | New error classes: `USBAccessDeniedError`, `IntelFirmwareStateError` |
-| `pybluehost/transport/diagnostics.py` | `USBDeviceDiagnostics`, `USBDiagnosticReport`, `FailureType`, `DriverType` |
+| 文件 | 职责 |
+|------|------|
+| `pybluehost/core/errors.py` | 新增错误类：`USBAccessDeniedError`, `IntelFirmwareStateError` |
+| `pybluehost/cli/diagnostics.py` | `USBDeviceDiagnostics`, `USBDiagnosticReport`, `FailureType`, `DriverType` |
 | `pybluehost/transport/firmware/downloader.py` | `FirmwareDownloader`, `FirmwareDownloadError` |
-| `pybluehost/transport/firmware/__init__.py` | Extend `FirmwareManager` with `find_or_download()` and `_auto_download()` |
-| `pybluehost/transport/usb.py` | Integrate diagnostics into `open()`, pass policy through to `_initialize()` |
-| `pybluehost/cli/tools/fw.py` | Implement `_download_firmware_files()` with real HTTP logic |
-| `tests/unit/transport/test_diagnostics.py` | Diagnostics tests (mocked) |
-| `tests/unit/transport/firmware/test_downloader.py` | Downloader tests (mocked urllib) |
-| `tests/unit/cli/test_fw.py` | Update existing fw CLI tests for real download logic |
+| `pybluehost/transport/firmware/__init__.py` | 扩展 `FirmwareManager`：新增 `find_or_download()` 和 `_auto_download()` |
+| `pybluehost/transport/usb.py` | 在 `open()` 中集成诊断，传递 policy 到 `_initialize()` |
+| `pybluehost/cli/tools/fw.py` | 实现 `_download_firmware_files()` 真实 HTTP 下载逻辑 |
+| `tests/unit/cli/test_diagnostics.py` | 诊断模块测试（mock） |
+| `tests/unit/transport/firmware/test_downloader.py` | 下载器测试（mock urllib） |
+| `tests/unit/cli/test_fw.py` | 更新 fw CLI 测试以适配真实下载逻辑 |
 
 ---
 
-## Task 1: Add error classes
+## 诊断方案说明
 
-**Files:**
-- Modify: `pybluehost/core/errors.py`
-- Test: `tests/unit/core/test_errors.py`
+### Windows 诊断逻辑
 
-- [x] **Step 1: Write failing tests for new error classes**
+| errno | driver_type | 场景 | 诊断消息 |
+|-------|-------------|------|---------|
+| `13` (Access Denied) 或 `-12` (Not Supported) | `BTHUSB` | 设备绑定到 Windows 蓝牙驱动 (bthusb.sys) | `检测到 ... 由 Windows 蓝牙驱动控制。需要替换为 WinUSB。` → 直接给 Zadig 步骤 |
+| `13` | `UNKNOWN` | 驱动不确定（可能是被占用，也可能是驱动未绑定） | `无法访问 ... 可能原因：1) 被占用 2) 未绑定 WinUSB` → 先排查占用 |
+| `13` | `WINUSB` | WinUSB 绑定但被其他进程占用 | `检查是否有其他程序占用了该 USB 设备` → 只排查占用 |
+
+### 驱动检测规则 (`_detect_driver`)
+
+- `platform != "win32"` → `UNKNOWN`
+- `VID == 0x8087` (Intel) → `BTHUSB`
+- `errno == -12` (NOT_SUPPORTED on Windows) → `BTHUSB`（系统驱动不兼容）
+- 其他情况 → `UNKNOWN`
+
+### 诊断输出示例
+
+**场景：Windows 系统蓝牙驱动 (errno=-12)**
+
+```
+[错误] 无法访问 CSR8510 A10: Access denied
+
+诊断: USB 设备访问被拒绝，请检查驱动和权限。
+
+解决步骤:
+  1. 检测到 CSR8510 A10 由 Windows 蓝牙驱动 (bthusb.sys) 控制。
+  2. pyusb / libusb 无法访问该设备，需要替换为 WinUSB 驱动。
+
+  方法 A: 使用 Zadig (https://zadig.akeo.ie/)
+    1. 运行 Zadig
+    2. 菜单 Options → List All Devices
+    3. 选择 "CSR8510 A10"
+    4. 点击 "Replace Driver" (选择 WinUSB)
+    5. 重新运行程序
+
+  方法 B: 设备管理器手动替换
+    1. 打开设备管理器
+    2. 找到 "CSR8510 A10" 设备
+    3. 右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择
+    4. 选择 "WinUSB" 驱动
+    5. 重新运行程序
+
+  注意: 替换驱动后 Windows 内置蓝牙功能将不可用。
+        恢复方法: 设备管理器中卸载设备，然后扫描硬件改动。
+
+参考: https://zadig.akeo.ie/
+```
+
+**场景：被其他程序占用 (errno=13, UNKNOWN)**
+
+```
+无法访问 USB Device 0a12:0001。可能原因：
+  1) 设备被其他程序占用
+  2) 设备未绑定 WinUSB 驱动
+
+排查步骤：
+  1. 检查是否有其他程序占用了该 USB 设备
+  2. 尝试停止 Windows Bluetooth 支持服务 (bthserv)
+  3. 重新运行程序
+
+如果以上无效，请替换为 WinUSB 驱动：
+  ...
+```
+
+---
+
+## Task 1: 添加错误类
+
+**文件：**
+- 修改: `pybluehost/core/errors.py`
+- 测试: `tests/unit/core/test_errors.py`
+
+- [x] **Step 1: 编写失败测试**
 
 ```python
 import pytest
@@ -70,16 +138,16 @@ class TestIntelFirmwareStateError:
         assert "Intel BE200" in msg
 ```
 
-Run: `uv run pytest tests/unit/core/test_errors.py -v`
-Expected: FAIL (classes not defined)
+运行: `uv run pytest tests/unit/core/test_errors.py -v`
+预期: FAIL（类未定义）
 
-- [x] **Step 2: Implement error classes**
+- [x] **Step 2: 实现错误类**
 
-Add to `pybluehost/core/errors.py` after `CommandTimeoutError`:
+在 `pybluehost/core/errors.py` 的 `CommandTimeoutError` 之后添加:
 
 ```python
 class USBAccessDeniedError(TransportError):
-    """USB device access denied with diagnostic report."""
+    """USB 设备访问被拒绝，携带诊断报告。"""
 
     def __init__(self, report: dict) -> None:
         self.report = report
@@ -105,7 +173,7 @@ class USBAccessDeniedError(TransportError):
 
 
 class IntelFirmwareStateError(TransportError):
-    """Intel device in a state requiring full power cycle."""
+    """Intel 设备进入需要完全掉电的异常状态。"""
 
     def __init__(self, device_name: str) -> None:
         super().__init__(
@@ -120,10 +188,10 @@ class IntelFirmwareStateError(TransportError):
         )
 ```
 
-Run: `uv run pytest tests/unit/core/test_errors.py -v`
-Expected: PASS
+运行: `uv run pytest tests/unit/core/test_errors.py -v`
+预期: PASS
 
-- [x] **Step 3: Commit**
+- [x] **Step 3: 提交**
 
 ```bash
 git add pybluehost/core/errors.py tests/unit/core/test_errors.py
@@ -132,19 +200,19 @@ git commit -m "feat(core): add USBAccessDeniedError and IntelFirmwareStateError"
 
 ---
 
-## Task 2: USB Device Diagnostics
+## Task 2: USB 设备诊断模块
 
-**Files:**
-- Create: `pybluehost/transport/diagnostics.py`
-- Test: `tests/unit/transport/test_diagnostics.py`
+**文件：**
+- 创建: `pybluehost/cli/diagnostics.py`
+- 测试: `tests/unit/cli/test_diagnostics.py`
 
-- [x] **Step 1: Write failing test for driver conflict diagnosis**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 import pytest
 from unittest.mock import MagicMock
 
-from pybluehost.transport.diagnostics import (
+from pybluehost.cli.diagnostics import (
     USBDeviceDiagnostics,
     FailureType,
     DriverType,
@@ -161,12 +229,18 @@ class TestDiagnose:
         assert report.driver_type == DriverType.BTHUSB
         assert "Zadig" in " ".join(report.steps)
 
-    def test_errno_13_win32_winusb(self):
+    def test_errno_13_win32_unknown(self):
         dev = MagicMock()
         report = USBDeviceDiagnostics.diagnose(dev, errno=13, platform="win32")
-        # driver detection may vary; at minimum report is populated
         assert report.failure_type == FailureType.DRIVER_CONFLICT
         assert len(report.steps) > 0
+
+    def test_errno_minus12_win32_bthusb(self):
+        dev = MagicMock()
+        dev.idVendor = 0x0A12
+        report = USBDeviceDiagnostics.diagnose(dev, errno=-12, platform="win32")
+        assert report.failure_type == FailureType.DRIVER_CONFLICT
+        assert report.driver_type == DriverType.BTHUSB
 
     def test_errno_13_linux(self):
         dev = MagicMock()
@@ -185,15 +259,15 @@ class TestDiagnose:
         assert report.failure_type == FailureType.UNKNOWN
 ```
 
-Run: `uv run pytest tests/unit/transport/test_diagnostics.py -v`
-Expected: FAIL (module not found)
+运行: `uv run pytest tests/unit/cli/test_diagnostics.py -v`
+预期: FAIL（模块未找到）
 
-- [x] **Step 2: Implement diagnostics module**
+- [x] **Step 2: 实现诊断模块**
 
-Create `pybluehost/transport/diagnostics.py`:
+创建 `pybluehost/cli/diagnostics.py`:
 
 ```python
-"""USB device diagnostics: analyze access failures and suggest fixes."""
+"""USB 设备诊断：分析访问失败并给出修复建议。"""
 
 from __future__ import annotations
 
@@ -229,28 +303,46 @@ class USBDiagnosticReport:
 class USBDeviceDiagnostics:
     @classmethod
     def diagnose(cls, device: Any, errno: int, platform: str) -> USBDiagnosticReport:
-        driver = cls._detect_driver(device, platform)
+        driver = cls._detect_driver(device, errno, platform)
         name = cls._device_name(device)
 
-        if errno == 13:
+        if errno in (13, -12):
             if platform == "win32":
-                if driver == DriverType.BTHUSB:
+                if driver == DriverType.WINUSB:
+                    # WinUSB 已绑定但仍无法访问 — 可能被其他进程占用
                     return USBDiagnosticReport(
                         failure_type=FailureType.DRIVER_CONFLICT,
                         driver_type=driver,
                         device_name=name,
                         steps=[
-                            "打开设备管理器",
-                            f'找到 "{name}" 设备',
-                            "右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
-                            '选择 "WinUSB" 驱动',
+                            "检查是否有其他程序占用了该 USB 设备",
+                            "尝试停止 Windows Bluetooth 支持服务 (bthserv)",
                             "重新运行程序",
+                        ],
+                        manual_url=None,
+                    )
+                if driver == DriverType.BTHUSB:
+                    # 确认是 bthusb 驱动 — 直接提示替换
+                    return USBDiagnosticReport(
+                        failure_type=FailureType.DRIVER_CONFLICT,
+                        driver_type=driver,
+                        device_name=name,
+                        steps=[
+                            f"检测到 {name} 由 Windows 蓝牙驱动 (bthusb.sys) 控制。",
+                            "pyusb / libusb 无法访问该设备，需要替换为 WinUSB 驱动。",
                             "",
-                            "或者使用 Zadig (https://zadig.akeo.ie/):",
+                            "方法 A: 使用 Zadig (https://zadig.akeo.ie/)",
                             "  1. 运行 Zadig",
                             '  2. 菜单 Options → List All Devices',
                             f'  3. 选择 "{name}"',
                             '  4. 点击 "Replace Driver" (选择 WinUSB)',
+                            "  5. 重新运行程序",
+                            "",
+                            "方法 B: 设备管理器手动替换",
+                            "  1. 打开设备管理器",
+                            f'  2. 找到 "{name}" 设备',
+                            "  3. 右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
+                            '  4. 选择 "WinUSB" 驱动',
                             "  5. 重新运行程序",
                             "",
                             "注意: 替换驱动后 Windows 内置蓝牙功能将不可用。",
@@ -258,18 +350,53 @@ class USBDeviceDiagnostics:
                         ],
                         manual_url="https://zadig.akeo.ie/",
                     )
+                # 驱动未知 — 可能是被占用，也可能是驱动未绑定
                 return USBDiagnosticReport(
                     failure_type=FailureType.DRIVER_CONFLICT,
                     driver_type=driver,
                     device_name=name,
                     steps=[
-                        "检查是否有其他程序占用了该 USB 设备",
-                        "尝试停止 Windows Bluetooth 支持服务 (bthserv)",
-                        "重新运行程序",
+                        f"无法访问 {name}。可能原因：",
+                        "  1) 设备被其他程序占用",
+                        "  2) 设备未绑定 WinUSB 驱动",
+                        "",
+                        "排查步骤：",
+                        "  1. 检查是否有其他程序占用了该 USB 设备",
+                        "  2. 尝试停止 Windows Bluetooth 支持服务 (bthserv)",
+                        "  3. 重新运行程序",
+                        "",
+                        "如果以上无效，请替换为 WinUSB 驱动：",
+                        "",
+                        "方法 A: 使用 Zadig (https://zadig.akeo.ie/)",
+                        "  1. 运行 Zadig",
+                        '  2. 菜单 Options → List All Devices',
+                        f'  3. 选择 "{name}"',
+                        '  4. 点击 "Replace Driver" (选择 WinUSB)',
+                        "  5. 重新运行程序",
+                        "",
+                        "方法 B: 设备管理器手动替换",
+                        "  1. 打开设备管理器",
+                        f'  2. 找到 "{name}" 设备',
+                        "  3. 右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
+                        '  4. 选择 "WinUSB" 驱动',
+                        "  5. 重新运行程序",
+                        "",
+                        "注意: 替换驱动后 Windows 内置蓝牙功能将不可用。",
+                        "      恢复方法: 设备管理器中卸载设备，然后扫描硬件改动。",
                     ],
-                    manual_url=None,
+                    manual_url="https://zadig.akeo.ie/",
                 )
             # Linux / macOS
+            try:
+                vid = int(device.idVendor)
+                pid = int(device.idProduct)
+                udev_line = (
+                    f'  echo \'SUBSYSTEM=="usb", ATTR{{idVendor}}=="{vid:04x}", '
+                    f'ATTR{{idProduct}}=="{pid:04x}", MODE="0666"\' | sudo tee '
+                    f"/etc/udev/rules.d/50-bluetooth.rules"
+                )
+            except Exception:
+                udev_line = "  # 无法生成 udev 规则（缺少 idVendor/idProduct）"
             return USBDiagnosticReport(
                 failure_type=FailureType.PERMISSION_DENIED,
                 driver_type=driver,
@@ -277,7 +404,7 @@ class USBDeviceDiagnostics:
                 steps=[
                     "尝试使用 sudo 运行程序",
                     "或者添加 udev 规则允许当前用户访问该 USB 设备",
-                    f"  echo 'SUBSYSTEM==\"usb\", ATTR{{idVendor}}==\"{device.idVendor:04x}\", ATTR{{idProduct}}==\"{device.idProduct:04x}\", MODE=\"0666\"' | sudo tee /etc/udev/rules.d/50-bluetooth.rules",
+                    udev_line,
                     "  sudo udevadm control --reload-rules && sudo udevadm trigger",
                 ],
                 manual_url=None,
@@ -309,23 +436,29 @@ class USBDeviceDiagnostics:
         )
 
     @classmethod
-    def _detect_driver(cls, device: Any, platform: str) -> DriverType:
-        """Best-effort driver detection on Windows via pyusb device state."""
+    def _detect_driver(cls, device: Any, errno: int, platform: str) -> DriverType:
+        """Windows 上的最佳努力驱动检测。
+
+        pyusb 在枚举时就读取了 USB 描述符（在 open 之前），
+        因此即使 libusb open 失败，idVendor 等字段仍然可用。
+        """
         if platform != "win32":
             return DriverType.UNKNOWN
-        # Heuristic: if the device product string is empty and bcdDevice is 0,
-        # it's likely in bootloader mode (WinUSB-bound)
+        # Intel 蓝牙设备在 Windows 上通常绑定到 bthusb
         try:
-            if hasattr(device, "_bcd_device") and device.bcdDevice == 0:
-                return DriverType.WINUSB
+            vid = int(device.idVendor)
+            if vid == 0x8087:
+                return DriverType.BTHUSB
         except Exception:
             pass
-        # Default: we can't tell for sure from pyusb alone
+        # Windows 上的 NOT_SUPPORTED 表示系统驱动 (bthusb 等) 已绑定
+        if errno == -12:
+            return DriverType.BTHUSB
         return DriverType.UNKNOWN
 
     @classmethod
     def _device_name(cls, device: Any) -> str:
-        """Extract human-readable device name from pyusb device."""
+        """从 pyusb 设备提取人类可读的设备名称。"""
         try:
             product = device.product
             if product:
@@ -344,25 +477,25 @@ class USBDeviceDiagnostics:
             return "Unknown USB Device"
 ```
 
-Run: `uv run pytest tests/unit/transport/test_diagnostics.py -v`
-Expected: PASS
+运行: `uv run pytest tests/unit/cli/test_diagnostics.py -v`
+预期: PASS
 
-- [x] **Step 3: Commit**
+- [x] **Step 3: 提交**
 
 ```bash
-git add pybluehost/transport/diagnostics.py tests/unit/transport/test_diagnostics.py
-git commit -m "feat(transport): add USBDeviceDiagnostics for access failure analysis"
+git add pybluehost/cli/diagnostics.py tests/unit/cli/test_diagnostics.py
+git commit -m "feat(cli): add USBDeviceDiagnostics for access failure analysis"
 ```
 
 ---
 
-## Task 3: Firmware Downloader
+## Task 3: 固件下载器
 
-**Files:**
-- Create: `pybluehost/transport/firmware/downloader.py`
-- Test: `tests/unit/transport/firmware/test_downloader.py`
+**文件：**
+- 创建: `pybluehost/transport/firmware/downloader.py`
+- 测试: `tests/unit/transport/firmware/test_downloader.py`
 
-- [x] **Step 1: Write failing tests for downloader**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 import io
@@ -405,7 +538,7 @@ class TestFirmwareDownloader:
             return result
 
         with patch("urllib.request.urlopen", side_effect=side_effect):
-            with patch("time.sleep"):  # speed up retries
+            with patch("time.sleep"):  # 加速重试
                 path = FirmwareDownloader.download("test.fw", "intel", tmp_path)
 
         assert path.exists()
@@ -451,15 +584,15 @@ class TestFirmwareDownloader:
         assert "linux-firmware.git/plain/rtl_bt/rtl8761b_fw.bin" in call_url
 ```
 
-Run: `uv run pytest tests/unit/transport/firmware/test_downloader.py -v`
-Expected: FAIL (module not found)
+运行: `uv run pytest tests/unit/transport/firmware/test_downloader.py -v`
+预期: FAIL（模块未找到）
 
-- [x] **Step 2: Implement firmware downloader**
+- [x] **Step 2: 实现固件下载器**
 
-Create `pybluehost/transport/firmware/downloader.py`:
+创建 `pybluehost/transport/firmware/downloader.py`:
 
 ```python
-"""Firmware download from upstream linux-firmware.git repository."""
+"""从上游 linux-firmware.git 仓库下载固件。"""
 
 from __future__ import annotations
 
@@ -470,7 +603,7 @@ from pathlib import Path
 
 
 class FirmwareDownloadError(RuntimeError):
-    """Raised when firmware download fails; includes manual download instructions."""
+    """固件下载失败时抛出；包含手动下载指引。"""
 
     def __init__(self, filename: str, url: str, reason: str) -> None:
         self.filename = filename
@@ -505,7 +638,7 @@ class FirmwareDownloadError(RuntimeError):
 
 
 class FirmwareDownloader:
-    """Download Bluetooth firmware files from linux-firmware.git."""
+    """从 linux-firmware.git 下载蓝牙固件文件。"""
 
     _BASE_URLS = {
         "intel": (
@@ -525,18 +658,18 @@ class FirmwareDownloader:
 
     @classmethod
     def download(cls, filename: str, vendor: str, dest_dir: Path) -> Path:
-        """Download a firmware file, retrying on transient errors.
+        """下载固件文件，遇到瞬时错误时自动重试。
 
-        Args:
-            filename: Firmware file name (e.g. "ibt-0291-0291.sfi").
-            vendor: "intel" or "realtek".
-            dest_dir: Directory to save the file.
+        参数:
+            filename: 固件文件名（如 "ibt-0291-0291.sfi"）。
+            vendor: "intel" 或 "realtek"。
+            dest_dir: 保存文件的目录。
 
-        Returns:
-            Path to the downloaded file.
+        返回:
+            下载文件的路径。
 
-        Raises:
-            FirmwareDownloadError: If all retries fail.
+        抛出:
+            FirmwareDownloadError: 所有重试均失败。
         """
         url = cls._build_url(filename, vendor)
         dest_path = dest_dir / filename
@@ -566,9 +699,8 @@ class FirmwareDownloader:
 
     @classmethod
     def _download_file(cls, url: str, dest: Path) -> None:
-        req = urllib.request.Request(url)
         with urllib.request.urlopen(
-            req, timeout=(cls._CONNECT_TIMEOUT, cls._READ_TIMEOUT)
+            url, timeout=(cls._CONNECT_TIMEOUT, cls._READ_TIMEOUT)
         ) as response:
             data = response.read()
             if not data:
@@ -576,10 +708,10 @@ class FirmwareDownloader:
             dest.write_bytes(data)
 ```
 
-Run: `uv run pytest tests/unit/transport/firmware/test_downloader.py -v`
-Expected: PASS
+运行: `uv run pytest tests/unit/transport/firmware/test_downloader.py -v`
+预期: PASS
 
-- [x] **Step 3: Commit**
+- [x] **Step 3: 提交**
 
 ```bash
 git add pybluehost/transport/firmware/downloader.py tests/unit/transport/firmware/test_downloader.py
@@ -588,13 +720,13 @@ git commit -m "feat(firmware): add FirmwareDownloader with retry and kernel.org 
 
 ---
 
-## Task 4: Extend FirmwareManager
+## Task 4: 扩展 FirmwareManager
 
-**Files:**
-- Modify: `pybluehost/transport/firmware/__init__.py`
-- Test: `tests/unit/transport/test_firmware.py`
+**文件：**
+- 修改: `pybluehost/transport/firmware/__init__.py`
+- 测试: `tests/unit/transport/test_firmware.py`
 
-- [x] **Step 1: Write failing test for auto-download**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 from pathlib import Path
@@ -635,23 +767,23 @@ class TestFirmwareManagerAutoDownload:
             mgr.find_or_download("missing.sfi")
 ```
 
-Run: `uv run pytest tests/unit/transport/test_firmware.py -v`
-Expected: FAIL (`find_or_download` not defined)
+运行: `uv run pytest tests/unit/transport/test_firmware.py -v`
+预期: FAIL（`find_or_download` 未定义）
 
-- [x] **Step 2: Extend FirmwareManager**
+- [x] **Step 2: 扩展 FirmwareManager**
 
-Add to `pybluehost/transport/firmware/__init__.py` after `find()` method:
+在 `pybluehost/transport/firmware/__init__.py` 的 `find()` 方法之后添加:
 
 ```python
     def find_or_download(self, filename: str) -> Path:
-        """Find firmware file; if missing and policy=AUTO_DOWNLOAD, download it.
+        """查找固件文件；如果缺失且 policy=AUTO_DOWNLOAD，自动下载。
 
-        Returns:
-            Path to the firmware file (found or downloaded).
+        返回:
+            固件文件的路径（找到或下载的）。
 
-        Raises:
-            FirmwareNotFoundError: File not found and policy is not AUTO_DOWNLOAD.
-            FirmwareDownloadError: AUTO_DOWNLOAD but download failed.
+        抛出:
+            FirmwareNotFoundError: 文件未找到且 policy 不是 AUTO_DOWNLOAD。
+            FirmwareDownloadError: AUTO_DOWNLOAD 但下载失败。
         """
         try:
             return self.find(filename)
@@ -661,10 +793,10 @@ Add to `pybluehost/transport/firmware/__init__.py` after `find()` method:
             raise
 
     def _auto_download(self, filename: str) -> Path:
-        """Download firmware file automatically.
+        """自动下载固件文件。
 
-        Returns:
-            Path to downloaded file.
+        返回:
+            下载文件的路径。
         """
         from pybluehost.transport.firmware.downloader import FirmwareDownloader
 
@@ -673,10 +805,21 @@ Add to `pybluehost/transport/firmware/__init__.py` after `find()` method:
         return FirmwareDownloader.download(filename, self._vendor, dest)
 ```
 
-Run: `uv run pytest tests/unit/transport/test_firmware.py -v`
-Expected: PASS
+同时更新 `_format_not_found_message` 中 `AUTO_DOWNLOAD` 分支的消息：
 
-- [x] **Step 3: Commit**
+```python
+        else:
+            # AUTO_DOWNLOAD
+            msg += (
+                "Auto-download 失败或被禁用。\n"
+                f"请运行: pybluehost tools fw download {self._vendor}"
+            )
+```
+
+运行: `uv run pytest tests/unit/transport/test_firmware.py -v`
+预期: PASS
+
+- [x] **Step 3: 提交**
 
 ```bash
 git add pybluehost/transport/firmware/__init__.py tests/unit/transport/test_firmware.py
@@ -685,13 +828,13 @@ git commit -m "feat(firmware): add find_or_download() with AUTO_DOWNLOAD support
 
 ---
 
-## Task 5: Integrate diagnostics into USBTransport.open()
+## Task 5: 将诊断集成到 USBTransport.open()
 
-**Files:**
-- Modify: `pybluehost/transport/usb.py`
-- Test: `tests/unit/transport/test_usb.py` (update existing tests)
+**文件：**
+- 修改: `pybluehost/transport/usb.py`
+- 测试: `tests/unit/transport/test_usb.py`（更新现有测试）
 
-- [x] **Step 1: Write failing test for open() diagnostics**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 from unittest.mock import MagicMock, patch
@@ -703,7 +846,7 @@ from pybluehost.core.errors import USBAccessDeniedError
 
 class TestUSBTransportDiagnostics:
     def test_open_access_denied_raises_diagnostic_error(self):
-        """When get_active_configuration raises errno=13, we get USBAccessDeniedError."""
+        """当 get_active_configuration 抛出 errno=13 时，应得到 USBAccessDeniedError。"""
         from pybluehost.transport.usb import USBTransport
 
         device = MagicMock()
@@ -722,47 +865,51 @@ class TestUSBTransportDiagnostics:
         assert "8087" in exc_info.value.report["device_name"]
 ```
 
-Run: `uv run pytest tests/unit/transport/test_usb.py::TestUSBTransportDiagnostics -v`
-Expected: FAIL (diagnostic not integrated)
+运行: `uv run pytest tests/unit/transport/test_usb.py::TestUSBTransportDiagnostics -v`
+预期: FAIL（诊断未集成）
 
-- [x] **Step 2: Integrate diagnostics into open()**
+- [x] **Step 2: 将诊断集成到 open()**
 
-Modify `pybluehost/transport/usb.py` in `open()` method, around `get_active_configuration()`:
+修改 `pybluehost/transport/usb.py` 的 `open()` 方法中 `get_active_configuration()` 周围:
 
 ```python
     async def open(self) -> None:
-        """Open USB transport: claim interface, locate endpoints, initialize."""
+        """打开 USB 传输：声明接口、定位端点、初始化。"""
         if sys.platform == "win32":
             self._verify_winusb_driver()
 
-        # Claim HCI interface 0 (HCI Commands/Events/ACL)
+        # 声明 HCI 接口 0（HCI 命令/事件/ACL）
         import usb.util as usbutil
         try:
             self._device.set_configuration()
         except Exception:
-            pass  # Already configured
+            pass  # 已配置
 
         try:
             cfg = self._device.get_active_configuration()
-        except usb.core.USBError as e:
-            from pybluehost.transport.diagnostics import USBDeviceDiagnostics
+        except (usb.core.USBError, NotImplementedError) as e:
+            from pybluehost.cli.diagnostics import USBDeviceDiagnostics
             from pybluehost.core.errors import USBAccessDeniedError
-            report = USBDeviceDiagnostics.diagnose(self._device, e.errno, sys.platform)
-            raise USBAccessDeniedError(report) from e
+            import dataclasses
+            errno = getattr(e, "errno", None)
+            if errno is None and isinstance(e, NotImplementedError):
+                errno = -12  # Windows 上的 LIBUSB_ERROR_NOT_SUPPORTED
+            report = USBDeviceDiagnostics.diagnose(self._device, errno, sys.platform)
+            raise USBAccessDeniedError(dataclasses.asdict(report)) from e
 
-        intf = cfg[(0, 0)]  # Interface 0, alternate setting 0
-        # ... rest of open() unchanged
+        intf = cfg[(0, 0)]  # 接口 0，备用设置 0
+        ...
 ```
 
-Run: `uv run pytest tests/unit/transport/test_usb.py::TestUSBTransportDiagnostics -v`
-Expected: PASS
+运行: `uv run pytest tests/unit/transport/test_usb.py::TestUSBTransportDiagnostics -v`
+预期: PASS
 
-- [x] **Step 3: Run full USB test suite**
+- [x] **Step 3: 运行完整 USB 测试套件**
 
-Run: `uv run pytest tests/unit/transport/test_usb.py -v`
-Expected: ALL PASS (no regressions)
+运行: `uv run pytest tests/unit/transport/test_usb.py -v`
+预期: 全部 PASS（无回归）
 
-- [x] **Step 4: Commit**
+- [x] **Step 4: 提交**
 
 ```bash
 git add pybluehost/transport/usb.py tests/unit/transport/test_usb.py
@@ -771,13 +918,13 @@ git commit -m "feat(usb): integrate USBDeviceDiagnostics into open() for errno=1
 
 ---
 
-## Task 6: Implement CLI fw download
+## Task 6: 实现 CLI fw download
 
-**Files:**
-- Modify: `pybluehost/cli/tools/fw.py`
-- Test: `tests/unit/cli/test_fw.py`
+**文件：**
+- 修改: `pybluehost/cli/tools/fw.py`
+- 测试: `tests/unit/cli/test_fw.py`
 
-- [x] **Step 1: Write failing test for real fw download CLI**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 from pathlib import Path
@@ -816,16 +963,16 @@ class TestDownloadFirmwareFiles:
         assert mock_dl.call_count >= 1
 ```
 
-Run: `uv run pytest tests/unit/cli/test_fw.py -v`
-Expected: FAIL (implementation is placeholder)
+运行: `uv run pytest tests/unit/cli/test_fw.py -v`
+预期: FAIL（实现仍是占位符）
 
-- [x] **Step 2: Replace placeholder with real download logic**
+- [x] **Step 2: 替换占位符为真实下载逻辑**
 
-Replace `_download_firmware_files()` in `pybluehost/cli/tools/fw.py`:
+替换 `pybluehost/cli/tools/fw.py` 中的 `_download_firmware_files()`:
 
 ```python
 def _download_firmware_files(vendor: str, fw_dir: Path) -> list[Path]:
-    """Download firmware files from upstream sources."""
+    """从上游源下载固件文件。"""
     from pybluehost.transport.firmware.downloader import FirmwareDownloader
 
     downloaded: list[Path] = []
@@ -857,10 +1004,10 @@ def _download_firmware_files(vendor: str, fw_dir: Path) -> list[Path]:
     return downloaded
 ```
 
-Run: `uv run pytest tests/unit/cli/test_fw.py -v`
-Expected: PASS
+运行: `uv run pytest tests/unit/cli/test_fw.py -v`
+预期: PASS
 
-- [x] **Step 3: Commit**
+- [x] **Step 3: 提交**
 
 ```bash
 git add pybluehost/cli/tools/fw.py tests/unit/cli/test_fw.py
@@ -869,53 +1016,65 @@ git commit -m "feat(cli): implement _download_firmware_files() with real HTTP do
 
 ---
 
-## Task 7: Full regression test
+## Task 7: 完整回归测试
 
-- [x] **Step 1: Run all non-hardware tests**
+- [x] **Step 1: 运行所有非硬件测试**
 
-Run: `uv run pytest tests/ -q --ignore=tests/hardware`
-Expected: All PASS (no regressions)
+运行: `uv run pytest tests/ -q --ignore=tests/hardware`
+预期: 全部 PASS（无回归）
 
-- [x] **Step 2: Run hardware tests with CSR8510**
+- [x] **Step 2: 运行 CSR8510 硬件测试**
 
-Run: `uv run pytest tests/hardware/test_usb_smoke.py -v --hardware`
-Expected: PASS (existing CSR8510 test)
+运行: `uv run pytest tests/hardware/test_usb_smoke.py -v --hardware`
+预期: PASS（现有 CSR8510 测试）
 
-- [x] **Step 3: Commit progress update**
+- [x] **Step 3: 提交进度更新**
 
 ```bash
-git add docs/superpowers/plans/2026-04-26-usb-hardware-diagnostics.md
+git add docs/superpowers/plans/usb-hardware-diagnostics.md
 git commit -m "docs(progress): complete USB diagnostics + auto-download plan"
 ```
 
 ---
 
-## Spec Coverage Check
+## 硬件验收测试结果
 
-| Spec Requirement | Task | Status |
-|-----------------|------|--------|
+| 设备 | 场景 | errno | driver_type | 诊断消息 | 状态 |
+|------|------|-------|-------------|---------|------|
+| CSR8510 | WinUSB 正常 | — | — | — | ✅ 测试通过 |
+| CSR8510 | Windows 系统蓝牙驱动 | -12 | BTHUSB | 直接提示 Zadig 替换 | ✅ 验证通过 |
+| CSR8510 | 被其他进程占用 | 13 | UNKNOWN | 先排查占用，再提示替换 | ✅ 验证通过 |
+| Intel BE200 | bthusb 驱动 | 13 | BTHUSB | 直接提示 Zadig 替换 | ⚠️ 环境依赖（需关机掉电恢复） |
+
+---
+
+## 规范覆盖检查
+
+| 规范要求 | 任务 | 状态 |
+|---------|------|------|
 | USBAccessDeniedError with report | Task 1 | ✅ |
 | IntelFirmwareStateError | Task 1 | ✅ |
 | USBDeviceDiagnostics.diagnose() | Task 2 | ✅ |
-| errno=13 driver conflict detection | Task 2 | ✅ |
-| Intel bad-state detection | Task 2 | ✅ (detected by diagnose) |
+| errno=13 驱动冲突检测 | Task 2 | ✅ |
+| errno=-12 系统驱动检测 | Task 2 | ✅ |
+| Intel 异常状态检测 | Task 2 | ✅ |
 | FirmwareDownloader with retry | Task 3 | ✅ |
 | FirmwareManager.find_or_download() | Task 4 | ✅ |
-| USBTransport.open() integration | Task 5 | ✅ |
-| CLI fw download implementation | Task 6 | ✅ |
-| Chinese error messages | All tasks | ✅ |
+| USBTransport.open() 集成 | Task 5 | ✅ |
+| CLI fw download 实现 | Task 6 | ✅ |
+| 中文错误消息 | 所有任务 | ✅ |
 
-## Placeholder Scan
+## 占位符扫描
 
-- No TBD / TODO / "implement later"
-- No vague "add validation" or "handle edge cases"
-- All test code shown in full
-- All implementation code shown in full
-- No references to undefined types/functions across tasks
+- 无 TBD / TODO / "implement later"
+- 无模糊的 "add validation" 或 "handle edge cases"
+- 所有测试代码完整展示
+- 所有实现代码完整展示
+- 跨任务无引用未定义的类型/函数
 
-## Type Consistency Check
+## 类型一致性检查
 
-- `USBDiagnosticReport` fields: `failure_type: FailureType`, `driver_type: DriverType | None` — consistent
-- `USBAccessDeniedError.__init__(report: dict)` — matches Task 1 and Task 5
-- `FirmwareDownloader.download(filename, vendor, dest_dir)` — signature consistent across Task 3, 4, 6
-- `FirmwareManager.find_or_download(filename)` — signature consistent in Task 4
+- `USBDiagnosticReport` 字段: `failure_type: FailureType`, `driver_type: DriverType | None` — 一致
+- `USBAccessDeniedError.__init__(report: dict)` — Task 1 和 Task 5 匹配
+- `FirmwareDownloader.download(filename, vendor, dest_dir)` — Task 3/4/6 签名一致
+- `FirmwareManager.find_or_download(filename)` — Task 4 签名一致
