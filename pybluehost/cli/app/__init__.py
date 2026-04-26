@@ -24,3 +24,5 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_gatt_server_command(app_subs)
     from pybluehost.cli.app.hr_monitor import register_hr_monitor_command
     register_hr_monitor_command(app_subs)
+    from pybluehost.cli.app.spp_echo import register_spp_echo_command
+    register_spp_echo_command(app_subs)
