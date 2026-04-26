@@ -34,7 +34,7 @@ class USBDiagnosticReport:
 class USBDeviceDiagnostics:
     @classmethod
     def diagnose(cls, device: Any, errno: int, platform: str) -> USBDiagnosticReport:
-        driver = cls._detect_driver(device, platform)
+        driver = cls._detect_driver(device, errno, platform)
         name = cls._device_name(device)
 
         if errno in (13, -12):
@@ -139,23 +139,24 @@ class USBDeviceDiagnostics:
         )
 
     @classmethod
-    def _detect_driver(cls, device: Any, platform: str) -> DriverType:
-        """Best-effort driver detection on Windows via pyusb device state."""
+    def _detect_driver(cls, device: Any, errno: int, platform: str) -> DriverType:
+        """Best-effort driver detection on Windows.
+
+        pyusb reads USB descriptors during enumeration (before open),
+        so idVendor/bcdDevice are available even when libusb open fails.
+        """
         if platform != "win32":
             return DriverType.UNKNOWN
-        try:
-            if hasattr(device, "_bcd_device") and device.bcdDevice == 0:
-                return DriverType.WINUSB
-        except Exception:
-            pass
-        # Heuristic: Intel Bluetooth dongles without WINUSB marker are
-        # typically bound to the native Windows bthusb driver.
+        # Intel Bluetooth dongles are typically bound to bthusb on Windows
         try:
             vid = int(device.idVendor)
             if vid == 0x8087:
                 return DriverType.BTHUSB
         except Exception:
             pass
+        # NOT_SUPPORTED on Windows means a system driver (bthusb, etc.) is bound
+        if errno == -12:
+            return DriverType.BTHUSB
         return DriverType.UNKNOWN
 
     @classmethod
