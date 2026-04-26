@@ -37,7 +37,7 @@ class USBDeviceDiagnostics:
         driver = cls._detect_driver(device, platform)
         name = cls._device_name(device)
 
-        if errno == 13:
+        if errno in (13, -12):
             if platform == "win32":
                 if driver == DriverType.BTHUSB:
                     return USBDiagnosticReport(

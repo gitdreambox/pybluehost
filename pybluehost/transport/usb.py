@@ -159,11 +159,14 @@ class USBTransport(Transport):
 
         try:
             cfg = self._device.get_active_configuration()
-        except usb.core.USBError as e:
+        except (usb.core.USBError, NotImplementedError) as e:
             from pybluehost.transport.diagnostics import USBDeviceDiagnostics
             from pybluehost.core.errors import USBAccessDeniedError
             import dataclasses
-            report = USBDeviceDiagnostics.diagnose(self._device, e.errno, sys.platform)
+            errno = getattr(e, "errno", None)
+            if errno is None and isinstance(e, NotImplementedError):
+                errno = -12  # LIBUSB_ERROR_NOT_SUPPORTED on Windows
+            report = USBDeviceDiagnostics.diagnose(self._device, errno, sys.platform)
             raise USBAccessDeniedError(dataclasses.asdict(report)) from e
 
         intf = cfg[(0, 0)]  # Interface 0, alternate setting 0
