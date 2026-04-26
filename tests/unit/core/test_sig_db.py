@@ -77,6 +77,9 @@ class TestCompanyID:
         assert cid is not None
         assert cid == 0x004C
 
+    def test_company_id_by_name_not_found(self, sig_db: SIGDatabase):
+        assert sig_db.company_id_by_name("ZZZNOMATCH_ZZZZ") is None
+
 
 class TestADTypes:
     def test_ad_type_name(self, sig_db: SIGDatabase):

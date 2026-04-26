@@ -51,7 +51,7 @@ Tests under `tests/unit/cli/` mirror the structure.
 - Create: `pybluehost/cli/_transport.py`
 - Test: `tests/unit/cli/test_transport.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/cli/test_transport.py
@@ -89,12 +89,12 @@ def test_parse_uart_missing_port_raises():
         parse_transport_arg("uart:")
 ```
 
-- [ ] **Step 2: Run tests — verify they fail**
+- [x] **Step 2: Run tests — verify they fail**
 
 Run: `uv run pytest tests/unit/cli/test_transport.py -v`
 Expected: FAIL with `ModuleNotFoundError: pybluehost.cli._transport`
 
-- [ ] **Step 3: Implement `_transport.py`**
+- [x] **Step 3: Implement `_transport.py`**
 
 ```python
 # pybluehost/cli/_transport.py
@@ -146,12 +146,12 @@ def parse_transport_arg(s: str) -> Transport:
     raise ValueError(f"Unknown transport: {s!r}")
 ```
 
-- [ ] **Step 4: Run tests — verify they pass**
+- [x] **Step 4: Run tests — verify they pass**
 
 Run: `uv run pytest tests/unit/cli/test_transport.py -v`
 Expected: 5 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/_transport.py tests/unit/cli/test_transport.py
@@ -166,7 +166,7 @@ git commit -m "feat(cli): add parse_transport_arg helper"
 - Create: `pybluehost/cli/_target.py`
 - Test: `tests/unit/cli/test_target.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/cli/test_target.py
@@ -201,12 +201,12 @@ def test_parse_invalid_type_raises():
         parse_target_arg("AA:BB:CC:DD:EE:FF/bogus")
 ```
 
-- [ ] **Step 2: Run tests — verify fail**
+- [x] **Step 2: Run tests — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_target.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement `_target.py`**
+- [x] **Step 3: Implement `_target.py`**
 
 ```python
 # pybluehost/cli/_target.py
@@ -239,12 +239,12 @@ def parse_target_arg(s: str) -> tuple[BDAddress, AddressType]:
     return (BDAddress.from_string(addr_s), atype)
 ```
 
-- [ ] **Step 4: Run tests — verify pass**
+- [x] **Step 4: Run tests — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_target.py -v`
 Expected: 5 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/_target.py tests/unit/cli/test_target.py
@@ -259,7 +259,7 @@ git commit -m "feat(cli): add parse_target_arg helper"
 - Create: `pybluehost/cli/_lifecycle.py`
 - Test: `tests/unit/cli/test_lifecycle.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/cli/test_lifecycle.py
@@ -316,12 +316,12 @@ async def test_run_app_command_invalid_transport():
     assert code == 1
 ```
 
-- [ ] **Step 2: Run tests — verify fail**
+- [x] **Step 2: Run tests — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_lifecycle.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement `_lifecycle.py`**
+- [x] **Step 3: Implement `_lifecycle.py`**
 
 ```python
 # pybluehost/cli/_lifecycle.py
@@ -395,12 +395,12 @@ async def run_app_command(
         await stack.close()
 ```
 
-- [ ] **Step 4: Run tests — verify pass**
+- [x] **Step 4: Run tests — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_lifecycle.py -v`
 Expected: 4 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/_lifecycle.py tests/unit/cli/test_lifecycle.py
@@ -415,7 +415,7 @@ git commit -m "feat(cli): add run_app_command lifecycle helper"
 - Create: `pybluehost/cli/_loopback_peer.py`
 - Test: `tests/unit/cli/test_loopback_peer.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/cli/test_loopback_peer.py
@@ -443,12 +443,12 @@ async def test_loopback_peer_closes_on_exit():
     assert not peer.is_powered
 ```
 
-- [ ] **Step 2: Run tests — verify fail**
+- [x] **Step 2: Run tests — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_loopback_peer.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement `_loopback_peer.py`**
+- [x] **Step 3: Implement `_loopback_peer.py`**
 
 ```python
 # pybluehost/cli/_loopback_peer.py
@@ -481,12 +481,12 @@ async def loopback_peer_with(
         await peer.close()
 ```
 
-- [ ] **Step 4: Run tests — verify pass**
+- [x] **Step 4: Run tests — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_loopback_peer.py -v`
 Expected: 2 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/_loopback_peer.py tests/unit/cli/test_loopback_peer.py
@@ -504,7 +504,7 @@ git commit -m "feat(cli): add loopback_peer_with helper"
 - Move: `tests/unit/cli/test_usb.py` (update imports if exists)
 - Create: `pybluehost/cli/tools/__init__.py`
 
-- [ ] **Step 1: Create empty tools/ package, move files**
+- [x] **Step 1: Create empty tools/ package, move files**
 
 ```bash
 mkdir -p pybluehost/cli/tools
@@ -512,13 +512,13 @@ git mv pybluehost/cli/fw.py pybluehost/cli/tools/fw.py
 git mv pybluehost/cli/usb.py pybluehost/cli/tools/usb.py
 ```
 
-- [ ] **Step 2: Update imports inside moved files**
+- [x] **Step 2: Update imports inside moved files**
 
 Edit `pybluehost/cli/tools/fw.py` — search for any internal `from pybluehost.cli.fw import` (none expected) and any `from pybluehost.cli.usb import` (none expected). The `register_fw_commands` function signature stays the same.
 
 Edit `pybluehost/cli/tools/usb.py` — same check.
 
-- [ ] **Step 3: Create `pybluehost/cli/tools/__init__.py` (skeleton)**
+- [x] **Step 3: Create `pybluehost/cli/tools/__init__.py` (skeleton)**
 
 ```python
 # pybluehost/cli/tools/__init__.py
@@ -540,18 +540,18 @@ def register_tools_commands(subparsers: argparse._SubParsersAction) -> None:
     register_usb_commands(tools_subs)
 ```
 
-- [ ] **Step 4: Update test imports**
+- [x] **Step 4: Update test imports**
 
 Run: `grep -rn "pybluehost.cli.fw\|pybluehost.cli.usb" tests/`
 
 Replace each occurrence in `tests/unit/cli/test_fw.py` (and any test_usb.py) with `pybluehost.cli.tools.fw` / `pybluehost.cli.tools.usb`. Use Edit with `replace_all=true`.
 
-- [ ] **Step 5: Verify existing tests still pass**
+- [x] **Step 5: Verify existing tests still pass**
 
 Run: `uv run pytest tests/unit/cli/ -v`
 Expected: existing fw/usb tests PASS at new paths.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/tools/ tests/unit/cli/
@@ -566,7 +566,7 @@ git commit -m "refactor(cli): move fw and usb commands into tools/ subpackage"
 - Create: `pybluehost/cli/tools/decode.py`
 - Test: `tests/unit/cli/test_tools_decode.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/cli/test_tools_decode.py
@@ -596,12 +596,12 @@ def test_decode_empty(capsys):
     assert rc != 0
 ```
 
-- [ ] **Step 2: Run tests — verify fail**
+- [x] **Step 2: Run tests — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_tools_decode.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement `decode.py`**
+- [x] **Step 3: Implement `decode.py`**
 
 ```python
 # pybluehost/cli/tools/decode.py
@@ -647,12 +647,12 @@ def _cmd_decode(args: argparse.Namespace) -> int:
     return 0
 ```
 
-- [ ] **Step 4: Run tests — verify pass**
+- [x] **Step 4: Run tests — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_tools_decode.py -v`
 Expected: 3 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/tools/decode.py tests/unit/cli/test_tools_decode.py
@@ -667,7 +667,7 @@ git commit -m "feat(cli): add tools decode command"
 - Create: `pybluehost/cli/tools/rpa.py`
 - Test: `tests/unit/cli/test_tools_rpa.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/cli/test_tools_rpa.py
@@ -726,12 +726,12 @@ def test_gen_rpa_invalid_irk_length(capsys):
     assert rc != 0
 ```
 
-- [ ] **Step 2: Run tests — verify fail**
+- [x] **Step 2: Run tests — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_tools_rpa.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement `rpa.py`**
+- [x] **Step 3: Implement `rpa.py`**
 
 ```python
 # pybluehost/cli/tools/rpa.py
@@ -824,12 +824,12 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     return 1
 ```
 
-- [ ] **Step 4: Run tests — verify pass**
+- [x] **Step 4: Run tests — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_tools_rpa.py -v`
 Expected: 5 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/tools/rpa.py tests/unit/cli/test_tools_rpa.py
@@ -844,7 +844,7 @@ git commit -m "feat(cli): add tools rpa gen-irk/gen-rpa/verify commands"
 - Modify: `pybluehost/cli/tools/__init__.py`
 - Test: `tests/unit/cli/test_tools_init.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_tools_init.py
@@ -879,12 +879,12 @@ def test_register_tools_fw_list():
     assert args.tools_cmd == "fw"
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_tools_init.py -v`
 Expected: FAIL — `decode` and `rpa` not registered yet.
 
-- [ ] **Step 3: Update `pybluehost/cli/tools/__init__.py`**
+- [x] **Step 3: Update `pybluehost/cli/tools/__init__.py`**
 
 ```python
 # pybluehost/cli/tools/__init__.py
@@ -910,12 +910,12 @@ def register_tools_commands(subparsers: argparse._SubParsersAction) -> None:
     register_usb_commands(tools_subs)
 ```
 
-- [ ] **Step 4: Run tests — verify pass**
+- [x] **Step 4: Run tests — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_tools_init.py -v`
 Expected: 3 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/tools/__init__.py tests/unit/cli/test_tools_init.py
@@ -931,7 +931,7 @@ git commit -m "feat(cli): wire up tools/ namespace with decode + rpa + fw + usb"
 - Create: `pybluehost/cli/app/ble_scan.py`
 - Test: `tests/unit/cli/test_app_ble_scan.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_app_ble_scan.py
@@ -955,12 +955,12 @@ async def test_ble_scan_starts_and_stops_cleanly():
     await stack.close()
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_app_ble_scan.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Create skeleton `app/__init__.py`**
+- [x] **Step 3: Create skeleton `app/__init__.py`**
 
 ```python
 # pybluehost/cli/app/__init__.py
@@ -979,7 +979,7 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_ble_scan_command(app_subs)
 ```
 
-- [ ] **Step 4: Implement `app/ble_scan.py`**
+- [x] **Step 4: Implement `app/ble_scan.py`**
 
 ```python
 # pybluehost/cli/app/ble_scan.py
@@ -1018,12 +1018,12 @@ async def _ble_scan_main(stack: Stack, stop: asyncio.Event) -> None:
         await stack.gap.ble_scanner.stop()
 ```
 
-- [ ] **Step 5: Run test — verify pass**
+- [x] **Step 5: Run test — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_app_ble_scan.py -v`
 Expected: 1 PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/app/__init__.py pybluehost/cli/app/ble_scan.py tests/unit/cli/test_app_ble_scan.py
@@ -1039,7 +1039,7 @@ git commit -m "feat(cli): add app ble-scan command (long-running)"
 - Modify: `pybluehost/cli/app/__init__.py` (register)
 - Test: `tests/unit/cli/test_app_ble_adv.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_app_ble_adv.py
@@ -1064,12 +1064,12 @@ async def test_ble_adv_starts_and_stops_cleanly():
     await stack.close()
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_app_ble_adv.py -v`
 Expected: FAIL `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement `app/ble_adv.py`**
+- [x] **Step 3: Implement `app/ble_adv.py`**
 
 ```python
 # pybluehost/cli/app/ble_adv.py
@@ -1106,7 +1106,7 @@ async def _ble_adv_main(stack: Stack, stop: asyncio.Event, *, name: str) -> None
         await stack.gap.ble_advertiser.stop()
 ```
 
-- [ ] **Step 4: Register in `app/__init__.py`**
+- [x] **Step 4: Register in `app/__init__.py`**
 
 Edit `pybluehost/cli/app/__init__.py` and add:
 
@@ -1115,12 +1115,12 @@ Edit `pybluehost/cli/app/__init__.py` and add:
     register_ble_adv_command(app_subs)
 ```
 
-- [ ] **Step 5: Run test — verify pass**
+- [x] **Step 5: Run test — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_app_ble_adv.py -v`
 Expected: 1 PASS. If `AdvertisingConfig` does not have a `local_name` attribute, inspect `pybluehost/ble/gap.py` and adjust to use the actual field name (e.g. set advertising data bytes directly).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/app/ble_adv.py pybluehost/cli/app/__init__.py tests/unit/cli/test_app_ble_adv.py
@@ -1136,7 +1136,7 @@ git commit -m "feat(cli): add app ble-adv command (long-running)"
 - Modify: `pybluehost/cli/app/__init__.py`
 - Test: `tests/unit/cli/test_app_classic_inquiry.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_app_classic_inquiry.py
@@ -1160,12 +1160,12 @@ async def test_classic_inquiry_loops_and_stops():
     await stack.close()
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_app_classic_inquiry.py -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement `app/classic_inquiry.py`**
+- [x] **Step 3: Implement `app/classic_inquiry.py`**
 
 ```python
 # pybluehost/cli/app/classic_inquiry.py
@@ -1214,19 +1214,19 @@ async def _classic_inquiry_main(stack: Stack, stop: asyncio.Event) -> None:
         await stack.gap.classic_discovery.stop()
 ```
 
-- [ ] **Step 4: Register in `app/__init__.py`**
+- [x] **Step 4: Register in `app/__init__.py`**
 
 ```python
     from pybluehost.cli.app.classic_inquiry import register_classic_inquiry_command
     register_classic_inquiry_command(app_subs)
 ```
 
-- [ ] **Step 5: Run test — verify pass**
+- [x] **Step 5: Run test — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_app_classic_inquiry.py -v`
 Expected: 1 PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/app/classic_inquiry.py pybluehost/cli/app/__init__.py tests/unit/cli/test_app_classic_inquiry.py
@@ -1242,7 +1242,7 @@ git commit -m "feat(cli): add app classic-inquiry command (long-running)"
 - Modify: `pybluehost/cli/app/__init__.py`
 - Test: `tests/unit/cli/test_app_gatt_browser.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_app_gatt_browser.py
@@ -1259,12 +1259,12 @@ async def test_gatt_browser_loopback_prints_battery_service(capsys):
     assert "0x180F" in out or "180F" in out.upper() or "Battery" in out
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_app_gatt_browser.py -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement `app/gatt_browser.py`**
+- [x] **Step 3: Implement `app/gatt_browser.py`**
 
 ```python
 # pybluehost/cli/app/gatt_browser.py
@@ -1337,19 +1337,19 @@ def _print_gatt_tree_for_loopback(peer: Stack) -> None:
 
 If `db.list_services` / `list_characteristics` don't exist on the actual `AttributeDatabase`, walk the attributes manually using `db.attributes` (which exists per `pybluehost/ble/gatt.py`).
 
-- [ ] **Step 4: Register in `app/__init__.py`**
+- [x] **Step 4: Register in `app/__init__.py`**
 
 ```python
     from pybluehost.cli.app.gatt_browser import register_gatt_browser_command
     register_gatt_browser_command(app_subs)
 ```
 
-- [ ] **Step 5: Run test — verify pass**
+- [x] **Step 5: Run test — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_app_gatt_browser.py -v`
 Expected: 1 PASS. If GATT DB inspection method names differ, adapt to use the real API (read `pybluehost/ble/gatt.py` once for the actual method names; do not invent).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/app/gatt_browser.py pybluehost/cli/app/__init__.py tests/unit/cli/test_app_gatt_browser.py
@@ -1365,7 +1365,7 @@ git commit -m "feat(cli): add app gatt-browser command (loopback DB inspection)"
 - Modify: `pybluehost/cli/app/__init__.py`
 - Test: `tests/unit/cli/test_app_sdp_browser.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_app_sdp_browser.py
@@ -1382,12 +1382,12 @@ async def test_sdp_browser_loopback_prints_records(capsys):
     assert "SDP" in out or "records" in out.lower()
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_app_sdp_browser.py -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement `app/sdp_browser.py`**
+- [x] **Step 3: Implement `app/sdp_browser.py`**
 
 ```python
 # pybluehost/cli/app/sdp_browser.py
@@ -1443,19 +1443,19 @@ async def _sdp_browser_main(args: argparse.Namespace) -> int:
 
 If `SDPServer` exposes records under a different attribute, adapt by reading `pybluehost/classic/sdp.py` and using the real iteration method.
 
-- [ ] **Step 4: Register in `app/__init__.py`**
+- [x] **Step 4: Register in `app/__init__.py`**
 
 ```python
     from pybluehost.cli.app.sdp_browser import register_sdp_browser_command
     register_sdp_browser_command(app_subs)
 ```
 
-- [ ] **Step 5: Run test — verify pass**
+- [x] **Step 5: Run test — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_app_sdp_browser.py -v`
 Expected: 1 PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/app/sdp_browser.py pybluehost/cli/app/__init__.py tests/unit/cli/test_app_sdp_browser.py
@@ -1471,7 +1471,7 @@ git commit -m "feat(cli): add app sdp-browser command (loopback inspection)"
 - Modify: `pybluehost/cli/app/__init__.py`
 - Test: `tests/unit/cli/test_app_gatt_server.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_app_gatt_server.py
@@ -1503,12 +1503,12 @@ async def test_gatt_server_registers_battery_and_hrs():
     await stack.close()
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_app_gatt_server.py -v`
 Expected: FAIL `ModuleNotFoundError`
 
-- [ ] **Step 3: Implement `app/gatt_server.py`**
+- [x] **Step 3: Implement `app/gatt_server.py`**
 
 ```python
 # pybluehost/cli/app/gatt_server.py
@@ -1540,19 +1540,19 @@ async def _gatt_server_main(stack: Stack, stop: asyncio.Event) -> None:
     await stop.wait()
 ```
 
-- [ ] **Step 4: Register in `app/__init__.py`**
+- [x] **Step 4: Register in `app/__init__.py`**
 
 ```python
     from pybluehost.cli.app.gatt_server import register_gatt_server_command
     register_gatt_server_command(app_subs)
 ```
 
-- [ ] **Step 5: Run test — verify pass**
+- [x] **Step 5: Run test — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_app_gatt_server.py -v`
 Expected: 1 PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/app/gatt_server.py pybluehost/cli/app/__init__.py tests/unit/cli/test_app_gatt_server.py
@@ -1568,7 +1568,7 @@ git commit -m "feat(cli): add app gatt-server command (long-running)"
 - Modify: `pybluehost/cli/app/__init__.py`
 - Test: `tests/unit/cli/test_app_hr_monitor.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_app_hr_monitor.py
@@ -1591,12 +1591,12 @@ async def test_hr_monitor_pushes_measurements_until_stop():
     await stack.close()
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_app_hr_monitor.py -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement `app/hr_monitor.py`**
+- [x] **Step 3: Implement `app/hr_monitor.py`**
 
 ```python
 # pybluehost/cli/app/hr_monitor.py
@@ -1632,19 +1632,19 @@ async def _hr_monitor_main(stack: Stack, stop: asyncio.Event, *, interval: float
             pass
 ```
 
-- [ ] **Step 4: Register in `app/__init__.py`**
+- [x] **Step 4: Register in `app/__init__.py`**
 
 ```python
     from pybluehost.cli.app.hr_monitor import register_hr_monitor_command
     register_hr_monitor_command(app_subs)
 ```
 
-- [ ] **Step 5: Run test — verify pass**
+- [x] **Step 5: Run test — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_app_hr_monitor.py -v`
 Expected: 1 PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/app/hr_monitor.py pybluehost/cli/app/__init__.py tests/unit/cli/test_app_hr_monitor.py
@@ -1660,7 +1660,7 @@ git commit -m "feat(cli): add app hr-monitor command (long-running)"
 - Modify: `pybluehost/cli/app/__init__.py`
 - Test: `tests/unit/cli/test_app_spp_echo.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_app_spp_echo.py
@@ -1683,12 +1683,12 @@ async def test_spp_echo_starts_and_stops_cleanly():
     await stack.close()
 ```
 
-- [ ] **Step 2: Run test — verify fail**
+- [x] **Step 2: Run test — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_app_spp_echo.py -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement `app/spp_echo.py`**
+- [x] **Step 3: Implement `app/spp_echo.py`**
 
 ```python
 # pybluehost/cli/app/spp_echo.py
@@ -1728,19 +1728,19 @@ async def _spp_echo_main(stack: Stack, stop: asyncio.Event) -> None:
 
 If the `RFCOMMManager` registration API has different arguments, read `pybluehost/classic/rfcomm.py` and adapt — the goal is just to wait on `stop` cleanly in loopback mode. If RFCOMM has no register API yet, just `await stop.wait()` and print a NOTE.
 
-- [ ] **Step 4: Register in `app/__init__.py`**
+- [x] **Step 4: Register in `app/__init__.py`**
 
 ```python
     from pybluehost.cli.app.spp_echo import register_spp_echo_command
     register_spp_echo_command(app_subs)
 ```
 
-- [ ] **Step 5: Run test — verify pass**
+- [x] **Step 5: Run test — verify pass**
 
 Run: `uv run pytest tests/unit/cli/test_app_spp_echo.py -v`
 Expected: 1 PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/app/spp_echo.py pybluehost/cli/app/__init__.py tests/unit/cli/test_app_spp_echo.py
@@ -1756,7 +1756,7 @@ git commit -m "feat(cli): add app spp-echo command (long-running)"
 - Modify: `README.md` (CLI section)
 - Test: `tests/unit/cli/test_main_entry.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/cli/test_main_entry.py
@@ -1791,12 +1791,12 @@ def test_main_top_level_fw_no_longer_exists():
     assert ei.value.code != 0  # argparse error
 ```
 
-- [ ] **Step 2: Run tests — verify fail**
+- [x] **Step 2: Run tests — verify fail**
 
 Run: `uv run pytest tests/unit/cli/test_main_entry.py -v`
 Expected: FAIL — `app`/`tools` not registered yet at top level.
 
-- [ ] **Step 3: Update `pybluehost/cli/__init__.py`**
+- [x] **Step 3: Update `pybluehost/cli/__init__.py`**
 
 ```python
 # pybluehost/cli/__init__.py
@@ -1838,7 +1838,7 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Update `README.md` CLI section**
+- [x] **Step 4: Update `README.md` CLI section**
 
 Replace the existing CLI section in `README.md`:
 
@@ -1888,7 +1888,7 @@ uv run pybluehost tools usb scan
 ```
 ```
 
-- [ ] **Step 5: Run main entry tests + full suite**
+- [x] **Step 5: Run main entry tests + full suite**
 
 Run:
 ```bash
@@ -1897,7 +1897,7 @@ uv run pytest tests/ -m "not hardware" -q
 ```
 Expected: main entry 4 PASS; full suite all PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pybluehost/cli/__init__.py README.md tests/unit/cli/test_main_entry.py
@@ -1908,14 +1908,14 @@ git commit -m "feat(cli): wire app+tools namespaces, drop top-level fw/usb, upda
 
 ## Task 18: Final verification + STATUS update
 
-- [ ] **Step 1: Run full test suite with coverage**
+- [x] **Step 1: Run full test suite with coverage**
 
 ```bash
 uv run pytest tests/ -m "not hardware" --cov=pybluehost --cov-report=term-missing --cov-fail-under=85
 ```
 Expected: all PASS, coverage ≥85%.
 
-- [ ] **Step 2: Verify CLI tree**
+- [x] **Step 2: Verify CLI tree**
 
 ```bash
 uv run pybluehost --help
@@ -1925,7 +1925,7 @@ uv run pybluehost tools rpa --help
 ```
 Expected: all show clean help with all subcommands listed.
 
-- [ ] **Step 3: Smoke-test loopback commands end-to-end**
+- [x] **Step 3: Smoke-test loopback commands end-to-end**
 
 ```bash
 uv run pybluehost tools decode 01030c00
@@ -1934,11 +1934,11 @@ uv run pybluehost app gatt-browser --transport loopback
 ```
 Expected: all run without exception, produce expected output.
 
-- [ ] **Step 4: Update `docs/superpowers/STATUS.md`**
+- [x] **Step 4: Update `docs/superpowers/STATUS.md`**
 
 Add a new row to the Plan overview table for this work, and a detail entry — see existing format. Set status ✅ with completion date 2026-04-25.
 
-- [ ] **Step 5: Commit STATUS update**
+- [x] **Step 5: Commit STATUS update**
 
 ```bash
 git add docs/superpowers/STATUS.md
