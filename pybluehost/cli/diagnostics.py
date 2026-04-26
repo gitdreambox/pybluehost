@@ -1,4 +1,8 @@
-"""USB device diagnostics: analyze access failures and suggest fixes."""
+"""USB 设备诊断：分析访问失败并给出修复建议。
+
+本模块属于 CLI/用户体验层，负责将底层 transport 错误转换为用户友好的中文诊断消息。
+协议栈核心层（transport/）不应直接依赖本模块。
+"""
 
 from __future__ import annotations
 
@@ -40,7 +44,7 @@ class USBDeviceDiagnostics:
         if errno in (13, -12):
             if platform == "win32":
                 if driver == DriverType.WINUSB:
-                    # WinUSB bound but still can't access — likely another process
+                    # WinUSB 已绑定但仍无法访问 — 可能被其他进程占用
                     return USBDiagnosticReport(
                         failure_type=FailureType.DRIVER_CONFLICT,
                         driver_type=driver,
@@ -53,7 +57,7 @@ class USBDeviceDiagnostics:
                         manual_url=None,
                     )
                 if driver == DriverType.BTHUSB:
-                    # Confirmed bthusb — directly prompt driver replacement
+                    # 确认是 bthusb 驱动 — 直接提示替换
                     return USBDiagnosticReport(
                         failure_type=FailureType.DRIVER_CONFLICT,
                         driver_type=driver,
@@ -81,7 +85,7 @@ class USBDeviceDiagnostics:
                         ],
                         manual_url="https://zadig.akeo.ie/",
                     )
-                # UNKNOWN driver — could be occupied or wrong driver
+                # 驱动未知 — 可能是被占用，也可能是驱动未绑定
                 return USBDiagnosticReport(
                     failure_type=FailureType.DRIVER_CONFLICT,
                     driver_type=driver,
@@ -104,16 +108,6 @@ class USBDeviceDiagnostics:
                         f'  3. 选择 "{name}"',
                         '  4. 点击 "Replace Driver" (选择 WinUSB)',
                         "  5. 重新运行程序",
-                        "",
-                        "方法 B: 设备管理器手动替换",
-                        "  1. 打开设备管理器",
-                        f'  2. 找到 "{name}" 设备',
-                        "  3. 右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
-                        '  4. 选择 "WinUSB" 驱动',
-                        "  5. 重新运行程序",
-                        "",
-                        "注意: 替换驱动后 Windows 内置蓝牙功能将不可用。",
-                        "      恢复方法: 设备管理器中卸载设备，然后扫描硬件改动。",
                     ],
                     manual_url="https://zadig.akeo.ie/",
                 )
@@ -168,28 +162,28 @@ class USBDeviceDiagnostics:
 
     @classmethod
     def _detect_driver(cls, device: Any, errno: int, platform: str) -> DriverType:
-        """Best-effort driver detection on Windows.
+        """Windows 上的最佳努力驱动检测。
 
-        pyusb reads USB descriptors during enumeration (before open),
-        so idVendor/bcdDevice are available even when libusb open fails.
+        pyusb 在枚举时就读取了 USB 描述符（在 open 之前），
+        因此即使 libusb open 失败，idVendor 等字段仍然可用。
         """
         if platform != "win32":
             return DriverType.UNKNOWN
-        # Intel Bluetooth dongles are typically bound to bthusb on Windows
+        # Intel 蓝牙设备在 Windows 上通常绑定到 bthusb
         try:
             vid = int(device.idVendor)
             if vid == 0x8087:
                 return DriverType.BTHUSB
         except Exception:
             pass
-        # NOT_SUPPORTED on Windows means a system driver (bthusb, etc.) is bound
+        # Windows 上的 NOT_SUPPORTED 表示系统驱动 (bthusb 等) 已绑定
         if errno == -12:
             return DriverType.BTHUSB
         return DriverType.UNKNOWN
 
     @classmethod
     def _device_name(cls, device: Any) -> str:
-        """Extract human-readable device name from pyusb device."""
+        """从 pyusb 设备提取人类可读的设备名称。"""
         try:
             product = device.product
             if product:
