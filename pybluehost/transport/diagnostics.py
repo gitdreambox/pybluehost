@@ -52,8 +52,36 @@ class USBDeviceDiagnostics:
                         ],
                         manual_url=None,
                     )
-                # Not WinUSB (bthusb, unknown, etc.) — could be driver issue
-                # or another process holding the device
+                if driver == DriverType.BTHUSB:
+                    # Confirmed bthusb — directly prompt driver replacement
+                    return USBDiagnosticReport(
+                        failure_type=FailureType.DRIVER_CONFLICT,
+                        driver_type=driver,
+                        device_name=name,
+                        steps=[
+                            f"检测到 {name} 由 Windows 蓝牙驱动 (bthusb.sys) 控制。",
+                            "pyusb / libusb 无法访问该设备，需要替换为 WinUSB 驱动。",
+                            "",
+                            "方法 A: 使用 Zadig (https://zadig.akeo.ie/)",
+                            "  1. 运行 Zadig",
+                            '  2. 菜单 Options → List All Devices',
+                            f'  3. 选择 "{name}"',
+                            '  4. 点击 "Replace Driver" (选择 WinUSB)',
+                            "  5. 重新运行程序",
+                            "",
+                            "方法 B: 设备管理器手动替换",
+                            "  1. 打开设备管理器",
+                            f'  2. 找到 "{name}" 设备',
+                            "  3. 右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
+                            '  4. 选择 "WinUSB" 驱动',
+                            "  5. 重新运行程序",
+                            "",
+                            "注意: 替换驱动后 Windows 内置蓝牙功能将不可用。",
+                            "      恢复方法: 设备管理器中卸载设备，然后扫描硬件改动。",
+                        ],
+                        manual_url="https://zadig.akeo.ie/",
+                    )
+                # UNKNOWN driver — could be occupied or wrong driver
                 return USBDiagnosticReport(
                     failure_type=FailureType.DRIVER_CONFLICT,
                     driver_type=driver,
