@@ -1,6 +1,6 @@
 # USB Hardware Diagnostics + Firmware Auto-Download Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add USB device access diagnostics with clear user guidance, and implement firmware auto-download for Intel/Realtek chips.
 
@@ -32,7 +32,7 @@
 - Modify: `pybluehost/core/errors.py`
 - Test: `tests/unit/core/test_errors.py`
 
-- [ ] **Step 1: Write failing tests for new error classes**
+- [x] **Step 1: Write failing tests for new error classes**
 
 ```python
 import pytest
@@ -73,7 +73,7 @@ class TestIntelFirmwareStateError:
 Run: `uv run pytest tests/unit/core/test_errors.py -v`
 Expected: FAIL (classes not defined)
 
-- [ ] **Step 2: Implement error classes**
+- [x] **Step 2: Implement error classes**
 
 Add to `pybluehost/core/errors.py` after `CommandTimeoutError`:
 
@@ -123,7 +123,7 @@ class IntelFirmwareStateError(TransportError):
 Run: `uv run pytest tests/unit/core/test_errors.py -v`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add pybluehost/core/errors.py tests/unit/core/test_errors.py
@@ -138,7 +138,7 @@ git commit -m "feat(core): add USBAccessDeniedError and IntelFirmwareStateError"
 - Create: `pybluehost/transport/diagnostics.py`
 - Test: `tests/unit/transport/test_diagnostics.py`
 
-- [ ] **Step 1: Write failing test for driver conflict diagnosis**
+- [x] **Step 1: Write failing test for driver conflict diagnosis**
 
 ```python
 import pytest
@@ -188,7 +188,7 @@ class TestDiagnose:
 Run: `uv run pytest tests/unit/transport/test_diagnostics.py -v`
 Expected: FAIL (module not found)
 
-- [ ] **Step 2: Implement diagnostics module**
+- [x] **Step 2: Implement diagnostics module**
 
 Create `pybluehost/transport/diagnostics.py`:
 
@@ -347,7 +347,7 @@ class USBDeviceDiagnostics:
 Run: `uv run pytest tests/unit/transport/test_diagnostics.py -v`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add pybluehost/transport/diagnostics.py tests/unit/transport/test_diagnostics.py
@@ -362,7 +362,7 @@ git commit -m "feat(transport): add USBDeviceDiagnostics for access failure anal
 - Create: `pybluehost/transport/firmware/downloader.py`
 - Test: `tests/unit/transport/firmware/test_downloader.py`
 
-- [ ] **Step 1: Write failing tests for downloader**
+- [x] **Step 1: Write failing tests for downloader**
 
 ```python
 import io
@@ -454,7 +454,7 @@ class TestFirmwareDownloader:
 Run: `uv run pytest tests/unit/transport/firmware/test_downloader.py -v`
 Expected: FAIL (module not found)
 
-- [ ] **Step 2: Implement firmware downloader**
+- [x] **Step 2: Implement firmware downloader**
 
 Create `pybluehost/transport/firmware/downloader.py`:
 
@@ -579,7 +579,7 @@ class FirmwareDownloader:
 Run: `uv run pytest tests/unit/transport/firmware/test_downloader.py -v`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add pybluehost/transport/firmware/downloader.py tests/unit/transport/firmware/test_downloader.py
@@ -594,7 +594,7 @@ git commit -m "feat(firmware): add FirmwareDownloader with retry and kernel.org 
 - Modify: `pybluehost/transport/firmware/__init__.py`
 - Test: `tests/unit/transport/test_firmware.py`
 
-- [ ] **Step 1: Write failing test for auto-download**
+- [x] **Step 1: Write failing test for auto-download**
 
 ```python
 from pathlib import Path
@@ -638,7 +638,7 @@ class TestFirmwareManagerAutoDownload:
 Run: `uv run pytest tests/unit/transport/test_firmware.py -v`
 Expected: FAIL (`find_or_download` not defined)
 
-- [ ] **Step 2: Extend FirmwareManager**
+- [x] **Step 2: Extend FirmwareManager**
 
 Add to `pybluehost/transport/firmware/__init__.py` after `find()` method:
 
@@ -676,7 +676,7 @@ Add to `pybluehost/transport/firmware/__init__.py` after `find()` method:
 Run: `uv run pytest tests/unit/transport/test_firmware.py -v`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add pybluehost/transport/firmware/__init__.py tests/unit/transport/test_firmware.py
@@ -691,7 +691,7 @@ git commit -m "feat(firmware): add find_or_download() with AUTO_DOWNLOAD support
 - Modify: `pybluehost/transport/usb.py`
 - Test: `tests/unit/transport/test_usb.py` (update existing tests)
 
-- [ ] **Step 1: Write failing test for open() diagnostics**
+- [x] **Step 1: Write failing test for open() diagnostics**
 
 ```python
 from unittest.mock import MagicMock, patch
@@ -725,7 +725,7 @@ class TestUSBTransportDiagnostics:
 Run: `uv run pytest tests/unit/transport/test_usb.py::TestUSBTransportDiagnostics -v`
 Expected: FAIL (diagnostic not integrated)
 
-- [ ] **Step 2: Integrate diagnostics into open()**
+- [x] **Step 2: Integrate diagnostics into open()**
 
 Modify `pybluehost/transport/usb.py` in `open()` method, around `get_active_configuration()`:
 
@@ -757,12 +757,12 @@ Modify `pybluehost/transport/usb.py` in `open()` method, around `get_active_conf
 Run: `uv run pytest tests/unit/transport/test_usb.py::TestUSBTransportDiagnostics -v`
 Expected: PASS
 
-- [ ] **Step 3: Run full USB test suite**
+- [x] **Step 3: Run full USB test suite**
 
 Run: `uv run pytest tests/unit/transport/test_usb.py -v`
 Expected: ALL PASS (no regressions)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add pybluehost/transport/usb.py tests/unit/transport/test_usb.py
@@ -777,7 +777,7 @@ git commit -m "feat(usb): integrate USBDeviceDiagnostics into open() for errno=1
 - Modify: `pybluehost/cli/tools/fw.py`
 - Test: `tests/unit/cli/test_fw.py`
 
-- [ ] **Step 1: Write failing test for real fw download CLI**
+- [x] **Step 1: Write failing test for real fw download CLI**
 
 ```python
 from pathlib import Path
@@ -819,7 +819,7 @@ class TestDownloadFirmwareFiles:
 Run: `uv run pytest tests/unit/cli/test_fw.py -v`
 Expected: FAIL (implementation is placeholder)
 
-- [ ] **Step 2: Replace placeholder with real download logic**
+- [x] **Step 2: Replace placeholder with real download logic**
 
 Replace `_download_firmware_files()` in `pybluehost/cli/tools/fw.py`:
 
@@ -860,7 +860,7 @@ def _download_firmware_files(vendor: str, fw_dir: Path) -> list[Path]:
 Run: `uv run pytest tests/unit/cli/test_fw.py -v`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add pybluehost/cli/tools/fw.py tests/unit/cli/test_fw.py
@@ -871,17 +871,17 @@ git commit -m "feat(cli): implement _download_firmware_files() with real HTTP do
 
 ## Task 7: Full regression test
 
-- [ ] **Step 1: Run all non-hardware tests**
+- [x] **Step 1: Run all non-hardware tests**
 
 Run: `uv run pytest tests/ -q --ignore=tests/hardware`
 Expected: All PASS (no regressions)
 
-- [ ] **Step 2: Run hardware tests with CSR8510**
+- [x] **Step 2: Run hardware tests with CSR8510**
 
 Run: `uv run pytest tests/hardware/test_usb_smoke.py -v --hardware`
 Expected: PASS (existing CSR8510 test)
 
-- [ ] **Step 3: Commit progress update**
+- [x] **Step 3: Commit progress update**
 
 ```bash
 git add docs/superpowers/plans/2026-04-26-usb-hardware-diagnostics.md
