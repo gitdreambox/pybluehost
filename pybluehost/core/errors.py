@@ -69,22 +69,12 @@ class USBAccessDeniedError(TransportError):
         super().__init__(self._format_message())
 
     def _format_message(self) -> str:
-        lines = [f"[错误] 无法访问 {self.report['device_name']}: Access denied"]
-        lines.append(f"\n诊断: {self._diagnosis_line()}")
-        lines.append("\n解决步骤:")
-        for i, step in enumerate(self.report["steps"], 1):
-            lines.append(f"  {i}. {step}")
-        if self.report.get("manual_url"):
-            lines.append(f"\n参考: {self.report['manual_url']}")
-        return "\n".join(lines)
-
-    def _diagnosis_line(self) -> str:
-        driver = self.report.get("driver_type")
-        if driver == "bthusb":
-            return "设备当前由 Windows 蓝牙驱动 (bthusb.sys) 控制，WinUSB 无法获取访问权限。"
-        if driver == "winusb":
-            return "设备已绑定 WinUSB 驱动，但可能被其他进程占用。"
-        return "USB 设备访问被拒绝，请检查驱动和权限。"
+        device = self.report.get("device_name", "Unknown USB Device")
+        return (
+            f"[错误] 无法访问 {device}: Access denied\n\n"
+            "请运行以下命令查看详细诊断和解决方案:\n"
+            "  pybluehost tools usb diagnose"
+        )
 
 
 class IntelFirmwareStateError(TransportError):

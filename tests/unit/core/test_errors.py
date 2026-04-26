@@ -82,8 +82,8 @@ class TestUSBAccessDeniedError:
         err = USBAccessDeniedError(report)
         msg = str(err)
         assert "Intel BE200" in msg
-        assert "bthusb" in msg
-        assert "Replace driver" in msg
+        assert "Access denied" in msg
+        assert "pybluehost tools usb diagnose" in msg
 
 
 class TestIntelFirmwareStateError:

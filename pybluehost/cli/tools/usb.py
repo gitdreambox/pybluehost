@@ -31,6 +31,12 @@ def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
     )
     probe_parser.set_defaults(func=_cmd_usb_probe)
 
+    # usb diagnose
+    diag_parser = usb_sub.add_parser(
+        "diagnose", help="Diagnose USB Bluetooth device accessibility issues"
+    )
+    diag_parser.set_defaults(func=_cmd_usb_diagnose)
+
     usb_parser.set_defaults(func=lambda args: usb_parser.print_help() or 0)
 
 
@@ -265,6 +271,92 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
                     f"CNVR_TOP={dev['cnvr_top']} "
                     f"CNVI_BT={dev['cnvi_bt']}"
                 )
+
+        print()
+
+    return 0
+
+
+def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
+    """Handle 'usb diagnose' command: enumerate devices and check accessibility."""
+    if usb is None:
+        print(
+            "Error: pyusb not installed. Run: pip install pyusb\n"
+            "On Windows, also install: pip install libusb-package",
+            file=sys.stderr,
+        )
+        return 1
+
+    from pybluehost.transport.usb import KNOWN_CHIPS, USBTransport
+
+    backend = USBTransport._get_usb_backend()
+    all_devices = list(usb.core.find(find_all=True, backend=backend))
+
+    # Filter to Bluetooth devices using same logic as probe_usb_devices
+    bt_devices = []
+    for dev in all_devices:
+        chip = next(
+            (c for c in KNOWN_CHIPS if c.vid == dev.idVendor and c.pid == dev.idProduct),
+            None,
+        )
+        if chip is None:
+            if (
+                getattr(dev, "bDeviceClass", 0) == 0xE0
+                and getattr(dev, "bDeviceSubClass", 0) == 0x01
+                and getattr(dev, "bDeviceProtocol", 0) == 0x01
+            ):
+                pass
+            else:
+                continue
+        bt_devices.append(dev)
+
+    if not bt_devices:
+        print("No USB Bluetooth devices found.")
+        return 0
+
+    print(f"Found {len(bt_devices)} USB Bluetooth device(s):\n")
+
+    for idx, dev in enumerate(bt_devices, 1):
+        chip = next(
+            (c for c in KNOWN_CHIPS if c.vid == dev.idVendor and c.pid == dev.idProduct),
+            None,
+        )
+        name = chip.name if chip else "Unknown BT Device"
+        vid_pid = f"{dev.idVendor:04x}:{dev.idProduct:04x}"
+
+        print(f"  [{idx}] {vid_pid}  {name}")
+
+        # Try to access the device
+        errno = None
+        exc_type = None
+        try:
+            try:
+                dev.set_configuration()
+            except Exception:
+                pass
+            dev.get_active_configuration()
+            print("      Status: 正常可访问 (OK)")
+        except usb.core.USBError as e:
+            errno = getattr(e, "errno", None)
+            exc_type = type(e).__name__
+        except NotImplementedError as e:
+            errno = -12
+            exc_type = "NotImplementedError"
+
+        if errno is not None:
+            report = USBDeviceDiagnostics.diagnose(dev, errno, sys.platform)
+            print(f"      Status: 访问被拒绝 ({exc_type}, errno={errno})")
+            print(f"\n      诊断: {report.failure_type.name}")
+            if report.driver_type:
+                print(f"      驱动类型: {report.driver_type.value}")
+            print("\n      解决步骤:")
+            for step in report.steps:
+                if step:
+                    print(f"        {step}")
+                else:
+                    print()
+            if report.manual_url:
+                print(f"\n      参考: {report.manual_url}")
 
         print()
 
