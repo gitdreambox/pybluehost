@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 
-from pybluehost.cli.diagnostics import (
+from pybluehost.cli.tools.usb import (
     USBDeviceDiagnostics,
     FailureType,
     DriverType,

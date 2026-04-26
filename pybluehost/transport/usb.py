@@ -160,7 +160,7 @@ class USBTransport(Transport):
         try:
             cfg = self._device.get_active_configuration()
         except (usb.core.USBError, NotImplementedError) as e:
-            from pybluehost.cli.diagnostics import USBDeviceDiagnostics
+            from pybluehost.cli.tools.usb import USBDeviceDiagnostics
             from pybluehost.core.errors import USBAccessDeniedError
             import dataclasses
             errno = getattr(e, "errno", None)
