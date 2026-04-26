@@ -39,40 +39,45 @@ class USBDeviceDiagnostics:
 
         if errno in (13, -12):
             if platform == "win32":
-                if driver == DriverType.BTHUSB:
+                if driver == DriverType.WINUSB:
+                    # WinUSB bound but still can't access — likely another process
                     return USBDiagnosticReport(
                         failure_type=FailureType.DRIVER_CONFLICT,
                         driver_type=driver,
                         device_name=name,
                         steps=[
-                            "打开设备管理器",
-                            f'找到 "{name}" 设备',
-                            "右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
-                            '选择 "WinUSB" 驱动',
+                            "检查是否有其他程序占用了该 USB 设备",
+                            "尝试停止 Windows Bluetooth 支持服务 (bthserv)",
                             "重新运行程序",
-                            "",
-                            "或者使用 Zadig (https://zadig.akeo.ie/):",
-                            "  1. 运行 Zadig",
-                            '  2. 菜单 Options → List All Devices',
-                            f'  3. 选择 "{name}"',
-                            '  4. 点击 "Replace Driver" (选择 WinUSB)',
-                            "  5. 重新运行程序",
-                            "",
-                            "注意: 替换驱动后 Windows 内置蓝牙功能将不可用。",
-                            "      恢复方法: 设备管理器中卸载设备，然后扫描硬件改动。",
                         ],
-                        manual_url="https://zadig.akeo.ie/",
+                        manual_url=None,
                     )
+                # Not WinUSB (bthusb, unknown, etc.) — prompt driver replacement
                 return USBDiagnosticReport(
                     failure_type=FailureType.DRIVER_CONFLICT,
                     driver_type=driver,
                     device_name=name,
                     steps=[
-                        "检查是否有其他程序占用了该 USB 设备",
-                        "尝试停止 Windows Bluetooth 支持服务 (bthserv)",
-                        "重新运行程序",
+                        f"检测到 {name} 未绑定 WinUSB 驱动，无法通过 pyusb 访问。",
+                        "",
+                        "方法 1: 使用 Zadig (https://zadig.akeo.ie/)",
+                        "  1. 运行 Zadig",
+                        '  2. 菜单 Options → List All Devices',
+                        f'  3. 选择 "{name}"',
+                        '  4. 点击 "Replace Driver" (选择 WinUSB)',
+                        "  5. 重新运行程序",
+                        "",
+                        "方法 2: 设备管理器手动替换",
+                        "  1. 打开设备管理器",
+                        f'  2. 找到 "{name}" 设备',
+                        "  3. 右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
+                        '  4. 选择 "WinUSB" 驱动',
+                        "  5. 重新运行程序",
+                        "",
+                        "注意: 替换驱动后 Windows 内置蓝牙功能将不可用。",
+                        "      恢复方法: 设备管理器中卸载设备，然后扫描硬件改动。",
                     ],
-                    manual_url=None,
+                    manual_url="https://zadig.akeo.ie/",
                 )
             # Linux / macOS
             try:
