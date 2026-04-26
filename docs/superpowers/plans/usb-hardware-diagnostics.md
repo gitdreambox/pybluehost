@@ -15,12 +15,12 @@
 | 文件 | 职责 |
 |------|------|
 | `pybluehost/core/errors.py` | 新增错误类：`USBAccessDeniedError`, `IntelFirmwareStateError` |
-| `pybluehost/cli/diagnostics.py` | `USBDeviceDiagnostics`, `USBDiagnosticReport`, `FailureType`, `DriverType` |
+| `pybluehost/cli/tools/usb.py` | `USBDeviceDiagnostics`, `USBDiagnosticReport`, `FailureType`, `DriverType`（USB 诊断） |
 | `pybluehost/transport/firmware/downloader.py` | `FirmwareDownloader`, `FirmwareDownloadError` |
 | `pybluehost/transport/firmware/__init__.py` | 扩展 `FirmwareManager`：新增 `find_or_download()` 和 `_auto_download()` |
 | `pybluehost/transport/usb.py` | 在 `open()` 中集成诊断，传递 policy 到 `_initialize()` |
 | `pybluehost/cli/tools/fw.py` | 实现 `_download_firmware_files()` 真实 HTTP 下载逻辑 |
-| `tests/unit/cli/test_diagnostics.py` | 诊断模块测试（mock） |
+| `tests/unit/cli/tools/test_usb_diagnostics.py` | USB 诊断模块测试（mock） |
 | `tests/unit/transport/firmware/test_downloader.py` | 下载器测试（mock urllib） |
 | `tests/unit/cli/test_fw.py` | 更新 fw CLI 测试以适配真实下载逻辑 |
 
@@ -203,8 +203,8 @@ git commit -m "feat(core): add USBAccessDeniedError and IntelFirmwareStateError"
 ## Task 2: USB 设备诊断模块
 
 **文件：**
-- 创建: `pybluehost/cli/diagnostics.py`
-- 测试: `tests/unit/cli/test_diagnostics.py`
+- 修改: `pybluehost/cli/tools/usb.py`（追加诊断类）
+- 测试: `tests/unit/cli/tools/test_usb_diagnostics.py`
 
 - [x] **Step 1: 编写失败测试**
 
@@ -212,7 +212,7 @@ git commit -m "feat(core): add USBAccessDeniedError and IntelFirmwareStateError"
 import pytest
 from unittest.mock import MagicMock
 
-from pybluehost.cli.diagnostics import (
+from pybluehost.cli.tools.usb import (
     USBDeviceDiagnostics,
     FailureType,
     DriverType,
@@ -259,22 +259,20 @@ class TestDiagnose:
         assert report.failure_type == FailureType.UNKNOWN
 ```
 
-运行: `uv run pytest tests/unit/cli/test_diagnostics.py -v`
+运行: `uv run pytest tests/unit/cli/tools/test_usb_diagnostics.py -v`
 预期: FAIL（模块未找到）
 
 - [x] **Step 2: 实现诊断模块**
 
-创建 `pybluehost/cli/diagnostics.py`:
+在 `pybluehost/cli/tools/usb.py` 末尾追加以下诊断类:
 
 ```python
-"""USB 设备诊断：分析访问失败并给出修复建议。"""
+# ---------------------------------------------------------------------------
+# USB 设备诊断
+# ---------------------------------------------------------------------------
 
-from __future__ import annotations
-
-import sys
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any
 
 
 class FailureType(Enum):
@@ -477,14 +475,14 @@ class USBDeviceDiagnostics:
             return "Unknown USB Device"
 ```
 
-运行: `uv run pytest tests/unit/cli/test_diagnostics.py -v`
+运行: `uv run pytest tests/unit/cli/tools/test_usb_diagnostics.py -v`
 预期: PASS
 
 - [x] **Step 3: 提交**
 
 ```bash
-git add pybluehost/cli/diagnostics.py tests/unit/cli/test_diagnostics.py
-git commit -m "feat(cli): add USBDeviceDiagnostics for access failure analysis"
+git add pybluehost/cli/tools/usb.py tests/unit/cli/tools/test_usb_diagnostics.py
+git commit -m "feat(cli): add USBDeviceDiagnostics in cli/tools/usb.py"
 ```
 
 ---
@@ -888,7 +886,7 @@ class TestUSBTransportDiagnostics:
         try:
             cfg = self._device.get_active_configuration()
         except (usb.core.USBError, NotImplementedError) as e:
-            from pybluehost.cli.diagnostics import USBDeviceDiagnostics
+            from pybluehost.cli.tools.usb import USBDeviceDiagnostics
             from pybluehost.core.errors import USBAccessDeniedError
             import dataclasses
             errno = getattr(e, "errno", None)
