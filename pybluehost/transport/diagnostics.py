@@ -52,22 +52,32 @@ class USBDeviceDiagnostics:
                         ],
                         manual_url=None,
                     )
-                # Not WinUSB (bthusb, unknown, etc.) — prompt driver replacement
+                # Not WinUSB (bthusb, unknown, etc.) — could be driver issue
+                # or another process holding the device
                 return USBDiagnosticReport(
                     failure_type=FailureType.DRIVER_CONFLICT,
                     driver_type=driver,
                     device_name=name,
                     steps=[
-                        f"检测到 {name} 未绑定 WinUSB 驱动，无法通过 pyusb 访问。",
+                        f"无法访问 {name}。可能原因：",
+                        "  1) 设备被其他程序占用",
+                        "  2) 设备未绑定 WinUSB 驱动",
                         "",
-                        "方法 1: 使用 Zadig (https://zadig.akeo.ie/)",
+                        "排查步骤：",
+                        "  1. 检查是否有其他程序占用了该 USB 设备",
+                        "  2. 尝试停止 Windows Bluetooth 支持服务 (bthserv)",
+                        "  3. 重新运行程序",
+                        "",
+                        "如果以上无效，请替换为 WinUSB 驱动：",
+                        "",
+                        "方法 A: 使用 Zadig (https://zadig.akeo.ie/)",
                         "  1. 运行 Zadig",
                         '  2. 菜单 Options → List All Devices',
                         f'  3. 选择 "{name}"',
                         '  4. 点击 "Replace Driver" (选择 WinUSB)',
                         "  5. 重新运行程序",
                         "",
-                        "方法 2: 设备管理器手动替换",
+                        "方法 B: 设备管理器手动替换",
                         "  1. 打开设备管理器",
                         f'  2. 找到 "{name}" 设备',
                         "  3. 右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
