@@ -260,6 +260,30 @@ def test_csr_transport_is_usb_transport():
     assert isinstance(transport, USBTransport)
 
 
+class TestUSBTransportDiagnostics:
+    def test_open_access_denied_raises_diagnostic_error(self):
+        """When get_active_configuration raises errno=13, we get USBAccessDeniedError."""
+        import usb.core
+        from pybluehost.core.errors import USBAccessDeniedError
+
+        device = MagicMock()
+        device.idVendor = 0x8087
+        device.idProduct = 0x0036
+        device.product = None
+        device.manufacturer = None
+        device.get_active_configuration.side_effect = usb.core.USBError(
+            "Access denied", errno=13
+        )
+
+        transport = USBTransport(device=device)
+        with pytest.raises(USBAccessDeniedError) as exc_info:
+            import asyncio
+            asyncio.run(transport.open())
+
+        assert exc_info.value.report["failure_type"].name == "DRIVER_CONFLICT"
+        assert "8087" in exc_info.value.report["device_name"]
+
+
 # --- IntelUSBTransport firmware variant parsing ---
 
 def test_parse_fw_variant_legacy_operational():

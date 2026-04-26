@@ -157,7 +157,15 @@ class USBTransport(Transport):
         except Exception:
             pass  # Already configured
 
-        cfg = self._device.get_active_configuration()
+        try:
+            cfg = self._device.get_active_configuration()
+        except usb.core.USBError as e:
+            from pybluehost.transport.diagnostics import USBDeviceDiagnostics
+            from pybluehost.core.errors import USBAccessDeniedError
+            import dataclasses
+            report = USBDeviceDiagnostics.diagnose(self._device, e.errno, sys.platform)
+            raise USBAccessDeniedError(dataclasses.asdict(report)) from e
+
         intf = cfg[(0, 0)]  # Interface 0, alternate setting 0
 
         # Claim the interface (required for endpoint I/O on most platforms)
