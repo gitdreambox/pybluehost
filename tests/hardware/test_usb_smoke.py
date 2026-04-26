@@ -6,29 +6,27 @@ import pytest
 pytestmark = pytest.mark.hardware
 
 
-async def test_usb_stack_powers_on(hardware_required):
-    """Full stack on real hardware: power on, read BD_ADDR."""
+async def test_usb_stack_lifecycle(hardware_required):
+    """Full stack on real hardware: power on, read BD_ADDR, reset cycle."""
     from pybluehost.stack import Stack
 
-    stack = await Stack.from_usb()
+    stack = await Stack.from_usb(vendor="csr")
     try:
+        # Power on / init
         assert stack.is_powered
         addr = stack.local_address
         assert addr is not None
         assert str(addr) != "00:00:00:00:00:00"
-    finally:
-        await stack.close()
+        print(f"\n  [PASS] USB stack powered on, BD_ADDR={addr}")
 
-
-async def test_usb_stack_reset(hardware_required):
-    """Power off and on should restore is_powered."""
-    from pybluehost.stack import Stack
-
-    stack = await Stack.from_usb()
-    try:
+        # Power off
         await stack.power_off()
         assert not stack.is_powered
+        print("  [PASS] USB stack powered off")
+
+        # Power on again
         await stack.power_on()
         assert stack.is_powered
+        print("  [PASS] USB stack reset OK")
     finally:
         await stack.close()

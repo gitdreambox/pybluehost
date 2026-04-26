@@ -121,6 +121,13 @@ class Stack:
         await asyncio.wait_for(hci.initialize(), timeout=cfg.command_timeout * 20)
         stack._powered = True
 
+        # 3a. Read BD_ADDR for local_address
+        from pybluehost.hci.packets import HCI_Read_BD_ADDR_Command
+        addr_event = await hci.send_command(HCI_Read_BD_ADDR_Command())
+        if hasattr(addr_event, "return_parameters") and len(addr_event.return_parameters) >= 7:
+            raw_addr = addr_event.return_parameters[1:7]
+            stack._local_address = BDAddress(raw_addr)
+
         # 4. L2CAP
         l2cap = L2CAPManager(hci=hci)
         stack._l2cap = l2cap
@@ -151,6 +158,19 @@ class Stack:
         stack._gap = gap
 
         return stack
+
+    @classmethod
+    async def from_usb(
+        cls,
+        vendor: str | None = None,
+        config: StackConfig | None = None,
+    ) -> Stack:
+        """Create a Stack with auto-detected USB transport."""
+        from pybluehost.transport.usb import USBTransport
+
+        transport = USBTransport.auto_detect(vendor=vendor)
+        await transport.open()
+        return await cls._build(transport, config, StackMode.LIVE)
 
     @classmethod
     async def loopback(

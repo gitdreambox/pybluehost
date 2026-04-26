@@ -105,6 +105,8 @@ async def _open_raw(transport) -> None:
     cfg = transport._device.get_active_configuration()
     intf = cfg[(0, 0)]
 
+    usbutil.claim_interface(transport._device, 0)
+
     transport._ep_intr_in = usbutil.find_descriptor(
         intf,
         custom_match=lambda e: (
@@ -140,7 +142,7 @@ def _flush_interrupt_ep(transport, max_reads: int = 8) -> list[bytes]:
             drained.append(bytes(data))
         except usb.core.USBTimeoutError:
             break
-        except Exception:
+        except usb.core.USBError:
             break
     return drained
 
@@ -373,13 +375,19 @@ async def test_intel_firmware_loading(hw_device, hw_chip):
         pass
     cfg = hw_device.get_active_configuration()
     intf = cfg[(0, 0)]
+    usbutil.claim_interface(hw_device, 0)
     ep_intr = usbutil.find_descriptor(intf, custom_match=lambda e: (
         usbutil.endpoint_direction(e.bEndpointAddress) == usbutil.ENDPOINT_IN
         and usbutil.endpoint_type(e.bmAttributes) == usbutil.ENDPOINT_TYPE_INTR))
 
+    # Drain stale events
     for _ in range(10):
-        try: ep_intr.read(255, timeout=50)
-        except: break
+        try:
+            ep_intr.read(255, timeout=50)
+        except usb.core.USBTimeoutError:
+            break
+        except usb.core.USBError:
+            break
 
     opcode_rv = ((0x3F << 10) | 0x05).to_bytes(2, "little")
     hw_device.ctrl_transfer(0x20, 0x00, 0, 0, opcode_rv + b"\x01\xff")

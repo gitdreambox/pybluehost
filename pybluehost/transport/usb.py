@@ -160,6 +160,9 @@ class USBTransport(Transport):
         cfg = self._device.get_active_configuration()
         intf = cfg[(0, 0)]  # Interface 0, alternate setting 0
 
+        # Claim the interface (required for endpoint I/O on most platforms)
+        usbutil.claim_interface(self._device, 0)
+
         # Locate Interrupt IN endpoint (HCI Events)
         self._ep_intr_in = usbutil.find_descriptor(
             intf,
@@ -190,17 +193,30 @@ class USBTransport(Transport):
         await self._initialize()
         self._is_open = True
 
+        # Start background readers to push data to the sink
+        self._reader_tasks = [
+            asyncio.create_task(self._read_interrupt_loop()),
+            asyncio.create_task(self._read_bulk_loop()),
+        ]
+
     async def close(self) -> None:
-        """Close USB transport: cancel readers, release interface."""
+        """Close USB transport: cancel readers, release interface, close device."""
+        self._is_open = False
+        # Cancel and await reader tasks (allow executor threads to time out)
         for task in self._reader_tasks:
             task.cancel()
+        if self._reader_tasks:
+            await asyncio.gather(*self._reader_tasks, return_exceptions=True)
         self._reader_tasks.clear()
         try:
             import usb.util as usbutil
             usbutil.release_interface(self._device, 0)
         except Exception:
             pass
-        self._is_open = False
+        try:
+            self._device.close()
+        except Exception:
+            pass
 
     async def send(self, data: bytes) -> None:
         """Route by H4 packet type indicator byte."""
@@ -242,6 +258,38 @@ class USBTransport(Transport):
 
     async def _initialize(self) -> None:
         """Override in subclasses for firmware loading. Default: no-op."""
+
+    async def _read_interrupt_loop(self) -> None:
+        """Background task: read HCI events from Interrupt IN and push to sink."""
+        while self._is_open:
+            try:
+                data = await self.read_interrupt(size=255, timeout=0.5)
+                if self._sink is not None and data:
+                    await self._sink.on_transport_data(b"\x04" + data)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                # Timeout or transient error — keep reading
+                await asyncio.sleep(0.01)
+
+    async def _read_bulk_loop(self) -> None:
+        """Background task: read ACL data from Bulk IN and push to sink."""
+        if self._ep_bulk_in is None:
+            return
+        loop = asyncio.get_event_loop()
+        while self._is_open:
+            try:
+                data = await loop.run_in_executor(
+                    None,
+                    lambda: bytes(self._ep_bulk_in.read(1024, timeout=50)),
+                )
+                if self._sink is not None and data:
+                    await self._sink.on_transport_data(b"\x02" + data)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                # Timeout or transient error — keep reading
+                await asyncio.sleep(0.01)
 
     async def _control_out(self, data: bytes) -> None:
         """Send HCI command via USB control transfer (EP0, BT class request)."""
