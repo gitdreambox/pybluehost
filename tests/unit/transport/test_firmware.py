@@ -2,6 +2,7 @@
 
 import pytest
 from pathlib import Path
+from unittest.mock import patch
 
 from pybluehost.transport.firmware import (
     FirmwarePolicy,
@@ -75,3 +76,33 @@ def test_firmware_manager_default_policy_is_prompt():
 def test_firmware_not_found_error_is_runtime_error():
     err = FirmwareNotFoundError("test")
     assert isinstance(err, RuntimeError)
+
+
+class TestFirmwareManagerAutoDownload:
+    def test_find_or_download_finds_existing(self, tmp_path: Path):
+        mgr = FirmwareManager(vendor="intel", extra_dirs=[tmp_path], policy=FirmwarePolicy.AUTO_DOWNLOAD)
+        (tmp_path / "existing.sfi").write_text("fw")
+        path = mgr.find_or_download("existing.sfi")
+        assert path == tmp_path / "existing.sfi"
+
+    def test_find_or_download_triggers_auto_download(self, tmp_path: Path):
+        mgr = FirmwareManager(vendor="intel", extra_dirs=[tmp_path], policy=FirmwarePolicy.AUTO_DOWNLOAD)
+
+        with patch(
+            "pybluehost.transport.firmware.downloader.FirmwareDownloader.download"
+        ) as mock_dl:
+            mock_dl.return_value = tmp_path / "auto.sfi"
+            path = mgr.find_or_download("auto.sfi")
+
+        mock_dl.assert_called_once_with("auto.sfi", "intel", mgr.data_dir)
+        assert path == tmp_path / "auto.sfi"
+
+    def test_find_or_download_error_policy_no_download(self, tmp_path: Path):
+        mgr = FirmwareManager(vendor="intel", extra_dirs=[tmp_path], policy=FirmwarePolicy.ERROR)
+        with pytest.raises(FirmwareNotFoundError):
+            mgr.find_or_download("missing.sfi")
+
+    def test_find_or_download_prompt_policy_no_download(self, tmp_path: Path):
+        mgr = FirmwareManager(vendor="intel", extra_dirs=[tmp_path], policy=FirmwarePolicy.PROMPT)
+        with pytest.raises(FirmwareNotFoundError):
+            mgr.find_or_download("missing.sfi")

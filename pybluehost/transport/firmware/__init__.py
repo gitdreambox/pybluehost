@@ -106,6 +106,26 @@ class FirmwareManager:
         # Not found — raise with policy-appropriate message
         raise FirmwareNotFoundError(self._format_not_found_message(filename))
 
+    def find_or_download(self, filename: str) -> Path:
+        """Find a firmware file, or download it if missing and policy allows.
+
+        Raises FirmwareNotFoundError if the file cannot be found and
+        auto-download is not enabled or fails.
+        """
+        try:
+            return self.find(filename)
+        except FirmwareNotFoundError:
+            if self._policy == FirmwarePolicy.AUTO_DOWNLOAD:
+                return self._auto_download(filename)
+            raise
+
+    def _auto_download(self, filename: str) -> Path:
+        """Download the firmware file into the platform data directory."""
+        from pybluehost.transport.firmware.downloader import FirmwareDownloader
+
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        return FirmwareDownloader.download(filename, self._vendor, self.data_dir)
+
     def _format_not_found_message(self, filename: str) -> str:
         """Build a user-friendly error message with download instructions."""
         searched = [str(d) for d in self._search_dirs()]
@@ -131,9 +151,9 @@ class FirmwareManager:
                 f"  Option 3: Set {_ENV_VARS.get(self._vendor, 'PYBLUEHOST_FW_DIR')}=/path/to/firmware"
             )
         else:
-            # AUTO_DOWNLOAD — future: attempt download
+            # AUTO_DOWNLOAD
             msg += (
-                "Auto-download is not yet implemented.\n"
+                "Auto-download failed or was disabled.\n"
                 f"Please run: pybluehost fw download {self._vendor}"
             )
 
