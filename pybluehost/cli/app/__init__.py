@@ -18,3 +18,5 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_classic_inquiry_command(app_subs)
     from pybluehost.cli.app.gatt_browser import register_gatt_browser_command
     register_gatt_browser_command(app_subs)
+    from pybluehost.cli.app.sdp_browser import register_sdp_browser_command
+    register_sdp_browser_command(app_subs)
