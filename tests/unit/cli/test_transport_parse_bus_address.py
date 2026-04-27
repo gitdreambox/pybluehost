@@ -99,3 +99,30 @@ async def test_parse_usb_empty_bus_raises_value_error():
 async def test_parse_usb_empty_address_raises_value_error():
     with pytest.raises(ValueError, match="Empty usb address value"):
         await parse_transport_arg("usb:vendor=intel,address=")
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "usb:",
+        "usb:vendor=intel,",
+        "usb:vendor=intel,,bus=1",
+        "usb:=intel",
+        "usb:vendor",
+        "usb:vendor:intel",
+        "usb:vendor=intel,bus",
+        "usb:vendor=intel,bus=",
+        "usb:vendor=intel,address=",
+        "usb:vendor=intel,vendor=realtek",
+        "usb:bus=1,bus=2",
+        "usb:address=4,address=5",
+    ],
+)
+@pytest.mark.asyncio
+async def test_cli_rejects_same_empty_duplicate_malformed_usb_tokens_as_helper(spec):
+    from tests._transport_select import InvalidSpec, parse_spec
+
+    with pytest.raises(InvalidSpec):
+        parse_spec(spec)
+    with pytest.raises(ValueError):
+        await parse_transport_arg(spec)

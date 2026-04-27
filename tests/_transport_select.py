@@ -50,14 +50,23 @@ def autodetect_primary() -> str:
     """Return a usb:... spec for the first detected adapter, or 'virtual'."""
     from pybluehost.transport.usb import USBTransport
 
-    candidates = USBTransport.list_devices()
+    try:
+        candidates = USBTransport.list_devices()
+    except Exception as exc:
+        raise InvalidSpec("Unable to enumerate USB transports") from exc
     if not candidates:
         return "virtual"
     return _usb_candidate_spec(candidates[0])
 
 
-def find_second_usb_adapter(primary_bus: int, primary_address: int) -> str | None:
+def find_second_usb_adapter(
+    primary_bus: int | None,
+    primary_address: int | None,
+) -> str | None:
     """Return a usb:... spec for a USB adapter other than the primary, or None."""
+    if primary_bus is None or primary_address is None:
+        return None
+
     from pybluehost.transport.usb import USBTransport
 
     for cand in USBTransport.list_devices():

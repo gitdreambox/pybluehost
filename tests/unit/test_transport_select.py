@@ -91,6 +91,15 @@ def test_autodetect_returns_usb_spec_with_bus_address():
         assert autodetect_primary() == "usb:vendor=intel,bus=1,address=4"
 
 
+def test_autodetect_wraps_list_devices_errors():
+    with patch(
+        "pybluehost.transport.usb.USBTransport.list_devices",
+        side_effect=RuntimeError("usb backend failed"),
+    ):
+        with pytest.raises(InvalidSpec, match="Unable to enumerate USB transports"):
+            autodetect_primary()
+
+
 def test_find_second_usb_adapter_excludes_primary():
     a = MagicMock()
     a.vendor = "intel"
@@ -112,6 +121,29 @@ def test_find_second_usb_adapter_returns_none_when_only_primary():
     a.address = 4
     with patch("pybluehost.transport.usb.USBTransport.list_devices", return_value=[a]):
         assert find_second_usb_adapter(primary_bus=1, primary_address=4) is None
+
+
+@pytest.mark.parametrize(
+    ("primary_bus", "primary_address"),
+    [
+        (None, 4),
+        (1, None),
+        (None, None),
+    ],
+)
+def test_find_second_usb_adapter_returns_none_when_primary_identity_unknown(
+    primary_bus, primary_address
+):
+    with patch("pybluehost.transport.usb.USBTransport.list_devices") as list_devices:
+        assert (
+            find_second_usb_adapter(
+                primary_bus=primary_bus,
+                primary_address=primary_address,
+            )
+            is None
+        )
+
+    list_devices.assert_not_called()
 
 
 def test_same_family_check():
