@@ -146,6 +146,16 @@ def test_report_header_suppressed_for_list_transports(
     ) == []
 
 
+def test_report_header_uses_exact_fallback_label(monkeypatch: pytest.MonkeyPatch):
+    tracker = project_conftest.FallbackTracker()
+    tracker.mark_fallback()
+    monkeypatch.setattr(project_conftest, "_FALLBACK_TRACKER", tracker)
+
+    assert project_conftest._header_source_label(_Config()) == (
+        "auto-detected — no hardware found"
+    )
+
+
 def test_fallback_summary_uses_stack_fixture_count(monkeypatch: pytest.MonkeyPatch):
     tracker = project_conftest.FallbackTracker()
     tracker.mark_fallback()

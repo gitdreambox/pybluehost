@@ -221,7 +221,7 @@ def _header_source_label(config: pytest.Config) -> str:
     if os.environ.get("PYBLUEHOST_TEST_TRANSPORT") is not None:
         return "explicit"
     if _FALLBACK_TRACKER.is_fallback():
-        return "auto-detected - no hardware found"
+        return "auto-detected — no hardware found"
     return "auto-detected"
 
 
