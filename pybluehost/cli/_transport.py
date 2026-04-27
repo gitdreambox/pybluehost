@@ -24,13 +24,24 @@ async def parse_transport_arg(s: str) -> Transport:
     if s == "usb" or s.startswith("usb:"):
         from pybluehost.transport.usb import USBTransport
         vendor: str | None = None
+        bus: int | None = None
+        address: int | None = None
         if s.startswith("usb:"):
             for kv in s[4:].split(","):
-                if "=" in kv:
-                    k, v = kv.split("=", 1)
-                    if k.strip() == "vendor":
-                        vendor = v.strip()
-        return USBTransport.auto_detect(vendor=vendor)
+                if "=" not in kv:
+                    continue
+                k, v = kv.split("=", 1)
+                k = k.strip()
+                v = v.strip()
+                if k == "vendor":
+                    vendor = v
+                elif k == "bus":
+                    bus = int(v)
+                elif k == "address":
+                    address = int(v)
+                else:
+                    raise ValueError(f"Unknown usb spec key: {k!r}")
+        return USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
 
     if s.startswith("uart:"):
         from pybluehost.transport.uart import UARTTransport

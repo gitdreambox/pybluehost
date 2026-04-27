@@ -49,7 +49,7 @@ async def test_parse_usb_plain():
     mock_t = MagicMock()
     with patch("pybluehost.transport.usb.USBTransport.auto_detect", return_value=mock_t) as m:
         result = await parse_transport_arg("usb")
-        m.assert_called_once_with(vendor=None)
+        m.assert_called_once_with(vendor=None, bus=None, address=None)
     assert result is mock_t
 
 
@@ -57,5 +57,5 @@ async def test_parse_usb_vendor():
     mock_t = MagicMock()
     with patch("pybluehost.transport.usb.USBTransport.auto_detect", return_value=mock_t) as m:
         result = await parse_transport_arg("usb:vendor=intel")
-        m.assert_called_once_with(vendor="intel")
+        m.assert_called_once_with(vendor="intel", bus=None, address=None)
     assert result is mock_t

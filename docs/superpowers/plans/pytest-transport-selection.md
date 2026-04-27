@@ -913,7 +913,7 @@ git commit -m "feat(stack): add Stack.from_usb and Stack.from_uart factories"
 - Modify: `pybluehost/cli/_transport.py`
 - Test: `tests/unit/cli/test_transport_parse_bus_address.py`
 
-- [ ] **Step 5.1: Write failing test**
+- [x] **Step 5.1: Write failing test**
 
 ```python
 # tests/unit/cli/test_transport_parse_bus_address.py
@@ -946,13 +946,13 @@ async def test_parse_usb_without_bus_address_omits_kwargs():
     ad.assert_called_once_with(vendor="intel", bus=None, address=None)
 ```
 
-- [ ] **Step 5.2: Run test (FAIL expected)**
+- [x] **Step 5.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/cli/test_transport_parse_bus_address.py -v
 ```
 
-- [ ] **Step 5.3: Update `parse_transport_arg`**
+- [x] **Step 5.3: Update `parse_transport_arg`**
 
 In `pybluehost/cli/_transport.py`, replace the `usb` branch:
 
@@ -980,14 +980,14 @@ In `pybluehost/cli/_transport.py`, replace the `usb` branch:
         return USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
 ```
 
-- [ ] **Step 5.4: Run test (PASS expected)**
+- [x] **Step 5.4: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/cli/test_transport_parse_bus_address.py -v
 uv run pytest tests/unit/cli/test_transport.py -q
 ```
 
-- [ ] **Step 5.5: Commit**
+- [x] **Step 5.5: Commit**
 
 ```bash
 git add pybluehost/cli/_transport.py tests/unit/cli/test_transport_parse_bus_address.py
