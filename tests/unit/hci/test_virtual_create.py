@@ -6,8 +6,16 @@ import asyncio
 import pytest
 
 from pybluehost.core.address import BDAddress
-from pybluehost.hci.virtual import VirtualController
+from pybluehost.hci.virtual import VirtualController, _HCIPipe
 from pybluehost.transport.base import Transport
+
+
+class _Collect:
+    def __init__(self) -> None:
+        self.received: list[bytes] = []
+
+    async def on_transport_data(self, data: bytes) -> None:
+        self.received.append(data)
 
 
 @pytest.mark.asyncio
@@ -54,3 +62,57 @@ async def test_host_transport_round_trip_through_vc():
     assert len(received) >= 1
     assert received[0][0] == 0x04
     assert received[0][1] == 0x0E
+
+
+@pytest.mark.asyncio
+async def test_hci_pipe_pair_delivers_bytes_bidirectionally():
+    a, b = _HCIPipe.pair()
+    sink_a = _Collect()
+    sink_b = _Collect()
+    a.set_sink(sink_a)
+    b.set_sink(sink_b)
+    await a.open()
+    await b.open()
+
+    await a.send(b"A")
+    await b.send(b"B")
+
+    assert sink_a.received == [b"B"]
+    assert sink_b.received == [b"A"]
+
+
+@pytest.mark.asyncio
+async def test_hci_pipe_send_when_closed_raises():
+    a, b = _HCIPipe.pair()
+    await b.open()
+
+    with pytest.raises(RuntimeError, match="not open"):
+        await a.send(b"X")
+
+
+@pytest.mark.asyncio
+async def test_hci_pipe_send_when_peer_closed_is_dropped():
+    a, b = _HCIPipe.pair()
+    sink_b = _Collect()
+    b.set_sink(sink_b)
+    await a.open()
+
+    await a.send(b"X")
+
+    assert sink_b.received == []
+
+
+@pytest.mark.asyncio
+async def test_hci_pipe_solo_instance_has_no_peer():
+    solo = _HCIPipe()
+    await solo.open()
+
+    with pytest.raises(RuntimeError, match="peer"):
+        await solo.send(b"X")
+
+
+def test_hci_pipe_info_identifies_virtual_transport():
+    pipe, _ = _HCIPipe.pair()
+
+    assert pipe.info.type == "virtual"
+    assert pipe.info.description == "VirtualController pipe"
