@@ -97,15 +97,17 @@ def _resolve_primary_spec(config: pytest.Config) -> str:
         autodetected = True
 
     try:
-        parse_spec(spec)
+        family_of_spec = family_of(spec)
     except InvalidSpec as exc:
         pytest.exit(f"Invalid transport spec: {spec!r} - {exc}", returncode=4)
 
-    if not autodetected and family_of(spec) in {"usb", "uart"}:
+    if not autodetected and family_of_spec in {"usb", "uart"}:
         try:
-            _verify_spec_available(spec)
+            verified_spec = _verify_spec_available(spec)
         except RuntimeError as exc:
             pytest.exit(f"Transport {spec!r} unavailable: {exc}", returncode=4)
+        if verified_spec is not None:
+            spec = verified_spec
 
     if autodetected and spec == "virtual":
         _FALLBACK_TRACKER.mark_fallback()
@@ -114,8 +116,13 @@ def _resolve_primary_spec(config: pytest.Config) -> str:
     return spec
 
 
-def _verify_spec_available(spec: str) -> None:
-    """Raise RuntimeError if the explicit hardware spec is unavailable."""
+def _verify_spec_available(spec: str) -> str | None:
+    """Raise RuntimeError if the explicit hardware spec is unavailable.
+
+    Returns a normalized concrete spec when USB enumeration can identify the
+    selected adapter. Generic USB fallback devices may lack chip/location
+    metadata; in that case the original spec is kept by returning None.
+    """
     family, params = parse_spec(spec)
     if family == "usb":
         from pybluehost.transport.usb import USBTransport
@@ -126,10 +133,40 @@ def _verify_spec_available(spec: str) -> None:
             USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
+        return _known_usb_candidate_spec(
+            USBTransport.list_devices(),
+            vendor=vendor,
+            bus=bus,
+            address=address,
+        )
     elif family == "uart":
         port = params["raw"].split("@", 1)[0]
         if not os.path.exists(port):
             raise RuntimeError(f"UART port not found: {port}")
+    return None
+
+
+def _known_usb_candidate_spec(
+    candidates: list[object],
+    *,
+    vendor: str | None,
+    bus: int | None,
+    address: int | None,
+) -> str | None:
+    """Return the first known USB candidate matching the selected filters."""
+    for candidate in candidates:
+        if vendor is not None and candidate.vendor != vendor:
+            continue
+        if bus is not None and candidate.bus != bus:
+            continue
+        if address is not None and candidate.address != address:
+            continue
+        return (
+            f"usb:vendor={candidate.vendor},"
+            f"bus={candidate.bus},"
+            f"address={candidate.address}"
+        )
+    return None
 
 
 def _resolve_peer_spec(config: pytest.Config, primary: str) -> str | None:

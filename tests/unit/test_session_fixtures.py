@@ -6,6 +6,7 @@ import sys
 import textwrap
 import uuid
 import importlib.util
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,13 @@ assert _CONFTEST_SPEC is not None
 assert _CONFTEST_SPEC.loader is not None
 project_conftest = importlib.util.module_from_spec(_CONFTEST_SPEC)
 _CONFTEST_SPEC.loader.exec_module(project_conftest)
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    vendor: str
+    bus: int
+    address: int
 
 
 class _Config:
@@ -127,24 +135,76 @@ def test_primary_resolution_is_cached_per_config(
     assert calls == 1
 
 
-def test_ambiguous_usb_primary_passes_none_to_peer_lookup(
+def test_explicit_usb_primary_normalizes_to_concrete_adapter_and_peer_second(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen: list[tuple[int | None, int | None]] = []
+    from pybluehost.transport.usb import USBTransport
 
-    def fake_find_second_usb_adapter(
-        primary_bus: int | None,
-        primary_address: int | None,
-    ) -> str | None:
-        seen.append((primary_bus, primary_address))
-        return None
+    candidates = [
+        _Candidate(vendor="intel", bus=1, address=4),
+        _Candidate(vendor="realtek", bus=2, address=5),
+    ]
+    seen_auto_detect: list[tuple[str | None, int | None, int | None]] = []
 
+    def fake_auto_detect(
+        *,
+        vendor: str | None = None,
+        bus: int | None = None,
+        address: int | None = None,
+        **_kwargs: object,
+    ) -> object:
+        seen_auto_detect.append((vendor, bus, address))
+        return object()
+
+    monkeypatch.setattr(USBTransport, "auto_detect", fake_auto_detect)
+    monkeypatch.setattr(USBTransport, "list_devices", classmethod(lambda cls: candidates))
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT_PEER", raising=False)
-    monkeypatch.setattr(
-        project_conftest,
-        "find_second_usb_adapter",
-        fake_find_second_usb_adapter,
-    )
 
-    assert project_conftest._resolve_peer_spec(_Config(), "usb:vendor=intel") is None
-    assert seen == [(None, None)]
+    config = _Config(transport="usb")
+    primary = project_conftest._resolve_primary_spec(config)
+    peer = project_conftest._resolve_peer_spec(config, primary)
+
+    assert primary == "usb:vendor=intel,bus=1,address=4"
+    assert peer == "usb:vendor=realtek,bus=2,address=5"
+    assert seen_auto_detect == [(None, None, None)]
+
+
+def test_vendor_filtered_usb_primary_normalizes_to_matching_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pybluehost.transport.usb import USBTransport
+
+    candidates = [
+        _Candidate(vendor="realtek", bus=1, address=4),
+        _Candidate(vendor="intel", bus=2, address=5),
+    ]
+    seen_auto_detect: list[tuple[str | None, int | None, int | None]] = []
+
+    def fake_auto_detect(
+        *,
+        vendor: str | None = None,
+        bus: int | None = None,
+        address: int | None = None,
+        **_kwargs: object,
+    ) -> object:
+        seen_auto_detect.append((vendor, bus, address))
+        return object()
+
+    monkeypatch.setattr(USBTransport, "auto_detect", fake_auto_detect)
+    monkeypatch.setattr(USBTransport, "list_devices", classmethod(lambda cls: candidates))
+
+    primary = project_conftest._resolve_primary_spec(_Config(transport="usb:vendor=intel"))
+
+    assert primary == "usb:vendor=intel,bus=2,address=5"
+    assert seen_auto_detect == [("intel", None, None)]
+
+
+def test_generic_usb_fallback_keeps_original_when_no_known_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pybluehost.transport.usb import USBTransport
+
+    monkeypatch.setattr(USBTransport, "auto_detect", lambda **_kwargs: object())
+    monkeypatch.setattr(USBTransport, "list_devices", classmethod(lambda cls: []))
+
+    assert project_conftest._resolve_primary_spec(_Config(transport="usb")) == "usb"
