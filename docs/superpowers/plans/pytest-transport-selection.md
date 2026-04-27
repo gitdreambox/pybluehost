@@ -1328,7 +1328,7 @@ git commit -m "feat(tests): add FallbackTracker for transport autodetect summary
 - Modify: `tests/conftest.py`
 - Test: `tests/unit/test_conftest_options.py`
 
-- [ ] **Step 8.1: Write failing test**
+- [x] **Step 8.1: Write failing test**
 
 ```python
 # tests/unit/test_conftest_options.py
@@ -1349,13 +1349,13 @@ def test_help_shows_transport_options():
     assert "--list-transports" in result.stdout
 ```
 
-- [ ] **Step 8.2: Run test (FAIL expected)**
+- [x] **Step 8.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/test_conftest_options.py -v
 ```
 
-- [ ] **Step 8.3: Replace `tests/conftest.py`**
+- [x] **Step 8.3: Replace `tests/conftest.py`**
 
 ```python
 """Shared pytest fixtures and hooks for PyBlueHost test suite."""
@@ -1416,14 +1416,14 @@ def pytest_configure(config: pytest.Config) -> None:
         pytest.exit("--list-transports done", returncode=0)
 ```
 
-- [ ] **Step 8.4: Run test (PASS expected)**
+- [x] **Step 8.4: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/test_conftest_options.py -v
 uv run pytest tests/ -q --co | head -5
 ```
 
-- [ ] **Step 8.5: Commit**
+- [x] **Step 8.5: Commit**
 
 ```bash
 git add tests/conftest.py tests/unit/test_conftest_options.py
