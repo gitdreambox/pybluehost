@@ -1438,7 +1438,7 @@ git commit -m "feat(tests): add --transport/--transport-peer/--list-transports o
 - Modify: `tests/conftest.py`
 - Test: `tests/unit/test_session_fixtures.py`
 
-- [ ] **Step 9.1: Write failing test**
+- [x] **Step 9.1: Write failing test**
 
 ```python
 # tests/unit/test_session_fixtures.py
@@ -1507,13 +1507,13 @@ def test_cross_family_peer_exits_with_4(tmp_path: Path):
     assert "Peer transport must match primary family" in out or "unavailable" in out
 ```
 
-- [ ] **Step 9.2: Run test (FAIL expected)**
+- [x] **Step 9.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/test_session_fixtures.py -v
 ```
 
-- [ ] **Step 9.3: Append session fixtures to `tests/conftest.py`**
+- [x] **Step 9.3: Append session fixtures to `tests/conftest.py`**
 
 ```python
 # Append to tests/conftest.py
@@ -1611,14 +1611,14 @@ def transport_mode(selected_transport_spec) -> str:
     return family_of(selected_transport_spec)
 ```
 
-- [ ] **Step 9.4: Run test (PASS expected)**
+- [x] **Step 9.4: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/test_session_fixtures.py -v
 uv run pytest tests/ -q --co | head -5
 ```
 
-- [ ] **Step 9.5: Commit**
+- [x] **Step 9.5: Commit**
 
 ```bash
 git add tests/conftest.py tests/unit/test_session_fixtures.py
