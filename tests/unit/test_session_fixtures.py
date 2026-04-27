@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from _pytest.outcomes import Exit
 
 
 ROOT = Path(__file__).parents[2]
@@ -243,3 +244,50 @@ def test_generic_usb_fallback_keeps_original_when_no_known_candidate(
     monkeypatch.setattr(USBTransport, "list_devices", classmethod(lambda cls: []))
 
     assert project_conftest._resolve_primary_spec(_Config(transport="usb")) == "usb"
+
+
+@pytest.mark.asyncio
+async def test_build_stack_from_spec_rejects_invalid_uart_baudrate() -> None:
+    with pytest.raises(project_conftest.InvalidSpec) as excinfo:
+        await project_conftest._build_stack_from_spec("uart:/dev/ttyUSB0@fast")
+
+    assert "Invalid UART baudrate" in str(excinfo.value)
+    assert "fast" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_stack_fixture_exits_with_clear_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_build(_spec: str) -> object:
+        raise RuntimeError("open failed")
+
+    monkeypatch.setattr(project_conftest, "_build_stack_from_spec", fake_build)
+
+    gen = project_conftest.stack.__wrapped__("usb:vendor=intel")
+    with pytest.raises(Exit) as excinfo:
+        await gen.__anext__()
+
+    assert excinfo.value.returncode == 4
+    assert "Transport 'usb:vendor=intel' unavailable: open failed" in str(
+        excinfo.value
+    )
+
+
+@pytest.mark.asyncio
+async def test_peer_stack_fixture_skips_with_clear_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_build(_spec: str) -> object:
+        raise RuntimeError("peer open failed")
+
+    monkeypatch.setattr(project_conftest, "_build_stack_from_spec", fake_build)
+
+    gen = project_conftest.peer_stack.__wrapped__("usb:vendor=realtek")
+    with pytest.raises(pytest.skip.Exception) as excinfo:
+        await gen.__anext__()
+
+    assert "peer_stack: transport 'usb:vendor=realtek' unavailable" in str(
+        excinfo.value
+    )
+    assert "peer open failed" in str(excinfo.value)

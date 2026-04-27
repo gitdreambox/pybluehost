@@ -240,7 +240,13 @@ async def _build_stack_from_spec(spec: str):
         raw = params["raw"]
         if "@" in raw:
             port, baudrate_s = raw.rsplit("@", 1)
-            return await Stack.from_uart(port=port, baudrate=int(baudrate_s))
+            try:
+                baudrate = int(baudrate_s)
+            except ValueError as exc:
+                raise InvalidSpec(
+                    f"Invalid UART baudrate in spec {spec!r}: {baudrate_s!r}"
+                ) from exc
+            return await Stack.from_uart(port=port, baudrate=baudrate)
         return await Stack.from_uart(port=raw)
     raise InvalidSpec(f"Cannot build stack from spec: {spec!r}")
 
@@ -248,7 +254,13 @@ async def _build_stack_from_spec(spec: str):
 @pytest.fixture
 async def stack(selected_transport_spec: str):
     """Full Stack on the selected transport. Built and torn down per test."""
-    s = await _build_stack_from_spec(selected_transport_spec)
+    try:
+        s = await _build_stack_from_spec(selected_transport_spec)
+    except Exception as exc:
+        pytest.exit(
+            f"Transport {selected_transport_spec!r} unavailable: {exc}",
+            returncode=4,
+        )
     if _FALLBACK_TRACKER.is_fallback():
         _FALLBACK_TRACKER.increment()
     try:
@@ -264,7 +276,10 @@ async def peer_stack(selected_peer_spec: str | None):
         pytest.skip(
             "peer_stack: no second adapter available; pass --transport-peer=..."
         )
-    s = await _build_stack_from_spec(selected_peer_spec)
+    try:
+        s = await _build_stack_from_spec(selected_peer_spec)
+    except Exception as exc:
+        pytest.skip(f"peer_stack: transport {selected_peer_spec!r} unavailable: {exc}")
     try:
         yield s
     finally:

@@ -12,10 +12,10 @@ async def test_stack_fixture_yields_powered_stack(stack):
     assert stack.is_powered
 
 
-@pytest.mark.asyncio
-async def test_peer_stack_in_virtual_mode(stack, peer_stack, transport_mode):
+def test_peer_stack_in_virtual_mode(request, stack, transport_mode):
     if transport_mode != "virtual":
         pytest.skip("This assertion is virtual-specific")
+    peer_stack = request.getfixturevalue("peer_stack")
     assert peer_stack is not stack
     assert peer_stack.is_powered
     assert stack.mode == StackMode.VIRTUAL
