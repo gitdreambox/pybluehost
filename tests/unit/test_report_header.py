@@ -120,6 +120,15 @@ def test_header_shows_explicit_virtual():
     assert "[pybluehost-tests] transport: virtual [explicit]" in out
 
 
+def test_report_header_shows_explicit_peer_virtual():
+    assert project_conftest.pytest_report_header(
+        _Config(transport="virtual", peer="virtual"),
+    ) == [
+        "[pybluehost-tests] transport: virtual [explicit]",
+        "[pybluehost-tests] peer transport: virtual [explicit]",
+    ]
+
+
 def test_no_fallback_summary_when_explicit_virtual_stack_fixture_used():
     body = """
     def test_dummy(stack):
@@ -166,6 +175,10 @@ def test_fallback_summary_uses_stack_fixture_count(monkeypatch: pytest.MonkeyPat
 
     project_conftest.pytest_terminal_summary(terminal, exitstatus=0, config=_Config())
 
-    out = "\n".join(terminal.lines)
-    assert "pybluehost transport summary" in out
-    assert "Auto-detect found no hardware. 2 tests ran on virtual." in out
+    assert terminal.lines == [
+        "pybluehost transport summary",
+        "⚠  Auto-detect found no hardware. 2 tests ran on virtual.",
+        "   Set --transport=usb (or PYBLUEHOST_TEST_TRANSPORT=usb) to validate",
+        "   against real hardware.",
+        "=",
+    ]

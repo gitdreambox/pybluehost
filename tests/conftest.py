@@ -235,8 +235,10 @@ def pytest_report_header(config: pytest.Config) -> list[str]:
     lines = [f"[pybluehost-tests] transport: {primary} [{label}]"]
 
     peer = _resolve_peer_spec(config, primary)
-    if peer is not None and peer != primary:
-        lines.append(f"[pybluehost-tests] peer transport: {peer}")
+    if peer is not None and (
+        peer != primary or config.getoption("--transport-peer") is not None
+    ):
+        lines.append(f"[pybluehost-tests] peer transport: {peer} [{label}]")
 
     return lines
 
@@ -249,12 +251,12 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     n = _FALLBACK_TRACKER.count
     terminalreporter.write_sep("=", "pybluehost transport summary")
     terminalreporter.write_line(
-        f"WARNING: Auto-detect found no hardware. {n} tests ran on virtual."
+        f"⚠  Auto-detect found no hardware. {n} tests ran on virtual."
     )
     terminalreporter.write_line(
-        "Set --transport=usb (or PYBLUEHOST_TEST_TRANSPORT=usb) to validate"
+        "   Set --transport=usb (or PYBLUEHOST_TEST_TRANSPORT=usb) to validate"
     )
-    terminalreporter.write_line("against real hardware.")
+    terminalreporter.write_line("   against real hardware.")
     terminalreporter.write_sep("=")
 
 
