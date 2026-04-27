@@ -55,11 +55,47 @@ async def test_parse_usb_unknown_key_raises_value_error():
 
 @pytest.mark.asyncio
 async def test_parse_usb_invalid_bus_raises_value_error():
-    with pytest.raises(ValueError, match="invalid literal"):
+    with pytest.raises(ValueError, match="Invalid usb bus value: 'one'"):
         await parse_transport_arg("usb:vendor=intel,bus=one")
 
 
 @pytest.mark.asyncio
 async def test_parse_usb_invalid_address_raises_value_error():
-    with pytest.raises(ValueError, match="invalid literal"):
+    with pytest.raises(ValueError, match="Invalid usb address value: 'four'"):
         await parse_transport_arg("usb:vendor=intel,address=four")
+
+
+@pytest.mark.asyncio
+async def test_parse_usb_duplicate_key_raises_value_error():
+    with pytest.raises(ValueError, match="Duplicate usb spec key: 'vendor'"):
+        await parse_transport_arg("usb:vendor=intel,vendor=realtek")
+
+
+@pytest.mark.asyncio
+async def test_parse_usb_malformed_token_raises_value_error():
+    with pytest.raises(ValueError, match="Malformed usb spec token: 'bus'"):
+        await parse_transport_arg("usb:vendor=intel,bus,address=4")
+
+
+@pytest.mark.asyncio
+async def test_parse_usb_empty_key_raises_value_error():
+    with pytest.raises(ValueError, match="Empty usb spec key"):
+        await parse_transport_arg("usb:=1")
+
+
+@pytest.mark.asyncio
+async def test_parse_usb_empty_vendor_raises_value_error():
+    with pytest.raises(ValueError, match="Empty usb vendor value"):
+        await parse_transport_arg("usb:vendor=,bus=1")
+
+
+@pytest.mark.asyncio
+async def test_parse_usb_empty_bus_raises_value_error():
+    with pytest.raises(ValueError, match="Empty usb bus value"):
+        await parse_transport_arg("usb:vendor=intel,bus=,address=4")
+
+
+@pytest.mark.asyncio
+async def test_parse_usb_empty_address_raises_value_error():
+    with pytest.raises(ValueError, match="Empty usb address value"):
+        await parse_transport_arg("usb:vendor=intel,address=")

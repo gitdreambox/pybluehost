@@ -27,18 +27,32 @@ async def parse_transport_arg(s: str) -> Transport:
         bus: int | None = None
         address: int | None = None
         if s.startswith("usb:"):
+            seen_keys: set[str] = set()
             for kv in s[4:].split(","):
                 if "=" not in kv:
-                    continue
+                    raise ValueError(f"Malformed usb spec token: {kv.strip()!r}")
                 k, v = kv.split("=", 1)
                 k = k.strip()
                 v = v.strip()
+                if not k:
+                    raise ValueError("Empty usb spec key")
+                if k in seen_keys:
+                    raise ValueError(f"Duplicate usb spec key: {k!r}")
+                seen_keys.add(k)
+                if not v:
+                    raise ValueError(f"Empty usb {k} value")
                 if k == "vendor":
                     vendor = v
                 elif k == "bus":
-                    bus = int(v)
+                    try:
+                        bus = int(v)
+                    except ValueError as exc:
+                        raise ValueError(f"Invalid usb bus value: {v!r}") from exc
                 elif k == "address":
-                    address = int(v)
+                    try:
+                        address = int(v)
+                    except ValueError as exc:
+                        raise ValueError(f"Invalid usb address value: {v!r}") from exc
                 else:
                     raise ValueError(f"Unknown usb spec key: {k!r}")
         return USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
