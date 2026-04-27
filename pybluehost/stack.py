@@ -172,7 +172,13 @@ class Stack:
 
         transport = USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
         await transport.open()
-        return await cls._build(transport, config, StackMode.LIVE)
+        try:
+            return await cls._build(transport, config, StackMode.LIVE)
+        except Exception:
+            close = getattr(transport, "close", None)
+            if close is not None:
+                await close()
+            raise
 
     @classmethod
     async def from_uart(
@@ -186,7 +192,13 @@ class Stack:
 
         transport = UARTTransport(port=port, baudrate=baudrate)
         await transport.open()
-        return await cls._build(transport, config, StackMode.LIVE)
+        try:
+            return await cls._build(transport, config, StackMode.LIVE)
+        except Exception:
+            close = getattr(transport, "close", None)
+            if close is not None:
+                await close()
+            raise
 
     @classmethod
     async def virtual(
