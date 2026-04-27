@@ -572,7 +572,7 @@ The pipe is no longer a public concept; users see only VirtualController."
 - Modify: `pybluehost/transport/usb.py`
 - Test: `tests/unit/transport/test_usb_list_devices.py`
 
-- [ ] **Step 3.1: Write failing test**
+- [x] **Step 3.1: Write failing test**
 
 ```python
 # tests/unit/transport/test_usb_list_devices.py
@@ -645,7 +645,7 @@ def test_auto_detect_bus_address_no_match_raises():
                 USBTransport.auto_detect(vendor="intel", bus=9, address=9)
 ```
 
-- [ ] **Step 3.2: Run test (FAIL expected)**
+- [x] **Step 3.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/transport/test_usb_list_devices.py -v
@@ -653,7 +653,7 @@ uv run pytest tests/unit/transport/test_usb_list_devices.py -v
 
 Expected: `ImportError: cannot import name 'DeviceCandidate'` or similar.
 
-- [ ] **Step 3.3: Implement `DeviceCandidate` and `list_devices()`**
+- [x] **Step 3.3: Implement `DeviceCandidate` and `list_devices()`**
 
 Add near the existing `ChipInfo` definition in `pybluehost/transport/usb.py`:
 
@@ -707,7 +707,7 @@ Add the classmethod inside `USBTransport`:
         return result
 ```
 
-- [ ] **Step 3.4: Extend `auto_detect` signature with `bus` / `address`**
+- [x] **Step 3.4: Extend `auto_detect` signature with `bus` / `address`**
 
 Replace the existing `auto_detect` signature and matching loop:
 
@@ -780,14 +780,14 @@ Replace the existing `auto_detect` signature and matching loop:
         )
 ```
 
-- [ ] **Step 3.5: Run tests (PASS expected)**
+- [x] **Step 3.5: Run tests (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/transport/test_usb_list_devices.py -v
 uv run pytest tests/unit/transport/ -q          # ensure no regression
 ```
 
-- [ ] **Step 3.6: Commit**
+- [x] **Step 3.6: Commit**
 
 ```bash
 git add pybluehost/transport/usb.py tests/unit/transport/test_usb_list_devices.py

@@ -39,6 +39,23 @@ class ChipInfo:
     transport_class: type | None  # filled after subclass definitions
 
 
+@dataclass(frozen=True)
+class DeviceCandidate:
+    """One enumerated Bluetooth USB device with location metadata."""
+
+    chip_info: ChipInfo
+    bus: int
+    address: int
+
+    @property
+    def vendor(self) -> str:
+        return self.chip_info.vendor
+
+    @property
+    def name(self) -> str:
+        return self.chip_info.name
+
+
 class NoBluetoothDeviceError(RuntimeError):
     """No supported Bluetooth USB device was found."""
 
@@ -90,6 +107,8 @@ class USBTransport(Transport):
         cls,
         firmware_policy: FirmwarePolicy = FirmwarePolicy.PROMPT,
         vendor: str | None = None,
+        bus: int | None = None,
+        address: int | None = None,
     ) -> "USBTransport":
         """Enumerate USB devices, match KNOWN_CHIPS, return correct subclass instance."""
         if usb is None:
@@ -113,6 +132,10 @@ class USBTransport(Transport):
         # 1. Search known chips by VID/PID
         all_devices = list(usb.core.find(find_all=True, backend=backend))
         for dev in all_devices:
+            if bus is not None and int(getattr(dev, "bus", 0) or 0) != bus:
+                continue
+            if address is not None and int(getattr(dev, "address", 0) or 0) != address:
+                continue
             for chip in chips:
                 if dev.idVendor == chip.vid and dev.idProduct == chip.pid:
                     transport_cls = chip.transport_class or cls
@@ -125,7 +148,7 @@ class USBTransport(Transport):
         # 2. Fallback: look for a generic Bluetooth USB device only when no vendor
         # filter is requested. A vendor-specific call should not silently return
         # a different adapter type.
-        if selected_vendor is None:
+        if selected_vendor is None and bus is None and address is None:
             bt_devices = list(
                 usb.core.find(
                     find_all=True,
@@ -140,10 +163,38 @@ class USBTransport(Transport):
                 return cls(device=dev, firmware_policy=firmware_policy)
 
         target = f" {selected_vendor}" if selected_vendor is not None else ""
+        loc = ""
+        if bus is not None or address is not None:
+            loc = f" at bus={bus} address={address}"
         raise NoBluetoothDeviceError(
-            f"No supported{target} Bluetooth USB device found. "
+            f"No supported{target} Bluetooth USB device found{loc}. "
             "Ensure your adapter is plugged in and (on Windows) has the WinUSB driver."
         )
+
+    @classmethod
+    def list_devices(cls) -> list[DeviceCandidate]:
+        """Enumerate every plugged-in Bluetooth USB device known to KNOWN_CHIPS."""
+        if usb is None:
+            return []
+        backend = cls._get_usb_backend()
+        try:
+            all_devices = list(usb.core.find(find_all=True, backend=backend))
+        except Exception:
+            return []
+
+        result: list[DeviceCandidate] = []
+        for dev in all_devices:
+            for chip in KNOWN_CHIPS:
+                if dev.idVendor == chip.vid and dev.idProduct == chip.pid:
+                    result.append(
+                        DeviceCandidate(
+                            chip_info=chip,
+                            bus=int(getattr(dev, "bus", 0) or 0),
+                            address=int(getattr(dev, "address", 0) or 0),
+                        )
+                    )
+                    break
+        return result
 
     async def open(self) -> None:
         """Open USB transport: claim interface, locate endpoints, initialize."""
