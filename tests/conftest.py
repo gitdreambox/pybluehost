@@ -214,6 +214,50 @@ def _resolve_peer_spec(config: pytest.Config, primary: str) -> str | None:
     return peer
 
 
+def _header_source_label(config: pytest.Config) -> str:
+    """Return the source label for the selected transport header."""
+    if config.getoption("--transport") is not None:
+        return "explicit"
+    if os.environ.get("PYBLUEHOST_TEST_TRANSPORT") is not None:
+        return "explicit"
+    if _FALLBACK_TRACKER.is_fallback():
+        return "auto-detected - no hardware found"
+    return "auto-detected"
+
+
+def pytest_report_header(config: pytest.Config) -> list[str]:
+    """Print selected PyBlueHost transport information in pytest's header."""
+    if config.getoption("--list-transports"):
+        return []
+
+    primary = _resolve_primary_spec(config)
+    label = _header_source_label(config)
+    lines = [f"[pybluehost-tests] transport: {primary} [{label}]"]
+
+    peer = _resolve_peer_spec(config, primary)
+    if peer is not None and peer != primary:
+        lines.append(f"[pybluehost-tests] peer transport: {peer}")
+
+    return lines
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
+    """Warn when autodetect fell back to virtual for tests using stack."""
+    if not _FALLBACK_TRACKER.is_fallback():
+        return
+
+    n = _FALLBACK_TRACKER.count
+    terminalreporter.write_sep("=", "pybluehost transport summary")
+    terminalreporter.write_line(
+        f"WARNING: Auto-detect found no hardware. {n} tests ran on virtual."
+    )
+    terminalreporter.write_line(
+        "Set --transport=usb (or PYBLUEHOST_TEST_TRANSPORT=usb) to validate"
+    )
+    terminalreporter.write_line("against real hardware.")
+    terminalreporter.write_sep("=")
+
+
 @pytest.fixture(scope="session")
 def selected_transport_spec(request: pytest.FixtureRequest) -> str:
     """Session-level primary transport spec selected for this test run."""

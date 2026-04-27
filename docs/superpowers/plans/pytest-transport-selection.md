@@ -1967,7 +1967,7 @@ git commit -m "feat(tests): enforce real_hardware_only and virtual_only markers"
 - Modify: `tests/conftest.py`
 - Test: `tests/unit/test_report_header.py`
 
-- [ ] **Step 12.1: Write failing test**
+- [x] **Step 12.1: Write failing test**
 
 ```python
 # tests/unit/test_report_header.py
@@ -2004,13 +2004,13 @@ def test_no_fallback_summary_when_explicit(tmp_path: Path):
     assert "Auto-detect found no hardware" not in out
 ```
 
-- [ ] **Step 12.2: Run test (FAIL expected)**
+- [x] **Step 12.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/test_report_header.py -v
 ```
 
-- [ ] **Step 12.3: Append hooks to `tests/conftest.py`**
+- [x] **Step 12.3: Append hooks to `tests/conftest.py`**
 
 ```python
 # Append to tests/conftest.py
@@ -2055,14 +2055,14 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
     terminalreporter.write_sep("=")
 ```
 
-- [ ] **Step 12.4: Run test (PASS expected)**
+- [x] **Step 12.4: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/test_report_header.py -v
 uv run pytest tests/ -q --transport=virtual --co | head -10
 ```
 
-- [ ] **Step 12.5: Commit**
+- [x] **Step 12.5: Commit**
 
 ```bash
 git add tests/conftest.py tests/unit/test_report_header.py
