@@ -8,7 +8,6 @@ from pybluehost.core.trace import TraceSystem
 from pybluehost.hci.virtual import VirtualController
 from pybluehost.hci.controller import HCIController
 from pybluehost.l2cap.manager import L2CAPManager
-from pybluehost.transport.loopback import LoopbackTransport
 
 
 @pytest.fixture
@@ -23,18 +22,8 @@ async def vc_b() -> VirtualController:
 
 @pytest.fixture
 async def hci_with_vc(vc_a: VirtualController) -> HCIController:
-    """HCIController wired to a VirtualController via LoopbackTransport."""
-    host_t, ctrl_t = LoopbackTransport.pair()
-
-    class _VCSink:
-        async def on_transport_data(self, data: bytes) -> None:
-            response = await vc_a.process(data)
-            if response is not None and host_t._sink is not None:
-                await host_t._sink.on_transport_data(response)
-
-    ctrl_t.set_sink(_VCSink())
-    await host_t.open()
-    await ctrl_t.open()
+    """HCIController wired to a VirtualController host transport."""
+    _vc, host_t = await VirtualController.create(address=vc_a._address)
 
     trace = TraceSystem()
     hci = HCIController(transport=host_t, trace=trace)

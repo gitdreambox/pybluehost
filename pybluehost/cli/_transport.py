@@ -9,29 +9,16 @@ async def parse_transport_arg(s: str) -> Transport:
     """Parse a --transport CLI argument into a Transport instance.
 
     Formats:
-        virtual                        -> VirtualController + LoopbackTransport pair
+        virtual                        -> VirtualController transport
         usb                            → USBTransport.auto_detect()
         usb:vendor=intel               → USBTransport.auto_detect(vendor="intel")
         uart:/dev/ttyUSB0              → UARTTransport(port=..., baudrate=115200)
         uart:/dev/ttyUSB0@921600       → UARTTransport(port=..., baudrate=921600)
     """
     if s == "virtual":
-        from pybluehost.core.address import BDAddress
         from pybluehost.hci.virtual import VirtualController
-        from pybluehost.transport.loopback import LoopbackTransport
 
-        vc = VirtualController(address=BDAddress.from_string("AA:BB:CC:DD:EE:01"))
-        host_t, ctrl_t = LoopbackTransport.pair()
-
-        class _VCSink:
-            async def on_transport_data(self, data: bytes) -> None:
-                response = await vc.process(data)
-                if response is not None and host_t._sink is not None:
-                    await host_t._sink.on_transport_data(response)
-
-        ctrl_t.set_sink(_VCSink())
-        await host_t.open()
-        await ctrl_t.open()
+        _vc, host_t = await VirtualController.create()
         return host_t
 
     if s == "usb" or s.startswith("usb:"):

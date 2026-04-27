@@ -179,28 +179,12 @@ class Stack:
     ) -> Stack:
         """Create a single Stack backed by a software-emulated VirtualController.
 
-        The host side talks to a VirtualController over an in-process
-        LoopbackTransport pair. Use this when no real Bluetooth hardware
-        is available.
+        No real Bluetooth hardware required; suitable for unit/integration tests
+        and CLI experimentation.
         """
-        from pybluehost.core.address import BDAddress
         from pybluehost.hci.virtual import VirtualController
-        from pybluehost.transport.loopback import LoopbackTransport
 
-        vc = VirtualController(address=BDAddress.from_string("AA:BB:CC:DD:EE:01"))
-        host_t, ctrl_t = LoopbackTransport.pair()
-
-        class _VCSink:
-            async def on_transport_data(self, data: bytes) -> None:
-                response = await vc.process(data)
-                if response is not None and host_t._sink is not None:
-                    await host_t._sink.on_transport_data(response)
-
-        ctrl_t.set_sink(_VCSink())
-
-        await host_t.open()
-        await ctrl_t.open()
-
+        vc, host_t = await VirtualController.create()
         stack = await cls._build(host_t, config, StackMode.VIRTUAL)
         stack._local_address = vc._address
         return stack

@@ -35,6 +35,7 @@ from pybluehost.hci.packets import (
     HCICommand,
     decode_hci_packet,
 )
+from pybluehost.transport.base import Transport, TransportInfo
 
 
 class VirtualController:
@@ -64,6 +65,28 @@ class VirtualController:
             HCI_LE_SET_SCAN_PARAMS: self._handle_status_only,
             HCI_LE_SET_RANDOM_ADDRESS: self._handle_status_only,
         }
+
+    @classmethod
+    async def create(
+        cls,
+        address: BDAddress | None = None,
+    ) -> tuple["VirtualController", Transport]:
+        """Create a VirtualController with an opened host-side transport."""
+        if address is None:
+            address = BDAddress.from_string("AA:BB:CC:DD:EE:01")
+        vc = cls(address=address)
+        host_t, ctrl_t = _HCIPipe.pair()
+
+        class _VCSink:
+            async def on_transport_data(self, data: bytes) -> None:
+                response = await vc.process(data)
+                if response is not None and host_t._sink is not None:
+                    await host_t._sink.on_transport_data(response)
+
+        ctrl_t.set_sink(_VCSink())
+        await host_t.open()
+        await ctrl_t.open()
+        return vc, host_t
 
     async def process(self, data: bytes) -> bytes | None:
         """Process raw H4+HCI bytes and return a Command Complete response.
@@ -131,3 +154,47 @@ class VirtualController:
     def _handle_le_read_local_supported_features(self, cmd: HCICommand) -> bytes:
         # status + 8 bytes of LE features
         return b"\x00" + b"\x00" * 8
+
+
+class _HCIPipe(Transport):
+    """Private in-memory pipe used by VirtualController.create()."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._peer: "_HCIPipe | None" = None
+        self._open = False
+
+    @classmethod
+    def pair(cls) -> tuple["_HCIPipe", "_HCIPipe"]:
+        a = cls()
+        b = cls()
+        a._peer = b
+        b._peer = a
+        return a, b
+
+    async def open(self) -> None:
+        self._open = True
+
+    async def close(self) -> None:
+        self._open = False
+
+    async def send(self, data: bytes) -> None:
+        if not self._open:
+            raise RuntimeError("_HCIPipe not open")
+        if self._peer is None:
+            raise RuntimeError("_HCIPipe has no peer")
+        if self._peer._open and self._peer._sink is not None:
+            await self._peer._sink.on_transport_data(data)
+
+    @property
+    def is_open(self) -> bool:
+        return self._open
+
+    @property
+    def info(self) -> TransportInfo:
+        return TransportInfo(
+            type="virtual",
+            description="VirtualController pipe",
+            platform="any",
+            details={},
+        )

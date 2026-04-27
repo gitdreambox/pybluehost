@@ -2,13 +2,13 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from pybluehost.cli._transport import parse_transport_arg
-from pybluehost.transport.loopback import LoopbackTransport
+from pybluehost.transport.base import Transport
 from pybluehost.transport.uart import UARTTransport
 
 
 async def test_parse_virtual():
     t = await parse_transport_arg("virtual")
-    assert isinstance(t, LoopbackTransport)
+    assert isinstance(t, Transport)
     assert t.is_open
 
 

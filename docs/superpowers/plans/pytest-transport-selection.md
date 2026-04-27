@@ -309,7 +309,7 @@ Task 2 will internalize it as VirtualController._HCIPipe."
 - Delete: `tests/unit/transport/test_loopback.py`
 - Test: `tests/unit/hci/test_virtual_create.py`
 
-- [ ] **Step 2.1: Write failing test for `VirtualController.create()`**
+- [x] **Step 2.1: Write failing test for `VirtualController.create()`**
 
 ```python
 # tests/unit/hci/test_virtual_create.py
@@ -371,7 +371,7 @@ async def test_host_transport_round_trip_through_vc():
     assert received[0][1] == 0x0E
 ```
 
-- [ ] **Step 2.2: Run test (FAIL expected)**
+- [x] **Step 2.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/hci/test_virtual_create.py -v
@@ -379,7 +379,7 @@ uv run pytest tests/unit/hci/test_virtual_create.py -v
 
 Expected: `AttributeError: type object 'VirtualController' has no attribute 'create'`.
 
-- [ ] **Step 2.3: Add private `_HCIPipe` class + `create()` to `pybluehost/hci/virtual.py`**
+- [x] **Step 2.3: Add private `_HCIPipe` class + `create()` to `pybluehost/hci/virtual.py`**
 
 Add at the bottom of `pybluehost/hci/virtual.py` (after the existing `VirtualController` class definition):
 
@@ -466,7 +466,7 @@ Then add the `create` classmethod inside `class VirtualController`:
         return vc, host_t
 ```
 
-- [ ] **Step 2.4: Simplify `Stack.virtual()` in `pybluehost/stack.py`**
+- [x] **Step 2.4: Simplify `Stack.virtual()` in `pybluehost/stack.py`**
 
 Replace the current `virtual` classmethod body:
 
@@ -489,7 +489,7 @@ Replace the current `virtual` classmethod body:
         return stack
 ```
 
-- [ ] **Step 2.5: Simplify `parse_transport_arg("virtual")` in `pybluehost/cli/_transport.py`**
+- [x] **Step 2.5: Simplify `parse_transport_arg("virtual")` in `pybluehost/cli/_transport.py`**
 
 Replace the `if s == "virtual":` branch:
 
@@ -502,7 +502,7 @@ Replace the `if s == "virtual":` branch:
 
 (Note: drop the `LoopbackTransport` import; `BDAddress` import is no longer needed in this branch.)
 
-- [ ] **Step 2.6: Remove `LoopbackTransport` from `pybluehost/transport/__init__.py`**
+- [x] **Step 2.6: Remove `LoopbackTransport` from `pybluehost/transport/__init__.py`**
 
 Open `pybluehost/transport/__init__.py` and delete the line(s) that import or re-export `LoopbackTransport`. Run:
 
@@ -512,14 +512,14 @@ grep -n "Loopback" pybluehost/transport/__init__.py
 
 Expected after fix: 0 matches.
 
-- [ ] **Step 2.7: Delete the obsolete files**
+- [x] **Step 2.7: Delete the obsolete files**
 
 ```bash
 git rm pybluehost/transport/loopback.py
 git rm tests/unit/transport/test_loopback.py
 ```
 
-- [ ] **Step 2.8: Confirm no caller references the old class**
+- [x] **Step 2.8: Confirm no caller references the old class**
 
 ```bash
 grep -rn "LoopbackTransport\|from pybluehost.transport.loopback\|pybluehost.transport import.*Loopback" pybluehost/ tests/ --include="*.py"
@@ -527,7 +527,7 @@ grep -rn "LoopbackTransport\|from pybluehost.transport.loopback\|pybluehost.tran
 
 Expected: 0 matches.
 
-- [ ] **Step 2.9: Run the new VC test + the full suite**
+- [x] **Step 2.9: Run the new VC test + the full suite**
 
 ```bash
 uv run pytest tests/unit/hci/test_virtual_create.py -v
@@ -536,7 +536,7 @@ uv run pytest tests/ -q
 
 Expected: PASS. (The previously-existing `tests/integration/test_hci_init.py` and `test_hci_l2cap.py` define their **own inline** `LoopbackTransport` class so they are unaffected; they will be migrated in Tasks 16–17.)
 
-- [ ] **Step 2.10: Commit**
+- [x] **Step 2.10: Commit**
 
 ```bash
 git add -A

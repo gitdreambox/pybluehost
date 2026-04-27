@@ -16,7 +16,6 @@ from pybluehost.transport.firmware import (
     FirmwarePolicy,
 )
 from pybluehost.transport.h4 import H4Framer
-from pybluehost.transport.loopback import LoopbackTransport
 from pybluehost.transport.tcp import TCPTransport
 from pybluehost.transport.uart import UARTTransport
 from pybluehost.transport.udp import UDPTransport
@@ -40,7 +39,6 @@ __all__ = [
     "H4Framer",
     "IntelUSBTransport",
     "KNOWN_CHIPS",
-    "LoopbackTransport",
     "NoBluetoothDeviceError",
     "RealtekUSBTransport",
     "ReconnectConfig",
