@@ -1633,7 +1633,7 @@ git commit -m "feat(tests): add session transport-selection fixtures"
 - Modify: `tests/conftest.py`
 - Test: `tests/integration/test_stack_fixture.py`
 
-- [ ] **Step 10.1: Write failing test**
+- [x] **Step 10.1: Write failing test**
 
 ```python
 # tests/integration/test_stack_fixture.py
@@ -1661,13 +1661,13 @@ async def test_peer_stack_in_virtual_mode(stack, peer_stack, transport_mode):
     assert peer_stack.mode == StackMode.VIRTUAL
 ```
 
-- [ ] **Step 10.2: Run test (FAIL expected)**
+- [x] **Step 10.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/integration/test_stack_fixture.py -v --transport=virtual
 ```
 
-- [ ] **Step 10.3: Append fixtures to `tests/conftest.py`**
+- [x] **Step 10.3: Append fixtures to `tests/conftest.py`**
 
 ```python
 # Append to tests/conftest.py
@@ -1726,13 +1726,13 @@ async def peer_stack(selected_peer_spec):
     await s.close()
 ```
 
-- [ ] **Step 10.4: Run test (PASS expected)**
+- [x] **Step 10.4: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/integration/test_stack_fixture.py -v --transport=virtual
 ```
 
-- [ ] **Step 10.5: Commit**
+- [x] **Step 10.5: Commit**
 
 ```bash
 git add tests/conftest.py tests/integration/test_stack_fixture.py

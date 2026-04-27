@@ -220,3 +220,52 @@ def selected_peer_spec(
 def transport_mode(selected_transport_spec: str) -> str:
     """Selected transport family: virtual, usb, or uart."""
     return family_of(selected_transport_spec)
+
+
+async def _build_stack_from_spec(spec: str):
+    """Construct a powered Stack matching the selected transport spec."""
+    from pybluehost.stack import Stack
+
+    family, params = parse_spec(spec)
+    if family == "virtual":
+        return await Stack.virtual()
+    if family == "usb":
+        bus, address = usb_spec_bus_address(spec)
+        return await Stack.from_usb(
+            vendor=params.get("vendor"),
+            bus=bus,
+            address=address,
+        )
+    if family == "uart":
+        raw = params["raw"]
+        if "@" in raw:
+            port, baudrate_s = raw.rsplit("@", 1)
+            return await Stack.from_uart(port=port, baudrate=int(baudrate_s))
+        return await Stack.from_uart(port=raw)
+    raise InvalidSpec(f"Cannot build stack from spec: {spec!r}")
+
+
+@pytest.fixture
+async def stack(selected_transport_spec: str):
+    """Full Stack on the selected transport. Built and torn down per test."""
+    s = await _build_stack_from_spec(selected_transport_spec)
+    if _FALLBACK_TRACKER.is_fallback():
+        _FALLBACK_TRACKER.increment()
+    try:
+        yield s
+    finally:
+        await s.close()
+
+
+@pytest.fixture
+async def peer_stack(selected_peer_spec: str | None):
+    """Second Stack. Skips the test when no peer transport is available."""
+    if selected_peer_spec is None:
+        pytest.skip(
+            "peer_stack: no second adapter available; pass --transport-peer=..."
+        )
+    s = await _build_stack_from_spec(selected_peer_spec)
+    try:
+        yield s
+    finally:
+        await s.close()
