@@ -802,7 +802,7 @@ git commit -m "feat(transport): add USBTransport.list_devices and bus/address fi
 - Modify: `pybluehost/stack.py`
 - Test: `tests/unit/test_stack_factories.py`
 
-- [ ] **Step 4.1: Write failing test**
+- [x] **Step 4.1: Write failing test**
 
 ```python
 # tests/unit/test_stack_factories.py
@@ -848,7 +848,7 @@ async def test_from_uart_constructs_uart_transport():
     assert args[2] == StackMode.LIVE
 ```
 
-- [ ] **Step 4.2: Run test (FAIL expected)**
+- [x] **Step 4.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/test_stack_factories.py -v
@@ -856,7 +856,7 @@ uv run pytest tests/unit/test_stack_factories.py -v
 
 Expected: `AttributeError: type object 'Stack' has no attribute 'from_usb'`.
 
-- [ ] **Step 4.3: Implement factories**
+- [x] **Step 4.3: Implement factories**
 
 Add inside `class Stack` in `pybluehost/stack.py`, immediately after the existing `virtual` classmethod:
 
@@ -891,14 +891,14 @@ Add inside `class Stack` in `pybluehost/stack.py`, immediately after the existin
         return await cls._build(transport, config, StackMode.LIVE)
 ```
 
-- [ ] **Step 4.4: Run test (PASS expected)**
+- [x] **Step 4.4: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/test_stack_factories.py -v
 uv run pytest tests/unit/test_stack.py -q
 ```
 
-- [ ] **Step 4.5: Commit**
+- [x] **Step 4.5: Commit**
 
 ```bash
 git add pybluehost/stack.py tests/unit/test_stack_factories.py

@@ -163,12 +163,28 @@ class Stack:
     async def from_usb(
         cls,
         vendor: str | None = None,
+        bus: int | None = None,
+        address: int | None = None,
         config: StackConfig | None = None,
     ) -> Stack:
-        """Create a Stack with auto-detected USB transport."""
+        """Build a live Stack on a USB Bluetooth adapter."""
         from pybluehost.transport.usb import USBTransport
 
-        transport = USBTransport.auto_detect(vendor=vendor)
+        transport = USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
+        await transport.open()
+        return await cls._build(transport, config, StackMode.LIVE)
+
+    @classmethod
+    async def from_uart(
+        cls,
+        port: str,
+        baudrate: int = 115200,
+        config: StackConfig | None = None,
+    ) -> Stack:
+        """Build a live Stack on a UART HCI link."""
+        from pybluehost.transport.uart import UARTTransport
+
+        transport = UARTTransport(port=port, baudrate=baudrate)
         await transport.open()
         return await cls._build(transport, config, StackMode.LIVE)
 
