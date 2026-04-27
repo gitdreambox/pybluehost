@@ -13,6 +13,7 @@ import pytest
 
 
 ROOT = Path(__file__).parents[2]
+INLINE_PYTEST_TIMEOUT_SECONDS = 30
 _CONFTEST_SPEC = importlib.util.spec_from_file_location(
     "project_conftest_for_session_fixture_tests",
     ROOT / "tests" / "conftest.py",
@@ -52,23 +53,57 @@ def _run_inline(body: str, *args: str) -> subprocess.CompletedProcess[str]:
     """Run pytest on an inline test file under tests/unit so conftest loads."""
     test_file = ROOT / "tests" / "unit" / f"_inline_session_{uuid.uuid4().hex}.py"
     test_file.write_text(textwrap.dedent(body), encoding="utf-8")
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        str(test_file),
+        "-q",
+        "--no-header",
+        *args,
+    ]
     try:
         return subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                str(test_file),
-                "-q",
-                "--no-header",
-                *args,
-            ],
+            cmd,
             capture_output=True,
             text=True,
             cwd=ROOT,
+            timeout=INLINE_PYTEST_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or exc.output or ""
+        stderr = exc.stderr or ""
+        timeout_message = (
+            f"Inline pytest timed out after {INLINE_PYTEST_TIMEOUT_SECONDS} seconds\n"
+        )
+        return subprocess.CompletedProcess(
+            cmd,
+            returncode=124,
+            stdout=str(stdout),
+            stderr=timeout_message + str(stderr),
         )
     finally:
         test_file.unlink(missing_ok=True)
+
+
+def test_run_inline_reports_timeout(monkeypatch: pytest.MonkeyPatch):
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(
+            cmd=[sys.executable, "-m", "pytest"],
+            timeout=30,
+            output="partial stdout",
+            stderr="partial stderr",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    r = _run_inline("def test_dummy(): pass")
+    out = r.stdout + r.stderr
+
+    assert r.returncode != 0
+    assert "timed out after 30 seconds" in out
+    assert "partial stdout" in out
+    assert "partial stderr" in out
 
 
 def test_explicit_virtual():
