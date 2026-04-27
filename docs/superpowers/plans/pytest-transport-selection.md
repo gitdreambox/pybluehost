@@ -527,14 +527,27 @@ grep -rn "LoopbackTransport\|from pybluehost.transport.loopback\|pybluehost.tran
 
 Expected: 0 matches.
 
-- [x] **Step 2.9: Run the new VC test + the full suite**
+- [x] **Step 2.9: Run the new VC test + broad non-hardware verification; full suite deferred**
 
 ```bash
 uv run pytest tests/unit/hci/test_virtual_create.py -v
 uv run pytest tests/ -q
 ```
 
-Expected: PASS. (The previously-existing `tests/integration/test_hci_init.py` and `test_hci_l2cap.py` define their **own inline** `LoopbackTransport` class so they are unaffected; they will be migrated in Tasks 16–17.)
+Actual Task 2 verification:
+
+```bash
+uv run pytest tests/unit/hci/test_virtual_create.py tests/unit/test_stack.py tests/unit/cli/test_transport.py -q
+# 22 passed
+
+uv run pytest tests/ -q -m "not hardware"
+# Failed: tests/hardware/test_intel_hw.py still ran and hit pre-existing Intel USB timeout paths.
+
+uv run pytest tests/ -q --ignore=tests/hardware
+# Passed.
+```
+
+Full-suite `uv run pytest tests/ -q` is blocked/deferred for Task 2 because existing hardware tests can run against the local Intel BE200 and time out before the later transport marker-selection tasks isolate hardware-only tests. The previously-existing `tests/integration/test_hci_init.py` and `test_hci_l2cap.py` define their **own inline** `LoopbackTransport` class so they are unaffected; they will be migrated in Tasks 16–17.
 
 - [x] **Step 2.10: Commit**
 
@@ -2638,4 +2651,10 @@ git commit -m "docs(progress): mark pytest transport selection plan complete"
 
 ## 常见问题 / Troubleshooting
 
-（执行过程中发现的问题在这里追加，格式见 `CLAUDE.md` 的"遇到问题时必须记录"。）l
+（执行过程中发现的问题在这里追加，格式见 `CLAUDE.md` 的"遇到问题时必须记录"。）
+
+### Q: Task 2 full-suite verification is blocked by pre-existing hardware tests
+- **现象**：`uv run pytest tests/ -q -m "not hardware"` still executes `tests/hardware/test_intel_hw.py` on this worktree and fails in Intel BE200 USB timeout paths. Full-suite `uv run pytest tests/ -q` is therefore not a valid Task 2 completion claim yet.
+- **原因**：The later transport-selection marker tasks have not yet isolated hardware-only tests, so current marker filtering does not reliably exclude all hardware tests.
+- **解决方案**：For Task 2, verify the new virtual-controller behavior with targeted tests and broad non-hardware collection/run using `uv run pytest tests/ -q --ignore=tests/hardware`. Re-run full-suite verification after the later marker enforcement tasks land.
+- **记录人**：Codex session，2026-04-27
