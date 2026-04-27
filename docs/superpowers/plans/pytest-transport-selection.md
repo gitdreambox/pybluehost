@@ -1249,7 +1249,7 @@ git commit -m "feat(tests): add _transport_select helper for spec/autodetect"
 - Create: `tests/_fallback_tracker.py`
 - Test: `tests/unit/test_fallback_tracker.py`
 
-- [ ] **Step 7.1: Write failing test**
+- [x] **Step 7.1: Write failing test**
 
 ```python
 # tests/unit/test_fallback_tracker.py
@@ -1271,13 +1271,13 @@ def test_fallback_tracker_mark_and_increment():
     assert t.count == 2
 ```
 
-- [ ] **Step 7.2: Run test (FAIL expected)**
+- [x] **Step 7.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/test_fallback_tracker.py -v
 ```
 
-- [ ] **Step 7.3: Implement `tests/_fallback_tracker.py`**
+- [x] **Step 7.3: Implement `tests/_fallback_tracker.py`**
 
 ```python
 # tests/_fallback_tracker.py
@@ -1307,13 +1307,13 @@ class FallbackTracker:
         return self._count
 ```
 
-- [ ] **Step 7.4: Run test (PASS expected)**
+- [x] **Step 7.4: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/test_fallback_tracker.py -v
 ```
 
-- [ ] **Step 7.5: Commit**
+- [x] **Step 7.5: Commit**
 
 ```bash
 git add tests/_fallback_tracker.py tests/unit/test_fallback_tracker.py
