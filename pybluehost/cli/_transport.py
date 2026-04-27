@@ -48,11 +48,15 @@ async def parse_transport_arg(s: str) -> Transport:
                         bus = int(v)
                     except ValueError as exc:
                         raise ValueError(f"Invalid usb bus value: {v!r}") from exc
+                    if bus < 0:
+                        raise ValueError(f"Invalid usb bus value: {v!r}")
                 elif k == "address":
                     try:
                         address = int(v)
                     except ValueError as exc:
                         raise ValueError(f"Invalid usb address value: {v!r}") from exc
+                    if address < 0:
+                        raise ValueError(f"Invalid usb address value: {v!r}")
                 else:
                     raise ValueError(f"Unknown usb spec key: {k!r}")
         return USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
