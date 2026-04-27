@@ -7,7 +7,7 @@ async def test_run_app_command_completes_normally():
     async def main(stack, stop):
         return
 
-    code = await run_app_command("loopback", main)
+    code = await run_app_command("virtual", main)
     assert code == 0
 
 
@@ -17,7 +17,7 @@ async def test_run_app_command_returns_when_main_finishes():
         # Just returns immediately
         return
 
-    code = await run_app_command("loopback", main)
+    code = await run_app_command("virtual", main)
     assert code == 0
 
 
@@ -25,7 +25,7 @@ async def test_run_app_command_propagates_error():
     async def main(stack, stop):
         raise RuntimeError("boom")
 
-    code = await run_app_command("loopback", main)
+    code = await run_app_command("virtual", main)
     assert code == 1
 
 

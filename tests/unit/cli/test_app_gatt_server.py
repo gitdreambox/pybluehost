@@ -4,7 +4,7 @@ from pybluehost.stack import Stack
 
 
 async def test_gatt_server_registers_battery_and_hrs():
-    stack = await Stack.loopback()
+    stack = await Stack.virtual()
     stop = asyncio.Event()
 
     async def stopper():

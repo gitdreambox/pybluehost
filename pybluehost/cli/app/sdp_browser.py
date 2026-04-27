@@ -13,14 +13,14 @@ from pybluehost.stack import Stack
 def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("sdp-browser", help="Connect, query SDP, print, exit")
     p.add_argument("--transport", required=True)
-    p.add_argument("--target", help="BD_ADDR (required unless --transport loopback)")
+    p.add_argument("--target", help="BD_ADDR (required unless --transport virtual)")
     p.set_defaults(func=lambda args: asyncio.run(_sdp_browser_main(args)))
 
 
 async def _sdp_browser_main(args: argparse.Namespace) -> int:
-    is_loopback = args.transport == "loopback"
-    if not is_loopback and not args.target:
-        print("Error: --target is required for non-loopback transport", file=sys.stderr)
+    is_virtual = args.transport == "virtual"
+    if not is_virtual and not args.target:
+        print("Error: --target is required for non-virtual transport", file=sys.stderr)
         return 2
 
     try:
@@ -31,8 +31,8 @@ async def _sdp_browser_main(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        if is_loopback:
-            print("SDP records (loopback peer):")
+        if is_virtual:
+            print("SDP records (virtual peer):")
             peer_sdp = stack.sdp
             # SDPServer stores records in _records dict[int, ServiceRecord]
             records = list(peer_sdp._records.values())
@@ -43,7 +43,7 @@ async def _sdp_browser_main(args: argparse.Namespace) -> int:
         else:
             addr, _atype = parse_target_arg(args.target)
             print(f"Connected to {addr}")
-            print("(Real-hardware SDP query not implemented in v1; loopback only.)")
+            print("(Real-hardware SDP query not implemented in v1; virtual only.)")
         return 0
     finally:
         await stack.close()

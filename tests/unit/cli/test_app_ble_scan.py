@@ -6,7 +6,7 @@ from pybluehost.stack import Stack
 
 
 async def test_ble_scan_starts_and_stops_cleanly():
-    stack = await Stack.loopback()
+    stack = await Stack.virtual()
     stop = asyncio.Event()
 
     async def stopper():

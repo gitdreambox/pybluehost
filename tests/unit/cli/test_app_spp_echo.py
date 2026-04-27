@@ -4,7 +4,7 @@ from pybluehost.stack import Stack
 
 
 async def test_spp_echo_starts_and_stops_cleanly():
-    stack = await Stack.loopback()
+    stack = await Stack.virtual()
     stop = asyncio.Event()
 
     async def stopper():

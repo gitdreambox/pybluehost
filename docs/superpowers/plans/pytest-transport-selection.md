@@ -86,7 +86,7 @@
 - Modify: 6 个 `tests/unit/cli/test_app_*.py`
 - Modify: `tests/e2e/conftest.py`
 
-- [ ] **Step 1.1: 改 `pybluehost/stack.py`**
+- [x] **Step 1.1: 改 `pybluehost/stack.py`**
 
 替换 `StackMode` 枚举：
 ```python
@@ -140,7 +140,7 @@ class Stack:
         return stack
 ```
 
-- [ ] **Step 1.2: 改 `pybluehost/cli/_transport.py`**
+- [x] **Step 1.2: 改 `pybluehost/cli/_transport.py`**
 
 替换 docstring 里的 `loopback` 描述为 `virtual`，并把分支条件改为 `s == "virtual"`：
 ```python
@@ -178,7 +178,7 @@ async def parse_transport_arg(s: str) -> Transport:
     raise ValueError(f"Unknown transport: {s!r}")
 ```
 
-- [ ] **Step 1.3: 重命名 `_loopback_peer.py` → `_virtual_peer.py` 并改函数名**
+- [x] **Step 1.3: 重命名 `_loopback_peer.py` → `_virtual_peer.py` 并改函数名**
 
 ```bash
 git mv pybluehost/cli/_loopback_peer.py pybluehost/cli/_virtual_peer.py
@@ -210,7 +210,7 @@ async def virtual_peer_with(server_factory):
         await peer.close()
 ```
 
-- [ ] **Step 1.4: 更新 `pybluehost/cli/app/gatt_browser.py`**
+- [x] **Step 1.4: 更新 `pybluehost/cli/app/gatt_browser.py`**
 
 ```python
 # old: from pybluehost.cli._loopback_peer import loopback_peer_with
@@ -218,7 +218,7 @@ from pybluehost.cli._virtual_peer import virtual_peer_with
 ```
 搜索 `loopback_peer_with(` 并替换为 `virtual_peer_with(`。
 
-- [ ] **Step 1.5: 改 6 个 `tests/unit/cli/test_app_*.py`**
+- [x] **Step 1.5: 改 6 个 `tests/unit/cli/test_app_*.py`**
 
 对每个文件替换：
 ```python
@@ -231,7 +231,7 @@ stack = await Stack.virtual()
 
 （Task 18 会进一步把它们改成 `stack` fixture，本步只做命名同步。）
 
-- [ ] **Step 1.6: 改 `tests/unit/test_stack.py`**
+- [x] **Step 1.6: 改 `tests/unit/test_stack.py`**
 
 替换：
 ```python
@@ -241,7 +241,7 @@ Stack.loopback()                     →  Stack.virtual()
 
 应同步更新断言：`stack.mode == StackMode.LOOPBACK` → `stack.mode == StackMode.VIRTUAL`。
 
-- [ ] **Step 1.7: 重命名 `test_loopback_peer.py` → `test_virtual_peer.py`**
+- [x] **Step 1.7: 重命名 `test_loopback_peer.py` → `test_virtual_peer.py`**
 
 ```bash
 git mv tests/unit/cli/test_loopback_peer.py tests/unit/cli/test_virtual_peer.py
@@ -249,7 +249,7 @@ git mv tests/unit/cli/test_loopback_peer.py tests/unit/cli/test_virtual_peer.py
 
 编辑文件：替换所有 `loopback_peer_with` → `virtual_peer_with`；import 来源 `_loopback_peer` → `_virtual_peer`。
 
-- [ ] **Step 1.8: 改 `tests/e2e/conftest.py`**
+- [x] **Step 1.8: 改 `tests/e2e/conftest.py`**
 
 ```python
 stack = await Stack.loopback(...)  →  stack = await Stack.virtual(...)
@@ -257,7 +257,7 @@ stack = await Stack.loopback(...)  →  stack = await Stack.virtual(...)
 
 （Task 15 会清空此文件，但本步保持中间状态可运行。）
 
-- [ ] **Step 1.9: 全仓 grep 验证无残留**
+- [x] **Step 1.9: 全仓 grep 验证无残留**
 
 ```bash
 grep -rn "Stack.loopback\|StackMode.LOOPBACK\|loopback_peer_with\|_loopback_peer" pybluehost/ tests/ --include="*.py"
@@ -271,7 +271,7 @@ grep -rn '"loopback"' pybluehost/ tests/ --include="*.py"
 
 Expected: 0 matches in production / test code (字符串字面量也已替换)。
 
-- [ ] **Step 1.10: 运行全套测试**
+- [x] **Step 1.10: 运行全套测试**
 
 ```bash
 uv run pytest tests/ -q
@@ -279,7 +279,7 @@ uv run pytest tests/ -q
 
 Expected: 全部 PASS（与改名前等价行为）。
 
-- [ ] **Step 1.11: Commit**
+- [x] **Step 1.11: Commit**
 
 ```bash
 git add -A

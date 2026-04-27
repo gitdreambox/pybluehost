@@ -11,7 +11,7 @@ from pybluehost.stack import Stack
 
 def register_ble_scan_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("ble-scan", help="Scan BLE advertisements (Ctrl+C to stop)")
-    p.add_argument("--transport", required=True, help="loopback | usb[:vendor=...] | uart:/dev/...[@baud]")
+    p.add_argument("--transport", required=True, help="virtual | usb[:vendor=...] | uart:/dev/...[@baud]")
     p.set_defaults(func=lambda args: asyncio.run(run_app_command(args.transport, _ble_scan_main)))
 
 

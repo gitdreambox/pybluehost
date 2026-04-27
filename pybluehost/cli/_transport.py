@@ -9,13 +9,13 @@ async def parse_transport_arg(s: str) -> Transport:
     """Parse a --transport CLI argument into a Transport instance.
 
     Formats:
-        loopback                       → LoopbackTransport (host side, paired with VC)
+        virtual                        -> VirtualController + LoopbackTransport pair
         usb                            → USBTransport.auto_detect()
         usb:vendor=intel               → USBTransport.auto_detect(vendor="intel")
         uart:/dev/ttyUSB0              → UARTTransport(port=..., baudrate=115200)
         uart:/dev/ttyUSB0@921600       → UARTTransport(port=..., baudrate=921600)
     """
-    if s == "loopback":
+    if s == "virtual":
         from pybluehost.core.address import BDAddress
         from pybluehost.hci.virtual import VirtualController
         from pybluehost.transport.loopback import LoopbackTransport

@@ -29,7 +29,7 @@ def test_custom_config():
 
 def test_stack_mode_enum():
     assert StackMode.LIVE == "live"
-    assert StackMode.LOOPBACK == "loopback"
+    assert StackMode.VIRTUAL == "virtual"
     assert StackMode.REPLAY == "replay"
 
 
@@ -41,24 +41,24 @@ def test_stack_config_security_field():
 
 
 # ---------------------------------------------------------------------------
-# Stack lifecycle (loopback)
+# Stack lifecycle (virtual)
 # ---------------------------------------------------------------------------
 
-async def test_stack_loopback_creates_powered_stack():
-    stack = await Stack.loopback()
+async def test_stack_virtual_creates_powered_stack():
+    stack = await Stack.virtual()
     assert stack.is_powered
-    assert stack.mode == StackMode.LOOPBACK
+    assert stack.mode == StackMode.VIRTUAL
     await stack.close()
 
 
-async def test_stack_loopback_has_local_address():
-    stack = await Stack.loopback()
+async def test_stack_virtual_has_local_address():
+    stack = await Stack.virtual()
     assert stack.local_address is not None
     await stack.close()
 
 
 async def test_stack_power_off_on():
-    stack = await Stack.loopback()
+    stack = await Stack.virtual()
     assert stack.is_powered
     await stack.power_off()
     assert not stack.is_powered
@@ -68,13 +68,13 @@ async def test_stack_power_off_on():
 
 
 async def test_stack_context_manager():
-    async with await Stack.loopback() as stack:
+    async with await Stack.virtual() as stack:
         assert stack.is_powered
     assert not stack.is_powered
 
 
 async def test_stack_exposes_layers():
-    stack = await Stack.loopback()
+    stack = await Stack.virtual()
     assert stack.hci is not None
     assert stack.l2cap is not None
     assert stack.gap is not None
@@ -86,7 +86,7 @@ async def test_stack_exposes_layers():
 
 
 async def test_stack_gap_has_subsystems():
-    stack = await Stack.loopback()
+    stack = await Stack.virtual()
     assert stack.gap.ble_advertiser is not None
     assert stack.gap.ble_scanner is not None
     assert stack.gap.ble_connections is not None

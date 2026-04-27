@@ -19,7 +19,7 @@ async def _spp_echo_main(stack: Stack, stop: asyncio.Event) -> None:
     print(f"SPP echo server — local={stack.local_address}")
     # RFCOMMManager.listen(server_channel, handler) registers an incoming-connection handler.
     # The handler receives an RFCOMMChannel; we read and echo until the channel closes.
-    # In loopback mode there is no real peer, so the handler is registered but never invoked;
+    # In virtual mode there is no real peer, so the handler is registered but never invoked;
     # the test only checks that the command exits cleanly when stop fires.
     if hasattr(rfcomm, "listen"):
         async def _echo_handler(channel: object) -> None:
@@ -34,7 +34,7 @@ async def _spp_echo_main(stack: Stack, stop: asyncio.Event) -> None:
         try:
             await rfcomm.listen(server_channel=1, handler=_echo_handler)
         except (TypeError, NotImplementedError):
-            # API mismatch or stub — degrade gracefully (loopback has no peer anyway)
+            # API mismatch or stub - degrade gracefully (virtual has no peer anyway)
             print("NOTE: RFCOMMManager.listen not available; running in no-op mode")
     else:
         print("NOTE: RFCOMMManager has no listen API; running in no-op mode")

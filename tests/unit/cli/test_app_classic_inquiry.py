@@ -5,7 +5,7 @@ from pybluehost.stack import Stack
 
 
 async def test_classic_inquiry_loops_and_stops():
-    stack = await Stack.loopback()
+    stack = await Stack.virtual()
     stop = asyncio.Event()
 
     async def stopper():

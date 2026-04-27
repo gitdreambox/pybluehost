@@ -5,7 +5,7 @@ import argparse
 import asyncio
 import sys
 
-from pybluehost.cli._loopback_peer import loopback_peer_with
+from pybluehost.cli._virtual_peer import virtual_peer_with
 from pybluehost.cli._target import parse_target_arg
 from pybluehost.ble.gatt import UUID_PRIMARY_SERVICE, UUID_CHARACTERISTIC
 from pybluehost.profiles.ble import BatteryServer
@@ -15,24 +15,24 @@ from pybluehost.stack import Stack
 def register_gatt_browser_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("gatt-browser", help="Connect, discover GATT, print, exit")
     p.add_argument("--transport", required=True)
-    p.add_argument("--target", help="BD_ADDR (required unless --transport loopback)")
+    p.add_argument("--target", help="BD_ADDR (required unless --transport virtual)")
     p.set_defaults(func=lambda args: asyncio.run(_gatt_browser_main(args)))
 
 
 async def _gatt_browser_main(args: argparse.Namespace) -> int:
-    is_loopback = args.transport == "loopback"
-    if not is_loopback and not args.target:
-        print("Error: --target is required for non-loopback transport", file=sys.stderr)
+    is_virtual = args.transport == "virtual"
+    if not is_virtual and not args.target:
+        print("Error: --target is required for non-virtual transport", file=sys.stderr)
         return 2
 
-    if is_loopback:
+    if is_virtual:
         async def battery_factory(gatt_server):
             await BatteryServer(initial_level=85).register(gatt_server)
 
         try:
-            async with loopback_peer_with(battery_factory) as peer:
+            async with virtual_peer_with(battery_factory) as peer:
                 target_addr = peer.local_address
-                print(f"Connected to {target_addr} (loopback peer)")
+                print(f"Connected to {target_addr} (virtual peer)")
                 _print_gatt_tree(peer.gatt_server)
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -41,7 +41,7 @@ async def _gatt_browser_main(args: argparse.Namespace) -> int:
     else:
         addr, _atype = parse_target_arg(args.target)
         print(f"Connected to {addr}")
-        print("(Real-hardware GATT discovery not implemented in v1; loopback only.)")
+        print("(Real-hardware GATT discovery not implemented in v1; virtual only.)")
         return 0
 
 

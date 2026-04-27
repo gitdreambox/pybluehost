@@ -4,7 +4,7 @@ from pybluehost.stack import Stack
 
 
 async def test_hr_monitor_pushes_measurements_until_stop():
-    stack = await Stack.loopback()
+    stack = await Stack.virtual()
     stop = asyncio.Event()
 
     async def stopper():

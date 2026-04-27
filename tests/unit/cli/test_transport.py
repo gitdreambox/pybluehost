@@ -6,17 +6,17 @@ from pybluehost.transport.loopback import LoopbackTransport
 from pybluehost.transport.uart import UARTTransport
 
 
-async def test_parse_loopback():
-    t = await parse_transport_arg("loopback")
+async def test_parse_virtual():
+    t = await parse_transport_arg("virtual")
     assert isinstance(t, LoopbackTransport)
     assert t.is_open
 
 
-async def test_parse_loopback_full_stack_works():
-    """Verify loopback transport from parse_transport_arg can drive a full Stack."""
+async def test_parse_virtual_full_stack_works():
+    """Verify virtual transport from parse_transport_arg can drive a full Stack."""
     from pybluehost.stack import Stack
 
-    transport = await parse_transport_arg("loopback")
+    transport = await parse_transport_arg("virtual")
     stack = await Stack._build(transport=transport)
     assert stack.is_powered
     await stack.close()

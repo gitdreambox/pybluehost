@@ -17,7 +17,7 @@ from pybluehost.core.types import IOCapability
 
 class StackMode(str, Enum):
     LIVE = "live"
-    LOOPBACK = "loopback"
+    VIRTUAL = "virtual"
     REPLAY = "replay"
 
 
@@ -48,7 +48,7 @@ class StackConfig:
 class Stack:
     """Top-level Bluetooth stack — assembles HCI, L2CAP, BLE, Classic, GAP.
 
-    Use factory methods (``loopback()``, ``from_uart()``, etc.) to create.
+    Use factory methods (``virtual()``, ``from_uart()``, etc.) to create.
     """
 
     def __init__(self) -> None:
@@ -173,11 +173,16 @@ class Stack:
         return await cls._build(transport, config, StackMode.LIVE)
 
     @classmethod
-    async def loopback(
+    async def virtual(
         cls,
         config: StackConfig | None = None,
     ) -> Stack:
-        """Create a single stack in loopback mode using VirtualController."""
+        """Create a single Stack backed by a software-emulated VirtualController.
+
+        The host side talks to a VirtualController over an in-process
+        LoopbackTransport pair. Use this when no real Bluetooth hardware
+        is available.
+        """
         from pybluehost.core.address import BDAddress
         from pybluehost.hci.virtual import VirtualController
         from pybluehost.transport.loopback import LoopbackTransport
@@ -185,13 +190,6 @@ class Stack:
         vc = VirtualController(address=BDAddress.from_string("AA:BB:CC:DD:EE:01"))
         host_t, ctrl_t = LoopbackTransport.pair()
 
-        # Bridge: ctrl_t receives commands from host, routes through VC, sends responses back
-        async def _vc_bridge(data: bytes) -> None:
-            response = await vc.process(data)
-            if response is not None:
-                await ctrl_t._peer._sink.on_transport_data(response)
-
-        # Make ctrl_t route to VC
         class _VCSink:
             async def on_transport_data(self, data: bytes) -> None:
                 response = await vc.process(data)
@@ -203,7 +201,7 @@ class Stack:
         await host_t.open()
         await ctrl_t.open()
 
-        stack = await cls._build(host_t, config, StackMode.LOOPBACK)
+        stack = await cls._build(host_t, config, StackMode.VIRTUAL)
         stack._local_address = vc._address
         return stack
 

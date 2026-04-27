@@ -1,14 +1,14 @@
-"""Fixtures for full-stack Loopback E2E tests."""
+"""Fixtures for full-stack virtual E2E tests."""
 from __future__ import annotations
 
 import pytest
 
-from pybluehost.stack import Stack, StackConfig, StackMode
+from pybluehost.stack import Stack, StackConfig
 
 
 @pytest.fixture
-async def single_loopback_stack():
-    """Single Loopback stack for lifecycle testing."""
-    stack = await Stack.loopback(config=StackConfig())
+async def single_virtual_stack():
+    """Single virtual stack for lifecycle testing."""
+    stack = await Stack.virtual(config=StackConfig())
     yield stack
     await stack.close()
