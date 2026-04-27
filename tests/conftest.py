@@ -16,6 +16,7 @@ from tests._transport_select import (
     parse_spec,
     uart_spec_port_baud,
     usb_spec_bus_address,
+    vendor_of,
 )
 
 
@@ -51,11 +52,22 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register custom markers and handle transport diagnostics."""
     # Markers are already declared in pyproject.toml; this hook is for
     # programmatic registration if pyproject.toml is not loaded.
-    config.addinivalue_line("markers", "unit: isolated unit tests (no real hardware, no network)")
-    config.addinivalue_line("markers", "integration: multi-layer tests using VirtualController + Loopback")
-    config.addinivalue_line("markers", "e2e: full-stack Loopback double-stack tests")
+    config.addinivalue_line("markers", "unit: isolated unit tests (no real hardware, no transport)")
+    config.addinivalue_line("markers", "integration: layered tests using stack fixture (transport-bound)")
+    config.addinivalue_line("markers", "e2e: full-stack tests (transport-bound)")
     config.addinivalue_line("markers", "btsnoop: btsnoop file replay tests")
-    config.addinivalue_line("markers", "hardware: real USB Bluetooth adapter required (skipped in CI)")
+    config.addinivalue_line(
+        "markers",
+        "real_hardware_only(transport=..., vendor=...): requires real hardware",
+    )
+    config.addinivalue_line(
+        "markers",
+        "virtual_only: deterministic test, only valid on virtual controller",
+    )
+    config.addinivalue_line(
+        "markers",
+        "hardware: legacy real USB Bluetooth adapter marker; TODO remove after Tasks 19-20",
+    )
     config.addinivalue_line("markers", "slow: tests taking >5s")
 
     if config.getoption("--list-transports"):
@@ -276,3 +288,79 @@ async def peer_stack(selected_peer_spec: str | None):
         yield s
     finally:
         await s.close()
+
+
+_VALID_TRANSPORTS = {"usb", "uart"}
+_VALID_VENDORS = {"intel", "realtek", "csr"}
+
+
+def _marker_values(value: object) -> tuple[object, ...]:
+    """Normalize scalar and sequence marker kwargs for validation."""
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, (tuple, list)):
+        return tuple(value)
+    return (value,)
+
+
+def _real_hw_skip_reason(
+    marker: pytest.Mark,
+    fam: str,
+    current_vendor: str | None,
+) -> str | None:
+    """Return a skip reason string, or None if the test should run."""
+    required_transport = marker.kwargs.get("transport")
+    required_vendor = marker.kwargs.get("vendor")
+
+    if required_transport is not None and required_transport not in _VALID_TRANSPORTS:
+        return (
+            "real_hardware_only marker error: transport must be 'usb' or 'uart', "
+            f"got {required_transport!r}"
+        )
+
+    if required_vendor is not None:
+        vendors = _marker_values(required_vendor)
+        for vendor in vendors:
+            if vendor not in _VALID_VENDORS:
+                return f"real_hardware_only marker error: unsupported vendor {vendor!r}"
+        if required_transport != "usb":
+            return "real_hardware_only marker error: vendor= requires transport='usb'"
+
+    if fam == "virtual":
+        return "requires real hardware (use --transport=usb)"
+    if required_transport is not None and fam != required_transport:
+        return f"requires {required_transport!r} transport, got {fam!r}"
+    if required_vendor is not None:
+        vendors = _marker_values(required_vendor)
+        if current_vendor not in vendors:
+            return f"requires vendor in {vendors}, got {current_vendor!r}"
+    return None
+
+
+def _virtual_only_skip_reason(fam: str) -> str | None:
+    """Return a skip reason when a virtual_only test is selected off virtual."""
+    if fam == "virtual":
+        return None
+    return "deterministic test, runs only on virtual controller"
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config,
+    items: list[pytest.Item],
+) -> None:
+    """Enforce real_hardware_only(transport=, vendor=) and virtual_only markers."""
+    spec = _resolve_primary_spec(config)
+    fam = family_of(spec)
+    current_vendor = vendor_of(spec)
+
+    for item in items:
+        marker = item.get_closest_marker("real_hardware_only")
+        if marker is not None:
+            reason = _real_hw_skip_reason(marker, fam, current_vendor)
+            if reason is not None:
+                item.add_marker(pytest.mark.skip(reason=reason))
+
+        if item.get_closest_marker("virtual_only") is not None:
+            reason = _virtual_only_skip_reason(fam)
+            if reason is not None:
+                item.add_marker(pytest.mark.skip(reason=reason))

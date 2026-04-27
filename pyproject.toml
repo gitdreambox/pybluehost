@@ -49,11 +49,13 @@ build-backend = "hatchling.build"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
-    "unit: isolated unit tests (no real hardware, no network)",
-    "integration: multi-layer tests using VirtualController + Loopback",
-    "e2e: full-stack Loopback double-stack tests",
+    "unit: isolated unit tests (no real hardware, no transport)",
+    "integration: layered tests using stack fixture (transport-bound)",
+    "e2e: full-stack tests (transport-bound)",
     "btsnoop: btsnoop file replay tests",
-    "hardware: real USB Bluetooth adapter required (skipped in CI)",
+    "real_hardware_only(transport=..., vendor=...): requires real hardware; see transport selection spec section 7",
+    "virtual_only: deterministic test, only valid on virtual controller",
+    "hardware: legacy real USB Bluetooth adapter marker; TODO remove after Tasks 19-20 migrate hardware tests",
     "slow: tests taking >5s",
 ]
 addopts = "--strict-markers -q"

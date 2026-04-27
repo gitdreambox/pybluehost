@@ -1748,7 +1748,7 @@ git commit -m "feat(tests): add stack and peer_stack fixtures"
 - Modify: `pyproject.toml`
 - Test: `tests/unit/test_marker_enforcement.py`
 
-- [ ] **Step 11.1: Write failing tests covering all matrix rows from spec §7.3 / §7.4**
+- [x] **Step 11.1: Write failing tests covering all matrix rows from spec §7.3 / §7.4**
 
 ```python
 # tests/unit/test_marker_enforcement.py
@@ -1856,13 +1856,13 @@ def test_invalid_vendor_value_is_marker_error(tmp_path: Path):
     assert "unsupported vendor" in out
 ```
 
-- [ ] **Step 11.2: Run tests (FAIL expected)**
+- [x] **Step 11.2: Run tests (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/test_marker_enforcement.py -v
 ```
 
-- [ ] **Step 11.3: Update `pyproject.toml` markers list**
+- [x] **Step 11.3: Update `pyproject.toml` markers list**
 
 Replace the `[tool.pytest.ini_options].markers` block:
 
@@ -1882,7 +1882,7 @@ markers = [
 addopts = "--strict-markers -q"
 ```
 
-- [ ] **Step 11.4: Append marker enforcement to `tests/conftest.py`**
+- [x] **Step 11.4: Append marker enforcement to `tests/conftest.py`**
 
 ```python
 # Append to tests/conftest.py
@@ -1946,13 +1946,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip_v)
 ```
 
-- [ ] **Step 11.5: Run test (PASS expected)**
+- [x] **Step 11.5: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/test_marker_enforcement.py -v
 ```
 
-- [ ] **Step 11.6: Commit**
+- [x] **Step 11.6: Commit**
 
 ```bash
 git add tests/conftest.py pyproject.toml tests/unit/test_marker_enforcement.py
