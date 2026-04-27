@@ -13,6 +13,7 @@ from tests._transport_select import (
     family_of,
     find_second_usb_adapter,
     parse_spec,
+    uart_spec_port_baud,
     usb_spec_bus_address,
     vendor_of,
 )
@@ -179,6 +180,35 @@ def test_usb_spec_bus_address_extracts_optional_values():
 def test_usb_spec_bus_address_rejects_invalid_usb_specs(spec):
     with pytest.raises(InvalidSpec):
         usb_spec_bus_address(spec)
+
+
+def test_uart_spec_port_baud_extracts_port_and_default_baudrate():
+    assert uart_spec_port_baud("uart:/dev/ttyUSB0") == ("/dev/ttyUSB0", 115200)
+    assert uart_spec_port_baud("uart:COM3") == ("COM3", 115200)
+
+
+def test_uart_spec_port_baud_extracts_explicit_baudrate():
+    assert uart_spec_port_baud("uart:/dev/ttyUSB0@921600") == (
+        "/dev/ttyUSB0",
+        921600,
+    )
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "virtual",
+        "usb",
+        "uart:@115200",
+        "uart:/dev/ttyUSB0@",
+        "uart:/dev/ttyUSB0@fast",
+        "uart:/dev/ttyUSB0@-1",
+        "uart:/dev/ttyUSB0@0",
+    ],
+)
+def test_uart_spec_port_baud_rejects_non_uart_or_malformed_uart_specs(spec):
+    with pytest.raises(InvalidSpec):
+        uart_spec_port_baud(spec)
 
 
 def test_vendor_of_extracts_vendor_from_usb_spec():

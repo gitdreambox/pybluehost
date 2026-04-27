@@ -96,6 +96,37 @@ def usb_spec_bus_address(spec: str) -> tuple[int | None, int | None]:
     return (bus, address)
 
 
+def uart_spec_port_baud(spec: str) -> tuple[str, int]:
+    """Extract (port, baudrate) from a uart:... spec.
+
+    The baudrate defaults to 115200 when the spec does not include @baud.
+    """
+    family, params = parse_spec(spec)
+    if family != "uart":
+        raise InvalidSpec(f"Expected uart transport spec: {spec!r}")
+
+    raw = params["raw"]
+    port = raw
+    baudrate = 115200
+    if "@" in raw:
+        port, baudrate_s = raw.rsplit("@", 1)
+        if not baudrate_s:
+            raise InvalidSpec(f"UART spec missing baudrate: {spec!r}")
+        try:
+            baudrate = int(baudrate_s)
+        except ValueError as exc:
+            raise InvalidSpec(
+                f"Invalid UART baudrate in spec {spec!r}: {baudrate_s!r}"
+            ) from exc
+
+    port = port.strip()
+    if not port:
+        raise InvalidSpec("UART spec missing port")
+    if baudrate <= 0:
+        raise InvalidSpec(f"Invalid UART baudrate in spec {spec!r}: {baudrate!r}")
+    return (port, baudrate)
+
+
 def vendor_of(spec: str) -> str | None:
     """Return 'intel' / 'realtek' / 'csr' for usb specs with vendor=, else None.
 

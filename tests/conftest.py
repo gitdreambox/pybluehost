@@ -14,6 +14,7 @@ from tests._transport_select import (
     family_of,
     find_second_usb_adapter,
     parse_spec,
+    uart_spec_port_baud,
     usb_spec_bus_address,
 )
 
@@ -140,7 +141,7 @@ def _verify_spec_available(spec: str) -> str | None:
             address=address,
         )
     elif family == "uart":
-        port = params["raw"].split("@", 1)[0]
+        port, _baudrate = uart_spec_port_baud(spec)
         if not os.path.exists(port):
             raise RuntimeError(f"UART port not found: {port}")
     return None
@@ -237,17 +238,8 @@ async def _build_stack_from_spec(spec: str):
             address=address,
         )
     if family == "uart":
-        raw = params["raw"]
-        if "@" in raw:
-            port, baudrate_s = raw.rsplit("@", 1)
-            try:
-                baudrate = int(baudrate_s)
-            except ValueError as exc:
-                raise InvalidSpec(
-                    f"Invalid UART baudrate in spec {spec!r}: {baudrate_s!r}"
-                ) from exc
-            return await Stack.from_uart(port=port, baudrate=baudrate)
-        return await Stack.from_uart(port=raw)
+        port, baudrate = uart_spec_port_baud(spec)
+        return await Stack.from_uart(port=port, baudrate=baudrate)
     raise InvalidSpec(f"Cannot build stack from spec: {spec!r}")
 
 
