@@ -59,7 +59,7 @@ import asyncio
 from pybluehost import Stack
 
 async def main():
-    async with await Stack.loopback() as stack:
+    async with await Stack.virtual() as stack:
         print(f"Local address: {stack.local_address}")
         print(f"Powered: {stack.is_powered}")
         # stack.gap, stack.gatt_server, stack.l2cap, stack.hci 全部就绪
@@ -67,7 +67,7 @@ async def main():
 asyncio.run(main())
 ```
 
-`Stack.loopback()` 基于 `VirtualController` 构建一个完整协议栈 —— 不需要任何蓝牙硬件，所有 HCI 命令都在进程内仿真器中流转。
+`Stack.virtual()` 基于 `VirtualController` 构建一个完整协议栈 —— 不需要任何蓝牙硬件，所有 HCI 命令都在进程内仿真器中流转。
 
 ### 连接真实硬件
 
@@ -141,7 +141,7 @@ class MyTemperatureService(BLEProfileServer):
         return self._temp.to_bytes(2, "little")
 
 async def main():
-    async with await Stack.loopback() as stack:
+    async with await Stack.virtual() as stack:
         service = MyTemperatureService()
         await service.register(stack.gatt_server)
         # 服务已上线 —— 客户端可读、可写、可订阅
@@ -153,7 +153,7 @@ async def main():
 from pybluehost.profiles.ble import BatteryServer, HeartRateServer
 
 async def main():
-    async with await Stack.loopback() as stack:
+    async with await Stack.virtual() as stack:
         battery = BatteryServer(initial_level=85)
         hrs = HeartRateServer(sensor_location=0x02)  # 手腕
         await battery.register(stack.gatt_server)
@@ -175,7 +175,7 @@ async def main():
 from pybluehost.profiles.ble import BatteryClient
 
 async def main():
-    async with await Stack.loopback() as stack:
+    async with await Stack.virtual() as stack:
         # ... 通过 stack.gap.ble_connections.connect(...) 建立连接
         gatt_client = ...  # 从已连接的 GATTClient 获得
 
@@ -194,7 +194,7 @@ from pybluehost import Stack
 from pybluehost.classic.gap import InquiryConfig
 
 async def main():
-    async with await Stack.loopback() as stack:
+    async with await Stack.virtual() as stack:
         # 设备发现
         await stack.gap.classic_discovery.start(InquiryConfig(duration=8))
 
@@ -222,7 +222,7 @@ config = StackConfig(
         JsonSink("session.jsonl"),         # 每行一个 JSON 对象
     ],
 )
-async with await Stack.loopback(config=config) as stack:
+async with await Stack.virtual(config=config) as stack:
     await stack.trace.start()
     # ... 业务代码 ...
     await stack.trace.stop()  # flush 所有 sink
@@ -278,16 +278,16 @@ PyBlueHost CLI 分为两个命名空间：
 uv run pybluehost app ble-scan --transport usb
 uv run pybluehost app ble-adv --transport usb --name MyDevice
 uv run pybluehost app classic-inquiry --transport usb
-uv run pybluehost app gatt-server --transport loopback
-uv run pybluehost app hr-monitor --transport loopback
+uv run pybluehost app gatt-server --transport virtual
+uv run pybluehost app hr-monitor --transport virtual
 uv run pybluehost app spp-echo --transport usb
 
 # 一次性命令
-uv run pybluehost app gatt-browser --transport loopback
-uv run pybluehost app sdp-browser --transport loopback
+uv run pybluehost app gatt-browser --transport virtual
+uv run pybluehost app sdp-browser --transport virtual
 ```
 
-`--transport` 接受 `loopback` / `usb` / `usb:vendor=intel` / `uart:/dev/ttyUSB0[@115200]`。
+`--transport` 接受 `virtual` / `usb` / `usb:vendor=intel` / `uart:/dev/ttyUSB0[@115200]`。
 
 ### tools（离线工具）
 
@@ -368,7 +368,7 @@ Marker 分组：`unit`、`integration`、`e2e`、`btsnoop`、`hardware`、`slow`
 - **BLE** —— ATT、GATT（server + client）、SMP、SecurityConfig、GAP（广播/扫描/连接/隐私/白名单）
 - **Classic** —— SDP、RFCOMM、SPP、GAP（inquiry/SSP/可发现性）
 - **Profiles** —— 9 个内置 BLE Profile + 装饰器驱动的自定义 Profile 框架
-- **Stack 装配** —— `Stack` 工厂，支持 loopback 模式与 async 上下文管理器
+- **Stack 装配** —— `Stack` 工厂，支持 virtual 模式与 async 上下文管理器
 - **测试基础设施** —— 600+ 测试，覆盖率 88%，btsnoop 回放，CI 矩阵（Python 3.10/3.11/3.12）
 
 ---
