@@ -1002,7 +1002,7 @@ git commit -m "feat(cli): parse_transport_arg accepts bus= and address= keys"
 - Create: `tests/_transport_select.py`
 - Test: `tests/unit/test_transport_select.py`
 
-- [ ] **Step 6.1: Write failing test**
+- [x] **Step 6.1: Write failing test**
 
 ```python
 # tests/unit/test_transport_select.py
@@ -1091,13 +1091,13 @@ def test_vendor_of_extracts_vendor_from_usb_spec():
     assert vendor_of("usb:bus=1,address=4") is None  # no vendor key
 ```
 
-- [ ] **Step 6.2: Run test (FAIL expected)**
+- [x] **Step 6.2: Run test (FAIL expected)**
 
 ```bash
 uv run pytest tests/unit/test_transport_select.py -v
 ```
 
-- [ ] **Step 6.3: Implement `tests/_transport_select.py`**
+- [x] **Step 6.3: Implement `tests/_transport_select.py`**
 
 ```python
 # tests/_transport_select.py
@@ -1228,13 +1228,13 @@ def vendor_of(spec: str) -> str | None:
     return None
 ```
 
-- [ ] **Step 6.4: Run test (PASS expected)**
+- [x] **Step 6.4: Run test (PASS expected)**
 
 ```bash
 uv run pytest tests/unit/test_transport_select.py -v
 ```
 
-- [ ] **Step 6.5: Commit**
+- [x] **Step 6.5: Commit**
 
 ```bash
 git add tests/_transport_select.py tests/unit/test_transport_select.py
