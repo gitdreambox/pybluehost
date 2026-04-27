@@ -225,6 +225,34 @@ def _header_source_label(config: pytest.Config) -> str:
     return "auto-detected"
 
 
+def _peer_header_source_label(config: pytest.Config) -> str:
+    """Return the source label for the selected peer transport header."""
+    if config.getoption("--transport-peer") is not None:
+        return "explicit"
+    if os.environ.get("PYBLUEHOST_TEST_TRANSPORT_PEER") is not None:
+        return "explicit"
+    return "auto-detected"
+
+
+def _format_header_spec(spec: str) -> str:
+    """Return a readable transport spec for pytest's report header."""
+    family, _params = parse_spec(spec)
+    if family != "usb":
+        return spec
+
+    bus, address = usb_spec_bus_address(spec)
+    if bus is None or address is None:
+        return spec
+
+    from pybluehost.transport.usb import USBTransport
+
+    for candidate in USBTransport.list_devices():
+        if candidate.bus == bus and candidate.address == address:
+            name = getattr(candidate, "name", "") or candidate.vendor.title()
+            return f"usb ({name}, bus={bus} address={address})"
+    return spec
+
+
 def pytest_report_header(config: pytest.Config) -> list[str]:
     """Print selected PyBlueHost transport information in pytest's header."""
     if config.getoption("--list-transports"):
@@ -232,13 +260,17 @@ def pytest_report_header(config: pytest.Config) -> list[str]:
 
     primary = _resolve_primary_spec(config)
     label = _header_source_label(config)
-    lines = [f"[pybluehost-tests] transport: {primary} [{label}]"]
+    lines = [f"[pybluehost-tests] transport: {_format_header_spec(primary)} [{label}]"]
 
     peer = _resolve_peer_spec(config, primary)
     if peer is not None and (
         peer != primary or config.getoption("--transport-peer") is not None
     ):
-        lines.append(f"[pybluehost-tests] peer transport: {peer} [{label}]")
+        peer_label = _peer_header_source_label(config)
+        lines.append(
+            f"[pybluehost-tests] peer transport: "
+            f"{_format_header_spec(peer)} [{peer_label}]"
+        )
 
     return lines
 

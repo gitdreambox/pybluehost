@@ -6,6 +6,7 @@ import subprocess
 import sys
 import textwrap
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,14 @@ assert _CONFTEST_SPEC is not None
 assert _CONFTEST_SPEC.loader is not None
 project_conftest = importlib.util.module_from_spec(_CONFTEST_SPEC)
 _CONFTEST_SPEC.loader.exec_module(project_conftest)
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    vendor: str
+    name: str
+    bus: int
+    address: int
 
 
 class _Config:
@@ -127,6 +136,38 @@ def test_report_header_shows_explicit_peer_virtual():
         "[pybluehost-tests] transport: virtual [explicit]",
         "[pybluehost-tests] peer transport: virtual [explicit]",
     ]
+
+
+def test_peer_report_header_uses_peer_explicit_label_when_primary_auto(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    config = _Config(peer="virtual")
+    setattr(config, project_conftest._PRIMARY_CACHE_ATTR, "virtual")
+
+    assert project_conftest.pytest_report_header(config) == [
+        "[pybluehost-tests] transport: virtual [auto-detected]",
+        "[pybluehost-tests] peer transport: virtual [explicit]",
+    ]
+
+
+def test_format_header_spec_uses_friendly_usb_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from pybluehost.transport.usb import USBTransport
+
+    monkeypatch.setattr(
+        USBTransport,
+        "list_devices",
+        classmethod(
+            lambda cls: [
+                _Candidate(vendor="intel", name="Intel AX210", bus=1, address=4),
+            ]
+        ),
+    )
+
+    assert project_conftest._format_header_spec(
+        "usb:vendor=intel,bus=1,address=4",
+    ) == "usb (Intel AX210, bus=1 address=4)"
 
 
 def test_no_fallback_summary_when_explicit_virtual_stack_fixture_used():
