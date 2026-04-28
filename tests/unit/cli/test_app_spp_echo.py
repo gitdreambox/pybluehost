@@ -2,6 +2,18 @@ import asyncio
 from pybluehost.cli.app.spp_echo import _spp_echo_main
 
 
+async def test_spp_echo_runs_on_stack_rfcomm_listener(stack):
+    stop = asyncio.Event()
+
+    async def stopper():
+        await asyncio.sleep(0.01)
+        stop.set()
+
+    task = asyncio.create_task(_spp_echo_main(stack, stop))
+    asyncio.create_task(stopper())
+    await task
+
+
 async def test_spp_echo_registers_sdp_record_and_rfcomm_listener():
     class FakeRFCOMM:
         def __init__(self):

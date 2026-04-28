@@ -163,7 +163,7 @@ class Stack:
         # 6. Classic layers
         sdp = SDPServer()
         stack._sdp = sdp
-        rfcomm = RFCOMMManager()
+        rfcomm = RFCOMMManager(l2cap=l2cap)
         stack._rfcomm = rfcomm
 
         # 7. GAP (unified)
