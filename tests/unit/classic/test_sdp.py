@@ -272,7 +272,7 @@ async def test_sdp_client_retries_once_after_request_timeout():
     assert client._pending == {}
 
 
-async def test_sdp_client_uses_full_default_max_attribute_byte_count():
+async def test_sdp_client_uses_practical_default_max_attribute_byte_count():
     class FakeChannel:
         def __init__(self):
             self.events = None
@@ -292,4 +292,4 @@ async def test_sdp_client_uses_full_default_max_attribute_byte_count():
     except TimeoutError:
         pass
 
-    assert b"\xff\xff" in channel.sent[0]
+    assert b"\x10\x08" in channel.sent[0]

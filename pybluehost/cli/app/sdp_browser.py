@@ -34,6 +34,7 @@ DEFAULT_SCAN_UUIDS = (
     0x112D,  # SIM Access
     0x1200,  # PnP Information
 )
+DEFAULT_MAX_ATTRIBUTE_BYTES = 0x1008
 
 
 def _parse_uuid_arg(value: str) -> int:
@@ -48,6 +49,13 @@ def _parse_timeout_arg(value: str) -> float:
     if timeout <= 0:
         raise argparse.ArgumentTypeError("timeout must be > 0")
     return timeout
+
+
+def _parse_max_attribute_bytes_arg(value: str) -> int:
+    max_bytes = int(value, 0)
+    if not 0x0007 <= max_bytes <= 0xFFFF:
+        raise argparse.ArgumentTypeError("max attribute bytes must be 0x0007..0xFFFF")
+    return max_bytes
 
 
 def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None:
@@ -66,6 +74,12 @@ def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None
         default=10.0,
         help="Seconds to wait for each SDP request; default 10",
     )
+    p.add_argument(
+        "--max-attribute-bytes",
+        type=_parse_max_attribute_bytes_arg,
+        default=DEFAULT_MAX_ATTRIBUTE_BYTES,
+        help="SDP MaxAttributeByteCount, accepts decimal or hex; default 0x1008",
+    )
     add_trace_arguments(p)
     p.set_defaults(func=lambda args: asyncio.run(_sdp_browser_main(args)))
 
@@ -78,10 +92,11 @@ async def _sdp_browser_main(args: argparse.Namespace) -> int:
     addr, _atype = parse_target_arg(args.target)
     service_uuid = getattr(args, "uuid", None)
     sdp_timeout = getattr(args, "sdp_timeout", 10.0)
+    max_attribute_bytes = getattr(args, "max_attribute_bytes", DEFAULT_MAX_ATTRIBUTE_BYTES)
     return await run_app_command(
         args.transport,
         lambda stack, stop: _sdp_browser_run(
-            stack, stop, addr, service_uuid, sdp_timeout
+            stack, stop, addr, service_uuid, sdp_timeout, max_attribute_bytes
         ),
         **trace_kwargs_from_args(args),
     )
@@ -93,6 +108,7 @@ async def _sdp_browser_run(
     addr,
     service_uuid: int | None,
     sdp_timeout: float,
+    max_attribute_bytes: int,
 ) -> None:
     del stop
     print(f"Connecting to {addr}")
@@ -103,10 +119,12 @@ async def _sdp_browser_run(
     await stack.enable_classic_encryption(handle)
     print(f"Encrypted ACL handle=0x{handle:04X}")
     channel = await stack.l2cap.connect_classic_channel(handle=handle, psm=PSM_SDP)
-    if service_uuid is None:
-        client = SDPClient(channel, request_timeout=sdp_timeout, retries=0)
-    else:
-        client = SDPClient(channel, request_timeout=sdp_timeout, retries=0)
+    client = SDPClient(
+        channel,
+        request_timeout=sdp_timeout,
+        retries=0,
+        max_attribute_byte_count=max_attribute_bytes,
+    )
     records = await _query_sdp_records(client, service_uuid)
     if not records:
         print("No SDP records found")
