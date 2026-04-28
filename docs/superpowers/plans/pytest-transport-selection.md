@@ -2604,7 +2604,9 @@ Expected:
 - All tests pass or skip cleanly (no errors)
 - Terminal summary at end shows the fallback warning with non-zero count
 
-- [ ] **Step 23.2: Run full suite explicitly on virtual (CI scenario)**
+Actual: blocked on this host because USB autodetect finds Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`) instead of falling back to virtual. The selected Intel adapter is not usable for HCI traffic in this session: raw Intel tests time out waiting for interrupt events and stack fixture setup exits with `No HCI event received within 5.0s` / `Access denied`. See Troubleshooting entry below.
+
+- [x] **Step 23.2: Run full suite explicitly on virtual (CI scenario)**
 
 ```bash
 uv run pytest tests/ -q --transport=virtual --cov=pybluehost --cov-fail-under=85
@@ -2612,7 +2614,9 @@ uv run pytest tests/ -q --transport=virtual --cov=pybluehost --cov-fail-under=85
 
 Expected: PASS, coverage ≥ 85%, **no** fallback summary.
 
-- [ ] **Step 23.3: Verify error paths**
+Actual: PASS, 826 passed, 14 skipped, coverage 85.03%.
+
+- [x] **Step 23.3: Verify error paths**
 
 ```bash
 uv run pytest tests/ -q --transport=garbage
@@ -2626,7 +2630,9 @@ uv run pytest tests/ -q --transport=usb --transport-peer=virtual
 
 Expected: exit code != 0; message either "Peer transport must match primary family" or "Transport 'usb' unavailable".
 
-- [ ] **Step 23.4: Verify --list-transports**
+Actual: `--transport=garbage` exited 4 with `Invalid transport spec`; `--transport=usb --transport-peer=virtual` initially exposed a bug where peer mismatch was not enforced under `-q` unless peer fixtures were requested. Fixed in commit `32c9879`; re-run exits 4 with `Peer transport must match primary family (usb vs virtual)`.
+
+- [x] **Step 23.4: Verify --list-transports**
 
 ```bash
 uv run pytest --list-transports
@@ -2634,7 +2640,9 @@ uv run pytest --list-transports
 
 Expected: prints either "No Bluetooth USB adapters detected." or a list of adapters; exit code 0.
 
-- [ ] **Step 23.5: Verify rename leaves no residue**
+Actual: printed Intel BE200 and CSR8510 adapters; exit code 0.
+
+- [x] **Step 23.5: Verify rename leaves no residue**
 
 ```bash
 grep -rn "Stack.loopback\|StackMode.LOOPBACK\|loopback_peer_with\|_loopback_peer" pybluehost/ tests/ --include="*.py"
@@ -2643,6 +2651,8 @@ grep -rn -- "--transport=loopback\|--transport loopback" . --include="*.md" --in
 ```
 
 Expected: 0 matches across all three.
+
+Actual: 0 matches.
 
 - [ ] **Step 23.6: Update `docs/superpowers/STATUS.md`**
 
@@ -2680,3 +2690,15 @@ git commit -m "docs(progress): mark pytest transport selection plan complete"
 - **原因**：The later transport-selection marker tasks have not yet isolated hardware-only tests, so current marker filtering does not reliably exclude all hardware tests.
 - **解决方案**：For Task 2, verify the new virtual-controller behavior with targeted tests and broad non-hardware collection/run using `uv run pytest tests/ -q --ignore=tests/hardware`. Re-run full-suite verification after the later marker enforcement tasks land.
 - **记录人**：Codex session，2026-04-27
+
+### Q: Task 23 default-mode full suite is blocked by unusable autodetected USB hardware
+- **现象**：`uv run --frozen pytest tests/ -q` does not fall back to virtual on this host because autodetect finds Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`). The run then fails in `tests/hardware/test_intel_hw.py` with USB interrupt timeouts, and stack fixture setup can exit with `No HCI event received within 5.0s` / `Access denied`.
+- **原因**：The Task 23 acceptance command assumes a no-hardware development box. This host has detectable USB adapters, but the selected Intel adapter is not usable for reliable HCI traffic in the current session.
+- **解决方案**：Explicit CI path is verified with `uv run --frozen pytest tests/ -q --transport=virtual --cov=pybluehost --cov-fail-under=85` (PASS, coverage 85.03%). Default-mode completion remains blocked until the hardware is unplugged/disabled, the WinUSB/firmware state is repaired, or autodetect gains a usability probe before choosing USB.
+- **记录人**：Codex session，2026-04-28
+
+### Q: `--transport-peer` mismatch was not enforced unless peer fixtures were requested
+- **现象**：Task 23 error-path command `uv run --frozen pytest tests/ -q --transport=usb --transport-peer=virtual` entered hardware tests instead of exiting during collection with a peer-family mismatch.
+- **原因**：`_resolve_peer_spec()` was called from report header / peer fixtures, but under `-q` and tests that did not request `selected_peer_spec` it was not guaranteed to run before collection.
+- **解决方案**：Call `_resolve_peer_spec(config, spec)` from `pytest_collection_modifyitems()` and add a regression test that uses `--transport-peer` without requesting any peer fixture.
+- **记录人**：Codex session，2026-04-28
