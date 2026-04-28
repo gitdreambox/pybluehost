@@ -7,7 +7,7 @@ HCI、L2CAP、ATT/GATT、SMP、SDP、RFCOMM，以及 BLE 与 Classic 双模 GAP 
 适用于快速原型开发、协议学习、无硬件集成测试，以及编写自定义 BLE/Classic profile 服务端与客户端。
 
 - **纯 Python 3.10+，asyncio 原生**
-- **无需真实硬件** —— 内置 `VirtualController` 与 `LoopbackTransport`，可在单元测试中跑完整协议栈
+- **无需真实硬件** —— 内置 `VirtualController` 与进程内 HCI 通道，可在单元测试中跑完整协议栈
 - **多种 Transport** —— UART、USB（PyUSB）、TCP、UDP、btsnoop replay、Linux HCI user-channel
 - **9 个内置 BLE Profile** —— Battery、Heart Rate、DIS、GAP、GATT、Blood Pressure、HID、RSCS、CSCS
 - **YAML-driven service definitions** —— 声明式定义自定义服务，无需手写 handler 样板
@@ -32,7 +32,7 @@ uv sync
 uv sync --extra dev
 
 # 验证
-uv run pytest tests/ -m "not hardware"
+uv run pytest tests/ --transport=virtual
 ```
 
 依赖说明：
@@ -312,9 +312,16 @@ uv run pybluehost tools usb scan
 
 ## 测试
 
+### 选择 transport
+
+测试默认自动检测 USB 蓝牙适配器；找不到时回落到 virtual（软件仿真控制器）。
+
 ```bash
-# 全套（排除硬件测试）
-uv run pytest tests/ -m "not hardware"
+# 全套（默认自动检测；找不到硬件时回落到 virtual）
+uv run pytest tests/
+
+# 强制 virtual（CI 用）
+uv run pytest tests/ --transport=virtual
 
 # 指定层
 uv run pytest tests/unit/ble/ -v
@@ -324,11 +331,27 @@ uv run pytest tests/unit/profiles/ -v
 uv run pytest -m btsnoop
 
 # 带覆盖率
-uv run pytest tests/ --cov=pybluehost --cov-report=term-missing
+uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-report=term-missing
 
-# 真实硬件（需要 USB 蓝牙适配器）
-uv run pytest tests/hardware/ --hardware
+# 真硬件
+uv run pytest tests/ --transport=usb
+uv run pytest tests/ --transport=usb:vendor=intel
+uv run pytest tests/ --transport=usb:vendor=intel,bus=1,address=4
+
+# UART
+uv run pytest tests/ --transport=uart:/dev/ttyUSB0@921600
+
+# 双适配器测试（peer 自动找第二块；找不到则跳过）
+uv run pytest tests/ --transport=usb --transport-peer=usb:vendor=intel,bus=2,address=5
+
+# 通过环境变量
+PYBLUEHOST_TEST_TRANSPORT=usb uv run pytest tests/
+
+# 列出所有检测到的适配器
+uv run pytest --list-transports
 ```
+
+测试可以用 `@pytest.mark.real_hardware_only` 或 `@pytest.mark.virtual_only` 限制运行环境。
 
 Marker 分组：`unit`、`integration`、`e2e`、`btsnoop`、`hardware`、`slow`。
 
@@ -347,7 +370,7 @@ Marker 分组：`unit`、`integration`、`e2e`、`btsnoop`、`hardware`、`slow`
 │                                                                          │
 ├─────────────────────── HCI（命令、事件、ACL、流控）──────────────────────┤
 │                                                                          │
-└─────────────── Transport (UART, USB, TCP, UDP, btsnoop, loopback) ──────┘
+└─────────────── Transport (UART, USB, TCP, UDP, btsnoop, virtual) ───────┘
 ```
 
 详细文档：
@@ -362,7 +385,7 @@ Marker 分组：`unit`、`integration`、`e2e`、`btsnoop`、`hardware`、`slow`
 全部 16 个实施 Plan 均已完成：
 
 - **Core 层** —— address、UUID、errors、状态机、trace、SIG 数据库
-- **Transport 层** —— UART、USB、TCP、UDP、loopback、btsnoop 回放、HCI user-channel
+- **Transport 层** —— UART、USB、TCP、UDP、virtual、btsnoop 回放、HCI user-channel
 - **HCI 层** —— packet codec、流控、controller、virtual controller、vendor（Intel/Realtek）
 - **L2CAP 层** —— SAR、固定/CoC 通道、ERTM、信令、manager
 - **BLE** —— ATT、GATT（server + client）、SMP、SecurityConfig、GAP（广播/扫描/连接/隐私/白名单）

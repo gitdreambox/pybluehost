@@ -257,6 +257,12 @@ uv run pytest tests/unit/core/ -v               # 只跑 core
 uv run pytest tests/unit/transport/ -v          # 只跑 transport
 uv run pytest tests/ -v --tb=short -x           # 遇到第一个失败即停止
 uv run pytest tests/ --cov=pybluehost -q        # 带覆盖率
+
+# Transport 选择
+uv run pytest tests/ --transport=virtual            # 强制虚拟控制器
+uv run pytest tests/ --transport=usb                # 真硬件（自动检测）
+uv run pytest tests/ --transport=usb:vendor=intel   # 限定厂商
+uv run pytest --list-transports                     # 诊断
 ```
 
 ---

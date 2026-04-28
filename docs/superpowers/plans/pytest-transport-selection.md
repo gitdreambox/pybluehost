@@ -2526,7 +2526,7 @@ git commit -m "ci: switch test suite to --transport=virtual"
 - Modify: `README.md`
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 22.1: Update README.md "运行测试" section**
+- [x] **Step 22.1: Update README.md "运行测试" section**
 
 Locate the "运行测试" or equivalent section in `README.md` and add:
 
@@ -2565,7 +2565,7 @@ uv run pytest --list-transports
 
 同时检查 README 中已有的 CLI 用法示例，把任何 `--transport loopback` 替换为 `--transport virtual`。
 
-- [ ] **Step 22.2: Update CLAUDE.md "常用测试命令"**
+- [x] **Step 22.2: Update CLAUDE.md "常用测试命令"**
 
 Append to the "常用测试命令" section:
 
@@ -2577,7 +2577,9 @@ uv run pytest tests/ --transport=usb:vendor=intel   # 限定厂商
 uv run pytest --list-transports                     # 诊断
 ```
 
-- [ ] **Step 22.3: Commit**
+Actual: `CLAUDE.md` is a one-line pointer to `AGENTS.md`; the actual "常用测试命令" section lives in `AGENTS.md`, so that file was updated.
+
+- [x] **Step 22.3: Commit**
 
 ```bash
 git add README.md CLAUDE.md
