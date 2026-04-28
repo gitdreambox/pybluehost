@@ -1,6 +1,7 @@
 """Tests for Stack, StackConfig, StackMode."""
 from __future__ import annotations
 
+import asyncio
 import struct
 
 import pytest
@@ -413,4 +414,26 @@ async def test_stack_routes_classic_ssp_events(monkeypatch):
     await stack._on_hci_event(event)
 
     assert events == [event]
+    await stack.close()
+
+
+async def test_stack_accepts_incoming_classic_connection_request(monkeypatch):
+    stack = await Stack.virtual()
+    accepted = []
+
+    async def accept(address, role=0x01):
+        accepted.append((address, role))
+
+    monkeypatch.setattr(stack.gap.classic_connections, "accept", accept)
+    event = HCIEvent(
+        event_code=EventCode.CONNECTION_REQUEST,
+        parameters=bytes.fromhex("20 e8 a5 6b 6f 38 0c 42 5a 01"),
+    )
+
+    await stack._on_hci_event(event)
+    await asyncio.sleep(0)
+
+    assert len(accepted) == 1
+    assert str(accepted[0][0]) == "20:E8:A5:6B:6F:38"
+    assert accepted[0][1] == 0x01
     await stack.close()

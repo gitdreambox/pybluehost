@@ -337,6 +337,13 @@ class Stack:
                     "Classic authentication failed",
                 )
             return
+        if getattr(event, "event_code", None) == EventCode.CONNECTION_REQUEST:
+            params = getattr(event, "parameters", b"")
+            if len(params) >= 10 and params[9] == 0x01 and self._gap is not None:
+                asyncio.create_task(
+                    self._gap.classic_connections.accept(BDAddress(params[:6]), role=0x01)
+                )
+            return
         if getattr(event, "event_code", None) == EventCode.ENCRYPTION_CHANGE:
             params = getattr(event, "parameters", b"")
             if len(params) >= 4:
