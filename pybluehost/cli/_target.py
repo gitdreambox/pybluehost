@@ -4,6 +4,19 @@ from __future__ import annotations
 from pybluehost.core.address import AddressType, BDAddress
 
 
+TARGET_HELP = "BD_ADDR, e.g. A0:90:B5:10:40:82 or A090B5104082"
+
+
+def _normalize_bd_addr(addr: str) -> str:
+    if ":" in addr or len(addr) != 12:
+        return addr
+    try:
+        int(addr, 16)
+    except ValueError:
+        return addr
+    return ":".join(addr[i : i + 2] for i in range(0, 12, 2))
+
+
 def parse_target_arg(s: str) -> tuple[BDAddress, AddressType]:
     """Parse a --target CLI argument.
 
@@ -24,4 +37,5 @@ def parse_target_arg(s: str) -> tuple[BDAddress, AddressType]:
     else:
         addr_s = s
         atype = AddressType.PUBLIC
+    addr_s = _normalize_bd_addr(addr_s)
     return (BDAddress.from_string(addr_s, type=atype), atype)
