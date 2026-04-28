@@ -290,3 +290,28 @@ async def test_rfcomm_manager_listen_accepts_sabm_and_dispatches_uih():
     assert len(accepted) == 1
     assert accepted[0].server_channel == 3
     assert received == [b"hello"]
+
+
+async def test_rfcomm_session_responds_to_inbound_parameter_negotiation():
+    class FakeL2CAPChannel:
+        def __init__(self):
+            self.events = None
+            self.sent = []
+
+        def set_events(self, events):
+            self.events = events
+
+        async def send(self, data):
+            self.sent.append(data)
+
+    l2cap_channel = FakeL2CAPChannel()
+    RFCOMMSession(l2cap_channel=l2cap_channel)
+    pn_command = bytes.fromhex("03 ef 15 83 11 02 f0 00 00 de 03 00 07 70")
+
+    await l2cap_channel.events.on_data(pn_command)
+
+    assert len(l2cap_channel.sent) == 1
+    response = decode_frame(l2cap_channel.sent[0])
+    assert response.dlci == 0
+    assert response.frame_type == RFCOMMFrameType.UIH
+    assert response.data == bytes.fromhex("81 11 02 f0 00 00 de 03 00 07")
