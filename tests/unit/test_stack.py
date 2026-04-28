@@ -1,10 +1,20 @@
 """Tests for Stack, StackConfig, StackMode."""
 from __future__ import annotations
 
+import struct
+
 import pytest
 
+from pybluehost.ble.att import ATT_Read_Request, ATT_Write_Request, ATTOpcode
+from pybluehost.ble.gatt import (
+    CharacteristicDefinition,
+    CharProperties,
+    Permissions,
+    ServiceDefinition,
+)
 from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.core.types import IOCapability
+from pybluehost.core.uuid import UUID16
 from pybluehost.hci.constants import LEMetaSubEvent
 from pybluehost.hci.packets import HCIACLData, HCI_LE_Meta_Event
 from pybluehost.stack import Stack, StackConfig, StackMode
@@ -142,4 +152,89 @@ async def test_stack_routes_acl_data_to_l2cap(monkeypatch):
     await stack.hci.on_transport_data(acl.to_bytes())
 
     assert packets == [acl]
+    await stack.close()
+
+
+async def test_stack_routes_att_request_to_gatt_server(monkeypatch):
+    stack = await Stack.virtual()
+    stack.gatt_server.add_service(
+        ServiceDefinition(
+            uuid=UUID16(0x180D),
+            characteristics=[
+                CharacteristicDefinition(
+                    uuid=UUID16(0x2A38),
+                    properties=CharProperties.READ,
+                    permissions=Permissions.READABLE,
+                    value=b"\x42",
+                )
+            ],
+        )
+    )
+    sent_acl = []
+
+    async def send_acl_data(handle, pb_flag, data):
+        sent_acl.append((handle, pb_flag, data))
+
+    monkeypatch.setattr(stack.hci, "send_acl_data", send_acl_data)
+    le_connection_complete = HCI_LE_Meta_Event(
+        subevent_code=LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+        subevent_parameters=b"\x00" + struct.pack("<H", 0x0040) + bytes(16),
+    )
+
+    await stack._on_hci_event(le_connection_complete)
+    request = ATT_Read_Request(attribute_handle=0x0003).to_bytes()
+    acl = HCIACLData(
+        handle=0x0040,
+        pb_flag=0x02,
+        data=struct.pack("<HH", len(request), 0x0004) + request,
+    )
+
+    await stack.hci.on_transport_data(acl.to_bytes())
+
+    assert len(sent_acl) == 1
+    assert sent_acl[0][0] == 0x0040
+    assert sent_acl[0][2] == struct.pack("<HH", 2, 0x0004) + bytes([ATTOpcode.READ_RESPONSE, 0x42])
+    await stack.close()
+
+
+async def test_stack_sends_gatt_notifications_over_att_channel(monkeypatch):
+    stack = await Stack.virtual()
+    stack.gatt_server.add_service(
+        ServiceDefinition(
+            uuid=UUID16(0x180D),
+            characteristics=[
+                CharacteristicDefinition(
+                    uuid=UUID16(0x2A37),
+                    properties=CharProperties.NOTIFY,
+                    permissions=Permissions.READABLE,
+                )
+            ],
+        )
+    )
+    sent_acl = []
+
+    async def send_acl_data(handle, pb_flag, data):
+        sent_acl.append((handle, pb_flag, data))
+
+    monkeypatch.setattr(stack.hci, "send_acl_data", send_acl_data)
+    le_connection_complete = HCI_LE_Meta_Event(
+        subevent_code=LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+        subevent_parameters=b"\x00" + struct.pack("<H", 0x0040) + bytes(16),
+    )
+    await stack._on_hci_event(le_connection_complete)
+
+    cccd_write = ATT_Write_Request(attribute_handle=0x0004, attribute_value=b"\x01\x00").to_bytes()
+    acl = HCIACLData(
+        handle=0x0040,
+        pb_flag=0x02,
+        data=struct.pack("<HH", len(cccd_write), 0x0004) + cccd_write,
+    )
+    await stack.hci.on_transport_data(acl.to_bytes())
+    sent_acl.clear()
+
+    await stack.gatt_server.notify(handle=0x0003, value=bytes([0x00, 72]), connections=[0x0040])
+
+    assert len(sent_acl) == 1
+    expected_att = bytes([ATTOpcode.HANDLE_VALUE_NOTIFICATION]) + struct.pack("<H", 0x0003) + bytes([0x00, 72])
+    assert sent_acl[0][2] == struct.pack("<HH", len(expected_att), 0x0004) + expected_att
     await stack.close()

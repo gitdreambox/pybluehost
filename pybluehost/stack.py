@@ -227,6 +227,7 @@ class Stack:
     async def _on_hci_event(self, event: Any) -> None:
         if self._l2cap is not None:
             await self._l2cap.on_hci_event(event)
+            self._attach_gatt_server_to_att_channels()
         if self._gap is None:
             return
         ble_scanner = getattr(self._gap, "ble_scanner", None)
@@ -238,7 +239,42 @@ class Stack:
 
     async def _on_acl_data(self, packet: Any) -> None:
         if self._l2cap is not None:
+            self._attach_gatt_server_to_att_channels()
             await self._l2cap.on_acl_data(packet)
+
+    def _attach_gatt_server_to_att_channels(self) -> None:
+        if self._l2cap is None or self._gatt_server is None:
+            return
+
+        from pybluehost.ble.att import ATT_Handle_Value_Notification, decode_att_pdu
+        from pybluehost.l2cap.channel import SimpleChannelEvents
+        from pybluehost.l2cap.constants import CID_ATT
+
+        async def on_notification(handle: int, value: bytes, conn_handle: int) -> None:
+            channel = self._l2cap.get_fixed_channel(conn_handle, CID_ATT)
+            if channel is None:
+                return
+            notification = ATT_Handle_Value_Notification(
+                attribute_handle=handle,
+                attribute_value=value,
+            )
+            await channel.send(notification.to_bytes())
+
+        self._gatt_server.on_notification_sent(on_notification)
+
+        connections = getattr(self._l2cap, "_connections", {})
+        for handle, channels in connections.items():
+            channel = channels.get(CID_ATT)
+            if channel is None or getattr(channel, "_gatt_server_bound", False):
+                continue
+
+            async def on_att_data(data: bytes, *, conn_handle: int = handle, att_channel: Any = channel) -> None:
+                pdu = decode_att_pdu(data)
+                response = await self._gatt_server.handle_request(conn_handle, pdu)
+                await att_channel.send(response.to_bytes())
+
+            channel.set_events(SimpleChannelEvents(on_data=on_att_data))
+            setattr(channel, "_gatt_server_bound", True)
 
     # -- Lifecycle -----------------------------------------------------------
 

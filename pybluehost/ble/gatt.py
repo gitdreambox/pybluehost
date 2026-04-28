@@ -351,12 +351,16 @@ class GATTServer:
             enabled = self._notifications_enabled.get(conn, set())
             if handle in enabled:
                 if self._notification_callback:
-                    self._notification_callback(handle, value, conn)
+                    result = self._notification_callback(handle, value, conn)
+                    if asyncio.iscoroutine(result):
+                        await result
 
     async def indicate(self, handle: int, value: bytes, connection: int) -> None:
         """Send an indication (requires confirmation from client)."""
         if self._notification_callback:
-            self._notification_callback(handle, value, connection)
+            result = self._notification_callback(handle, value, connection)
+            if asyncio.iscoroutine(result):
+                await result
 
     def find_characteristic_value_handle(self, uuid: UUID16 | UUID128) -> int | None:
         uuid_bytes = uuid.to_bytes()
