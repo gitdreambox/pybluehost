@@ -35,6 +35,8 @@ class _ClassicConnectPending:
 class _ClassicConfigPending:
     channel: ClassicChannel
     future: asyncio.Future[ClassicChannel]
+    local_config_done: bool = False
+    peer_config_done: bool = False
 
 
 @dataclass
@@ -59,6 +61,7 @@ class L2CAPManager:
         self._next_signaling_id = 1
         self._classic_connect_pending: dict[tuple[int, int], _ClassicConnectPending] = {}
         self._classic_config_pending: dict[tuple[int, int], _ClassicConfigPending] = {}
+        self._classic_config_pending_by_cid: dict[tuple[int, int], _ClassicConfigPending] = {}
         self._classic_listeners: dict[int, Callable[[ClassicChannel], object]] = {}
         self._classic_inbound_pending: dict[tuple[int, int], _ClassicInboundPending] = {}
 
@@ -228,10 +231,12 @@ class L2CAPManager:
 
         config_ident = self._next_identifier()
         config_future: asyncio.Future[ClassicChannel] = loop.create_future()
-        self._classic_config_pending[(handle, config_ident)] = _ClassicConfigPending(
+        config_pending = _ClassicConfigPending(
             channel=channel,
             future=config_future,
         )
+        self._classic_config_pending[(handle, config_ident)] = config_pending
+        self._classic_config_pending_by_cid[(handle, local_cid)] = config_pending
         configure = SignalingPacket(
             code=SignalingCode.CONFIGURE_REQUEST,
             identifier=config_ident,
@@ -243,6 +248,7 @@ class L2CAPManager:
             return await asyncio.wait_for(config_future, timeout=timeout)
         finally:
             self._classic_config_pending.pop((handle, config_ident), None)
+            self._classic_config_pending_by_cid.pop((handle, local_cid), None)
 
     def listen_classic_channel(
         self,
@@ -323,8 +329,8 @@ class L2CAPManager:
                     RuntimeError(f"L2CAP Configure Response failed: result=0x{result:04X}")
                 )
                 return
-            pending.channel.open()
-            pending.future.set_result(pending.channel)
+            pending.local_config_done = True
+            self._complete_classic_config_if_ready(pending)
 
     async def _handle_classic_connection_request(
         self,
@@ -382,6 +388,18 @@ class L2CAPManager:
         if signaling is None or len(packet.data) < 4:
             return
         dest_cid, _flags = struct.unpack_from("<HH", packet.data)
+        outbound_pending = self._classic_config_pending_by_cid.get((handle, dest_cid))
+        if outbound_pending is not None:
+            response = SignalingPacket(
+                code=SignalingCode.CONFIGURE_RESPONSE,
+                identifier=packet.identifier,
+                data=struct.pack("<HHH", outbound_pending.channel._peer_cid, 0x0000, 0x0000),
+            )
+            await signaling.send(encode_signaling(response))
+            outbound_pending.peer_config_done = True
+            self._complete_classic_config_if_ready(outbound_pending)
+            return
+
         pending = self._classic_inbound_pending.pop((handle, dest_cid), None)
         response = SignalingPacket(
             code=SignalingCode.CONFIGURE_RESPONSE,
@@ -395,3 +413,12 @@ class L2CAPManager:
         result = pending.handler(pending.channel)
         if asyncio.iscoroutine(result):
             await result
+
+    def _complete_classic_config_if_ready(self, pending: _ClassicConfigPending) -> None:
+        if (
+            pending.local_config_done
+            and pending.peer_config_done
+            and not pending.future.done()
+        ):
+            pending.channel.open()
+            pending.future.set_result(pending.channel)
