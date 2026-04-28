@@ -2,8 +2,17 @@ import asyncio
 import struct
 import pytest
 from pybluehost.l2cap.manager import L2CAPManager
-from pybluehost.l2cap.constants import CID_ATT, CID_SMP, CID_LE_SIGNALING, CID_CLASSIC_SIGNALING
-from pybluehost.l2cap.channel import SimpleChannelEvents
+from pybluehost.l2cap.classic import ClassicChannel
+from pybluehost.l2cap.constants import (
+    CID_ATT,
+    CID_CLASSIC_SIGNALING,
+    CID_LE_SIGNALING,
+    CID_SMP,
+    PSM_SDP,
+    SignalingCode,
+)
+from pybluehost.l2cap.channel import ChannelState, SimpleChannelEvents
+from pybluehost.l2cap.signaling import SignalingPacket, decode_signaling, encode_signaling
 from pybluehost.core.types import LinkType
 from pybluehost.hci.packets import HCIACLData
 from pybluehost.hci.constants import ACL_PB_FIRST_AUTO_FLUSH
@@ -122,3 +131,72 @@ async def test_register_channel(manager):
     fake_ch = FixedChannel(connection_handle=0x0040, cid=0x0040, hci=hci, mtu=512)
     m.register_channel(handle=0x0040, channel=fake_ch)
     assert m.get_fixed_channel(handle=0x0040, cid=0x0040) is fake_ch
+
+
+async def test_connect_classic_channel_opens_dynamic_channel(manager):
+    m, hci = manager
+    await m.on_connection(handle=0x0042, link_type=LinkType.ACL,
+                          peer_address=None, role=None)
+
+    connect_task = asyncio.create_task(
+        m.connect_classic_channel(handle=0x0042, psm=PSM_SDP)
+    )
+    await asyncio.sleep(0)
+
+    assert len(hci.sent) == 1
+    _handle, _pb, l2cap_pdu = hci.sent[0]
+    length, cid = struct.unpack_from("<HH", l2cap_pdu)
+    assert cid == CID_CLASSIC_SIGNALING
+    request = decode_signaling(l2cap_pdu[4:4 + length])
+    assert request.code == SignalingCode.CONNECTION_REQUEST
+    psm, source_cid = struct.unpack_from("<HH", request.data)
+    assert psm == PSM_SDP
+    assert source_cid == 0x0040
+
+    conn_rsp = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONNECTION_RESPONSE,
+            identifier=request.identifier,
+            data=struct.pack("<HHHH", 0x0041, source_cid, 0x0000, 0x0000),
+        )
+    )
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(conn_rsp), CID_CLASSIC_SIGNALING) + conn_rsp,
+        )
+    )
+    for _ in range(10):
+        if len(hci.sent) >= 2:
+            break
+        await asyncio.sleep(0.01)
+
+    assert len(hci.sent) == 2
+    config_pdu = hci.sent[1][2]
+    config = decode_signaling(config_pdu[4:])
+    assert config.code == SignalingCode.CONFIGURE_REQUEST
+    dest_cid, flags = struct.unpack_from("<HH", config.data)
+    assert dest_cid == 0x0041
+    assert flags == 0
+
+    config_rsp = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONFIGURE_RESPONSE,
+            identifier=config.identifier,
+            data=struct.pack("<HHH", source_cid, 0x0000, 0x0000),
+        )
+    )
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(config_rsp), CID_CLASSIC_SIGNALING) + config_rsp,
+        )
+    )
+
+    channel = await asyncio.wait_for(connect_task, timeout=0.5)
+    assert isinstance(channel, ClassicChannel)
+    assert channel.cid == source_cid
+    assert channel.state == ChannelState.OPEN
+    assert m.get_fixed_channel(0x0042, source_cid) is channel

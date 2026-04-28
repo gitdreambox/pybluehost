@@ -11,6 +11,7 @@ from pybluehost.classic.rfcomm import (
     decode_frame,
     encode_frame,
 )
+from pybluehost.l2cap.constants import PSM_RFCOMM
 
 
 # ---------------------------------------------------------------------------
@@ -194,3 +195,46 @@ async def test_rfcomm_listen_fails_loudly_until_classic_l2cap_psm_exists():
 def test_rfcomm_manager_construction():
     mgr = RFCOMMManager(l2cap=None)
     assert mgr is not None
+
+
+async def test_rfcomm_manager_connect_opens_l2cap_session_and_dlc():
+    class FakeL2CAPChannel:
+        def __init__(self):
+            self.events = None
+            self.sent = []
+
+        def set_events(self, events):
+            self.events = events
+
+        async def send(self, data):
+            self.sent.append(data)
+            frame = decode_frame(data)
+            if frame.frame_type == RFCOMMFrameType.SABM:
+                await self.events.on_data(
+                    encode_frame(
+                        RFCOMMFrame(
+                            dlci=frame.dlci,
+                            frame_type=RFCOMMFrameType.UA,
+                            pf=True,
+                            data=b"",
+                        )
+                    )
+                )
+
+    class FakeL2CAP:
+        def __init__(self):
+            self.channel = FakeL2CAPChannel()
+            self.calls = []
+
+        async def connect_classic_channel(self, handle, psm):
+            self.calls.append((handle, psm))
+            return self.channel
+
+    l2cap = FakeL2CAP()
+    mgr = RFCOMMManager(l2cap=l2cap)
+
+    ch = await mgr.connect(acl_handle=0x0042, server_channel=3)
+
+    assert l2cap.calls == [(0x0042, PSM_RFCOMM)]
+    assert ch.server_channel == 3
+    assert [decode_frame(raw).dlci for raw in l2cap.channel.sent] == [0, 6]

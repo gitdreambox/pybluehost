@@ -48,17 +48,38 @@ async def test_sdp_browser_requires_target_for_all_transports(capsys):
 
 
 async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
+    class FakeL2CAP:
+        async def connect_classic_channel(self, handle, psm):
+            assert handle == 0x0042
+            assert psm == 0x0001
+            return object()
+
+    class FakeStack:
+        def __init__(self):
+            self.l2cap = FakeL2CAP()
+
+        async def connect_classic(self, addr):
+            assert str(addr) == "A0:90:B5:10:40:82"
+            return 0x0042
+
     async def run_app(transport_arg, main_coro, **kwargs):
         assert transport_arg == "usb:vendor=csr"
         assert kwargs == {"hci_log": True, "btsnoop": Path("sdp.cfa")}
-        try:
-            await main_coro(object(), asyncio.Event())
-        except Exception as e:
-            print(f"Error: {e}", file=__import__("sys").stderr)
-            return 1
+        await main_coro(FakeStack(), asyncio.Event())
         return 0
 
     monkeypatch.setattr("pybluehost.cli.app.sdp_browser.run_app_command", run_app)
+
+    class FakeSDPClient:
+        def __init__(self, channel):
+            assert channel is not None
+
+        async def search_attributes(self, target, uuid, attr_ids=None):
+            assert target is None
+            assert uuid == 0x1101
+            return [{0x0100: "SPP Echo"}]
+
+    monkeypatch.setattr("pybluehost.cli.app.sdp_browser.SDPClient", FakeSDPClient)
 
     args = argparse.Namespace(
         transport="usb:vendor=csr",
@@ -69,6 +90,7 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
     rc = await _sdp_browser_main(args)
 
     captured = capsys.readouterr()
-    assert rc == 1
+    assert rc == 0
     assert "Connecting to A0:90:B5:10:40:82" in captured.out
-    assert "SDP query over BR/EDR ACL is not implemented" in captured.err
+    assert "Connected ACL handle=0x0042" in captured.out
+    assert "0x0100: SPP Echo" in captured.out
