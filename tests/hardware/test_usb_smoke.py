@@ -1,32 +1,23 @@
-"""Hardware tests — requires real USB Bluetooth adapter. Run with: pytest --hardware"""
+"""Smoke tests on real USB hardware (any vendor) via the stack fixture."""
 from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.hardware
+pytestmark = pytest.mark.real_hardware_only(transport="usb")
 
 
-async def test_usb_stack_lifecycle(hardware_required):
-    """Full stack on real hardware: power on, read BD_ADDR, reset cycle."""
-    from pybluehost.stack import Stack
+@pytest.mark.asyncio
+async def test_usb_stack_powers_on(stack):
+    """Full stack on real hardware: powered, has BD_ADDR."""
+    assert stack.is_powered
+    assert stack.local_address is not None
+    assert str(stack.local_address) != "00:00:00:00:00:00"
 
-    stack = await Stack.from_usb(vendor="csr")
-    try:
-        # Power on / init
-        assert stack.is_powered
-        addr = stack.local_address
-        assert addr is not None
-        assert str(addr) != "00:00:00:00:00:00"
-        print(f"\n  [PASS] USB stack powered on, BD_ADDR={addr}")
 
-        # Power off
-        await stack.power_off()
-        assert not stack.is_powered
-        print("  [PASS] USB stack powered off")
-
-        # Power on again
-        await stack.power_on()
-        assert stack.is_powered
-        print("  [PASS] USB stack reset OK")
-    finally:
-        await stack.close()
+@pytest.mark.asyncio
+async def test_usb_stack_reset(stack):
+    """power_off / power_on round-trip restores is_powered."""
+    await stack.power_off()
+    assert not stack.is_powered
+    await stack.power_on()
+    assert stack.is_powered

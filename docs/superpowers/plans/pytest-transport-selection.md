@@ -2113,7 +2113,7 @@ git commit -m "refactor(tests): remove unused vc_a/hci_with_vc/l2cap_with_hci fi
 **Files:**
 - Delete: `tests/hardware/conftest.py`
 
-- [ ] **Step 14.1: Verify --hardware flag isn't required by any current test**
+- [x] **Step 14.1: Verify --hardware flag isn't required by any current test**
 
 ```bash
 grep -rn "hardware_required\|--hardware\|getoption.\"--hardware\"" tests/ pybluehost/ --include="*.py"
@@ -2121,19 +2121,21 @@ grep -rn "hardware_required\|--hardware\|getoption.\"--hardware\"" tests/ pyblue
 
 Expected: only matches inside `tests/hardware/conftest.py` itself.
 
-- [ ] **Step 14.2: Delete the file**
+Actual: `tests/hardware/test_usb_smoke.py` still used `hardware_required`; Task 19 was executed before deleting this file so the old fixture is no longer required.
+
+- [x] **Step 14.2: Delete the file**
 
 ```bash
 rm tests/hardware/conftest.py
 ```
 
-- [ ] **Step 14.3: Confirm pytest still collects**
+- [x] **Step 14.3: Confirm pytest still collects**
 
 ```bash
 uv run pytest tests/ -q --co --transport=virtual | tail -5
 ```
 
-- [ ] **Step 14.4: Commit**
+- [x] **Step 14.4: Commit**
 
 ```bash
 git add tests/hardware/conftest.py
@@ -2352,7 +2354,7 @@ git commit -m "refactor(tests): cli app tests use stack fixture"
 **Files:**
 - Modify: `tests/hardware/test_usb_smoke.py`
 
-- [ ] **Step 19.1: Replace file content**
+- [x] **Step 19.1: Replace file content**
 
 ```python
 # tests/hardware/test_usb_smoke.py
@@ -2381,7 +2383,7 @@ async def test_usb_stack_reset(stack):
     assert stack.is_powered
 ```
 
-- [ ] **Step 19.2: Run on virtual (must skip)**
+- [x] **Step 19.2: Run on virtual (must skip)**
 
 ```bash
 uv run pytest tests/hardware/test_usb_smoke.py -v --transport=virtual
@@ -2389,7 +2391,7 @@ uv run pytest tests/hardware/test_usb_smoke.py -v --transport=virtual
 
 Expected: 2 skipped, 0 failed.
 
-- [ ] **Step 19.3: Run on UART spec (must skip — wrong transport family)**
+- [x] **Step 19.3: Run on UART spec (must skip — wrong transport family)**
 
 ```bash
 uv run pytest tests/hardware/test_usb_smoke.py -v --transport=uart:/dev/null
@@ -2397,7 +2399,7 @@ uv run pytest tests/hardware/test_usb_smoke.py -v --transport=uart:/dev/null
 
 Expected: collection-phase exit 4 (UART port doesn't open) — confirming the explicit-transport pre-flight rejects bad UART specs before tests run.
 
-- [ ] **Step 19.4: Commit**
+- [x] **Step 19.4: Commit**
 
 ```bash
 git add tests/hardware/test_usb_smoke.py
