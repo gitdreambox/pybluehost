@@ -5,12 +5,12 @@ import pytest
 from pybluehost.cli.app.gatt_browser import _gatt_browser_main
 
 
-async def test_gatt_browser_virtual_prints_battery_service(capsys):
+async def test_gatt_browser_requires_target_for_all_transports(capsys):
     args = argparse.Namespace(transport="virtual", target=None)
     rc = await _gatt_browser_main(args)
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "0x180F" in out or "180F" in out.upper() or "Battery" in out
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "--target is required" in err
 
 
 async def test_gatt_browser_real_transport_discovers_services(monkeypatch, capsys):

@@ -13,16 +13,16 @@ from pybluehost.stack import Stack
 def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("sdp-browser", help="Connect, query SDP, print, exit")
     p.add_argument("-t", "--transport", required=True)
-    p.add_argument("-a", "--target", help="BD_ADDR (required unless --transport virtual)")
+    p.add_argument("-a", "--target", help="BD_ADDR")
     p.set_defaults(func=lambda args: asyncio.run(_sdp_browser_main(args)))
 
 
 async def _sdp_browser_main(args: argparse.Namespace) -> int:
-    is_virtual = args.transport == "virtual"
-    if not is_virtual and not args.target:
-        print("Error: --target is required for non-virtual transport", file=sys.stderr)
+    if not args.target:
+        print("Error: --target is required", file=sys.stderr)
         return 2
 
+    addr, _atype = parse_target_arg(args.target)
     try:
         transport = await parse_transport_arg(args.transport)
         stack = await Stack._build(transport=transport)
@@ -31,19 +31,8 @@ async def _sdp_browser_main(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        if is_virtual:
-            print("SDP records (virtual peer):")
-            peer_sdp = stack.sdp
-            # SDPServer stores records in _records dict[int, ServiceRecord]
-            records = list(peer_sdp._records.values())
-            if not records:
-                print("  (no records registered)")
-            for rec in records:
-                print(f"  Record handle=0x{rec.handle:08X}")
-        else:
-            addr, _atype = parse_target_arg(args.target)
-            print(f"Connected to {addr}")
-            print("(Real-hardware SDP query not implemented in v1; virtual only.)")
-        return 0
+        print(f"Connecting to {addr}")
+        print("Error: SDP query over BR/EDR ACL is not implemented", file=sys.stderr)
+        return 1
     finally:
         await stack.close()
