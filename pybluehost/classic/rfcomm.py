@@ -25,6 +25,8 @@ class RFCOMMFrameType(IntEnum):
 
 _MCC_TYPE_PN_COMMAND = 0x83
 _MCC_TYPE_PN_RESPONSE = 0x81
+_MCC_TYPE_MSC_COMMAND = 0xE3
+_MCC_TYPE_MSC_RESPONSE = 0xE1
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +159,7 @@ class RFCOMMSession:
         self._dlcs: dict[int, RFCOMMChannel] = {}
         self._ua_waiters: dict[int, asyncio.Future[None]] = {}
         self._server_handlers = server_handlers or {}
+        self._handler_tasks: set[asyncio.Task[object]] = set()
         if l2cap_channel is not None and hasattr(l2cap_channel, "set_events"):
             l2cap_channel.set_events(SimpleChannelEvents(on_data=self._on_frame))
 
@@ -218,7 +221,10 @@ class RFCOMMSession:
                     self._dlcs[frame.dlci] = channel
                     result = handler(channel)
                     if asyncio.iscoroutine(result):
-                        await result
+                        task = asyncio.create_task(result)
+                        self._handler_tasks.add(task)
+                        task.add_done_callback(self._handler_tasks.discard)
+                    await self._send_modem_status(frame.dlci)
             return
         if frame.frame_type == RFCOMMFrameType.UIH:
             if frame.dlci == 0:
@@ -247,7 +253,11 @@ class RFCOMMSession:
             return
         command_type = data[0]
         length_field = data[1]
-        if command_type != _MCC_TYPE_PN_COMMAND or not length_field & 0x01:
+        if command_type == _MCC_TYPE_PN_COMMAND:
+            response_type = _MCC_TYPE_PN_RESPONSE
+        elif command_type == _MCC_TYPE_MSC_COMMAND:
+            response_type = _MCC_TYPE_MSC_RESPONSE
+        else:
             return
         length = length_field >> 1
         payload = data[2:2 + length]
@@ -259,7 +269,26 @@ class RFCOMMSession:
                     dlci=0,
                     frame_type=RFCOMMFrameType.UIH,
                     pf=False,
-                    data=bytes([_MCC_TYPE_PN_RESPONSE, length_field]) + payload,
+                    data=bytes([response_type, length_field]) + payload,
+                )
+            )
+        )
+
+    async def _send_modem_status(self, dlci: int) -> None:
+        if self._l2cap_channel is None:
+            return
+        await self._l2cap_channel.send(
+            encode_frame(
+                RFCOMMFrame(
+                    dlci=0,
+                    frame_type=RFCOMMFrameType.UIH,
+                    pf=False,
+                    data=bytes([
+                        _MCC_TYPE_MSC_COMMAND,
+                        0x05,  # EA=1, payload length=2
+                        ((dlci & 0x3F) << 2) | 0x03,
+                        0x8D,  # EA + RTC + RTR + DV
+                    ]),
                 )
             )
         )
