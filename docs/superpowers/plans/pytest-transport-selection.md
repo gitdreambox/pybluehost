@@ -2190,7 +2190,7 @@ git commit -m "refactor(tests): drop single_loopback_stack from e2e conftest"
 **Files:**
 - Modify: `tests/integration/test_hci_init.py`
 
-- [ ] **Step 16.1: Read current tests to understand intent**
+- [x] **Step 16.1: Read current tests to understand intent**
 
 ```bash
 cat tests/integration/test_hci_init.py
@@ -2199,7 +2199,7 @@ uv run pytest tests/integration/test_hci_init.py -v --transport=virtual
 
 Inventory the existing test functions and their assertions. The migration must preserve **every existing test name and every assertion**. Only the per-test setup boilerplate changes.
 
-- [ ] **Step 16.2: Translate each test to the `stack` fixture**
+- [x] **Step 16.2: Translate each test to the `stack` fixture**
 
 For each existing test, apply this transformation:
 
@@ -2226,17 +2226,17 @@ Drop now-unused imports of `VirtualController`, `BDAddress`, `HCIController`, `T
 
 Keep every test function name and every assertion exactly as before.
 
-- [ ] **Step 16.3: Run**
+- [x] **Step 16.3: Run**
 
 ```bash
 uv run pytest tests/integration/test_hci_init.py -v --transport=virtual
 ```
 
-- [ ] **Step 16.4: Commit**
+- [x] **Step 16.4: Commit**
 
 ```bash
 git add tests/integration/test_hci_init.py
-git commit -m "refactor(tests): use stack fixture in test_hci_init"
+git commit -m "refactor(tests): hci init tests use stack fixture"
 ```
 
 ---

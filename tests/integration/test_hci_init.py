@@ -4,11 +4,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 
-from pybluehost.core.address import BDAddress
 from pybluehost.core.errors import CommandTimeoutError
-from pybluehost.core.trace import TraceSystem
-from pybluehost.hci.controller import HCIController
-from pybluehost.hci.virtual import VirtualController
 from pybluehost.hci.packets import HCICommand, decode_hci_packet
 from pybluehost.hci.constants import (
     HCI_RESET,
@@ -49,38 +45,26 @@ EXPECTED_INIT_OPCODES = [
 ]
 
 
-class LoopbackTransport:
-    """In-process transport routing HCIController bytes through VirtualController."""
+def _record_sent_opcodes(hci):
+    transport = hci._transport
+    original_send = transport.send
+    transport.sent_opcodes = []
 
-    def __init__(self, vc: VirtualController) -> None:
-        self._vc = vc
-        self._sink = None
-        self.sent_opcodes: list[int] = []
-
-    def set_sink(self, sink) -> None:
-        self._sink = sink
-
-    async def open(self) -> None:
-        pass
-
-    async def close(self) -> None:
-        pass
-
-    async def send(self, data: bytes) -> None:
+    async def send(data: bytes) -> None:
         pkt = decode_hci_packet(data)
         if isinstance(pkt, HCICommand):
-            self.sent_opcodes.append(pkt.opcode)
-        response = await self._vc.process(data)
-        if response is not None and self._sink is not None:
-            await self._sink.on_transport_data(response)
+            transport.sent_opcodes.append(pkt.opcode)
+        await original_send(data)
+
+    transport.send = send
+    return transport
 
 
-async def test_hci_init_sequence_sends_all_16_commands():
-    vc = VirtualController(address=BDAddress.from_string("AA:BB:CC:DD:EE:FF"))
-    transport = LoopbackTransport(vc)
-    controller = HCIController(transport=transport)
+async def test_hci_init_sequence_sends_all_16_commands(stack):
+    hci = stack.hci
+    transport = _record_sent_opcodes(hci)
 
-    await asyncio.wait_for(controller.initialize(), timeout=5.0)
+    await asyncio.wait_for(hci.initialize(), timeout=5.0)
 
     assert len(transport.sent_opcodes) == len(EXPECTED_INIT_OPCODES), (
         f"Expected {len(EXPECTED_INIT_OPCODES)} init commands, "
@@ -90,24 +74,25 @@ async def test_hci_init_sequence_sends_all_16_commands():
     assert transport.sent_opcodes == EXPECTED_INIT_OPCODES
 
 
-async def test_hci_init_sequence_all_commands_succeed():
-    vc = VirtualController(address=BDAddress.from_string("11:22:33:44:55:66"))
-    transport = LoopbackTransport(vc)
-    controller = HCIController(transport=transport)
+async def test_hci_init_sequence_all_commands_succeed(stack):
+    hci = stack.hci
+    transport = _record_sent_opcodes(hci)
 
-    await asyncio.wait_for(controller.initialize(), timeout=5.0)
+    await asyncio.wait_for(hci.initialize(), timeout=5.0)
 
     # If initialize() completed without error, all commands succeeded
     assert len(transport.sent_opcodes) == 16
 
 
-async def test_hci_init_sequence_timeout_raises():
+async def test_hci_init_sequence_timeout_raises(stack):
     class SilentTransport:
         def set_sink(self, sink): pass
         async def open(self): pass
         async def close(self): pass
         async def send(self, data: bytes): pass
 
-    controller = HCIController(transport=SilentTransport(), command_timeout=0.05)
+    hci = stack.hci
+    hci._transport = SilentTransport()
+    hci._command_timeout = 0.05
     with pytest.raises(CommandTimeoutError):
-        await controller.initialize()
+        await hci.initialize()
