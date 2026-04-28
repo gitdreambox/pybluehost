@@ -205,7 +205,7 @@ class ClassicConnectionManager:
     async def connect(self, target: BDAddress, allow_role_switch: bool = True) -> None:
         """Initiate an ACL connection to a remote device."""
         params = (
-            target.address
+            target.address[::-1]
             + struct.pack("<H", 0x0018)  # packet type: DM1, DH1
             + bytes([0x01])  # page scan repetition mode R1
             + bytes([0x00])  # reserved

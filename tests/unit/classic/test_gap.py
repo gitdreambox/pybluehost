@@ -183,6 +183,18 @@ async def test_classic_connect():
     assert HCI_CREATE_CONNECTION in opcodes
 
 
+async def test_classic_connect_packs_bd_addr_little_endian_on_wire():
+    hci = FakeHCI()
+    mgr = ClassicConnectionManager(hci=hci)
+    addr = BDAddress.from_string("1A:8D:8D:1B:F5:6B")
+
+    await mgr.connect(addr)
+
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_CREATE_CONNECTION
+    assert cmd.parameters[:6] == bytes.fromhex("6b f5 1b 8d 8d 1a")
+
+
 async def test_classic_accept():
     hci = FakeHCI()
     mgr = ClassicConnectionManager(hci=hci)
