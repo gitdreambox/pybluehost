@@ -85,7 +85,7 @@ async def _print_discovered_gatt_tree(client, services: list[tuple[int, int, byt
                 f"  - Char {_format_uuid(char.uuid)}  "
                 f"decl=0x{char.declaration_handle:04X} "
                 f"value=0x{char.value_handle:04X} "
-                f"props=0x{char.properties:02X}"
+                f"props=0x{char.properties:02X} {_format_char_properties(char.properties)}"
             )
             next_decl = (
                 characteristics[index + 1].declaration_handle
@@ -108,6 +108,21 @@ def _format_uuid(uuid_bytes: bytes) -> str:
             return f"0x{uuid16.value:04X}"
         return str(uuid)
     return uuid_bytes.hex()
+
+
+def _format_char_properties(properties: int) -> str:
+    names = [
+        (0x01, "BROADCAST"),
+        (0x02, "READ"),
+        (0x04, "WRITE_WITHOUT_RESPONSE"),
+        (0x08, "WRITE"),
+        (0x10, "NOTIFY"),
+        (0x20, "INDICATE"),
+        (0x40, "AUTHENTICATED_SIGNED_WRITES"),
+        (0x80, "EXTENDED_PROPERTIES"),
+    ]
+    matched = [name for bit, name in names if properties & bit]
+    return "|".join(matched) if matched else "-"
 
 
 def _print_gatt_tree(gatt_server) -> None:
