@@ -149,6 +149,11 @@ uv run pybluehost app spp-echo -t usb:vendor=csr
 
 实现后预期：不再出现 `NotImplementedError`，并且 HCI/btsnoop trace 能看到真实协议流量。
 
+2026-04-28 当前验收状态：
+- `sdp-browser` 已经走到 Classic ACL Create Connection，失败点为目标设备 paging 返回 `PAGE_TIMEOUT (0x04)`，不是 SDP/RFCOMM stub。
+- `spp-echo` 首次受控启动没有立即退出；随后 CSR8510 被系统拒绝访问，`pybluehost tools usb diagnose` 显示 `0a12:0001` 为 `Access denied` / `DRIVER_CONFLICT`，因此 CSR app 级验收未完成。
+- 保持本 Step 未勾选；需要恢复 CSR WinUSB/设备占用状态后重跑。
+
 ---
 
 ## 本计划新增测试策略
