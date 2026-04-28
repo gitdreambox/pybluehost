@@ -38,8 +38,8 @@ def test_sdp_browser_parser_has_target_example_and_trace_options():
     assert "A0:90:B5:10:40:82" in target_action.help
     assert "A090B5104082" in target_action.help
     uuid_action = next(action for action in sdp_parser._actions if "--uuid" in action.option_strings)
-    assert "0x1002" in uuid_action.help
-    assert args.uuid == 0x1002
+    assert "omit to scan" in uuid_action.help
+    assert args.uuid is None
     assert args.hci_log is True
     assert args.btsnoop == Path("sdp.cfa")
 
@@ -89,21 +89,25 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
     monkeypatch.setattr("pybluehost.cli.app.sdp_browser.run_app_command", run_app)
 
     class FakeSDPClient:
-        def __init__(self, channel):
+        def __init__(self, channel, **kwargs):
             assert channel is not None
+            assert kwargs == {"request_timeout": 1.0, "retries": 0}
 
         async def search_attributes(self, target, uuid, attr_ids=None):
             assert target is None
-            assert uuid == 0x1002
             assert attr_ids is None
-            return [{0x0100: "SPP Echo"}]
+            if uuid == 0x1002:
+                return []
+            if uuid != 0x1101:
+                return []
+            return [{0x0000: 0x00010001, 0x0100: "SPP Echo"}]
 
     monkeypatch.setattr("pybluehost.cli.app.sdp_browser.SDPClient", FakeSDPClient)
 
     args = argparse.Namespace(
         transport="usb:vendor=csr",
         target="A0:90:B5:10:40:82",
-        uuid=0x1002,
+        uuid=None,
         hci_log=True,
         btsnoop=Path("sdp.cfa"),
     )
@@ -114,6 +118,54 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
     assert "Connecting to A0:90:B5:10:40:82" in captured.out
     assert "Connected ACL handle=0x0042" in captured.out
     assert "0x0100: SPP Echo" in captured.out
+
+
+async def test_sdp_browser_default_scan_deduplicates_records(monkeypatch, capsys):
+    class FakeL2CAP:
+        async def connect_classic_channel(self, handle, psm):
+            return object()
+
+    class FakeStack:
+        l2cap = FakeL2CAP()
+
+        async def connect_classic(self, addr):
+            return 0x0042
+
+        async def authenticate_classic(self, handle):
+            pass
+
+        async def enable_classic_encryption(self, handle):
+            pass
+
+    async def run_app(_transport_arg, main_coro, **_kwargs):
+        await main_coro(FakeStack(), asyncio.Event())
+        return 0
+
+    monkeypatch.setattr("pybluehost.cli.app.sdp_browser.run_app_command", run_app)
+
+    class FakeSDPClient:
+        def __init__(self, channel, **kwargs):
+            pass
+
+        async def search_attributes(self, target, uuid, attr_ids=None):
+            if uuid in (0x1101, 0x1105):
+                return [{0x0000: 0x00010001, 0x0100: "Same Record"}]
+            return []
+
+    monkeypatch.setattr("pybluehost.cli.app.sdp_browser.SDPClient", FakeSDPClient)
+
+    args = argparse.Namespace(
+        transport="usb:vendor=csr",
+        target="A0:90:B5:10:40:82",
+        uuid=None,
+        hci_log=False,
+        btsnoop=None,
+    )
+
+    assert await _sdp_browser_main(args) == 0
+    out = capsys.readouterr().out
+    assert out.count("Record ") == 1
+    assert "Same Record" in out
 
 
 async def test_sdp_browser_accepts_custom_uuid(monkeypatch):
@@ -142,7 +194,8 @@ async def test_sdp_browser_accepts_custom_uuid(monkeypatch):
     monkeypatch.setattr("pybluehost.cli.app.sdp_browser.run_app_command", run_app)
 
     class FakeSDPClient:
-        def __init__(self, channel):
+        def __init__(self, channel, **kwargs):
+            seen["client_kwargs"] = kwargs
             pass
 
         async def search_attributes(self, target, uuid, attr_ids=None):
@@ -161,6 +214,7 @@ async def test_sdp_browser_accepts_custom_uuid(monkeypatch):
 
     assert await _sdp_browser_main(args) == 0
     assert seen["uuid"] == 0x1101
+    assert seen["client_kwargs"] == {}
 
 
 def test_cli_error_format_includes_type_for_empty_message():
