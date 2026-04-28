@@ -2076,7 +2076,7 @@ git commit -m "feat(tests): add transport report_header and fallback summary"
 **Files:**
 - Modify: `tests/integration/conftest.py`
 
-- [ ] **Step 13.1: Verify the fixtures are unused**
+- [x] **Step 13.1: Verify the fixtures are unused**
 
 ```bash
 grep -rn "vc_a\|vc_b\|hci_with_vc\|l2cap_with_hci" tests/ --include="*.py" | grep -v "tests/integration/conftest.py"
@@ -2084,14 +2084,14 @@ grep -rn "vc_a\|vc_b\|hci_with_vc\|l2cap_with_hci" tests/ --include="*.py" | gre
 
 Expected: no matches. (If something turns up, stop and update the plan.)
 
-- [ ] **Step 13.2: Replace `tests/integration/conftest.py` with a one-line note**
+- [x] **Step 13.2: Replace `tests/integration/conftest.py` with a one-line note**
 
 ```python
 # tests/integration/conftest.py
 """Integration tests rely on top-level stack/peer_stack fixtures from tests/conftest.py."""
 ```
 
-- [ ] **Step 13.3: Run integration suite**
+- [x] **Step 13.3: Run integration suite**
 
 ```bash
 uv run pytest tests/integration/ -v --transport=virtual
@@ -2099,7 +2099,7 @@ uv run pytest tests/integration/ -v --transport=virtual
 
 Expected: still passes (the existing tests use their own inline `LoopbackTransport`; they will be migrated in Tasks 16–17).
 
-- [ ] **Step 13.4: Commit**
+- [x] **Step 13.4: Commit**
 
 ```bash
 git add tests/integration/conftest.py
