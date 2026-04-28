@@ -215,9 +215,9 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 
 ---
 
-## 2026-04-28 CLI Demo Functional Closure
+## CLI Demo 功能闭环
 
-- **Plan 文档**: `docs/superpowers/plans/2026-04-28-cli-demo-functional-closure.md`
+- **Plan 文档**: `docs/superpowers/plans/cli-demo-functional-closure.md`
 - **认领人**: Codex session
 - **当前进度**: Task 1/2/3 完成；Task 4 Classic ACL/L2CAP/SDP/RFCOMM 真实链路待实现
 - **最后更新**: 2026-04-28
