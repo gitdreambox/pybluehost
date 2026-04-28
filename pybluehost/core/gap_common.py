@@ -80,6 +80,7 @@ class DeviceInfo:
     address: BDAddress
     rssi: int = 0
     name: str | None = None
+    class_of_device: int = 0
     appearance: Appearance = Appearance.UNKNOWN
     services: list[int] = field(default_factory=list)
 

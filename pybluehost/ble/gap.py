@@ -6,9 +6,10 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Callable
 
-from pybluehost.core.address import BDAddress
+from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.hci.constants import (
+    LEMetaSubEvent,
     HCI_LE_ADD_DEVICE_TO_WHITE_LIST,
     HCI_LE_CLEAR_WHITE_LIST,
     HCI_LE_CREATE_CONNECTION,
@@ -23,7 +24,7 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_SCAN_ENABLE,
     HCI_LE_SET_SCAN_PARAMS,
 )
-from pybluehost.hci.packets import HCICommand
+from pybluehost.hci.packets import HCI_LE_Meta_Event, HCICommand, HCIEvent
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +54,13 @@ class ScanResult:
     rssi: int
     advertising_data: AdvertisingData
     connectable: bool = True
+
+    @property
+    def local_name(self) -> str | None:
+        return (
+            self.advertising_data.get_complete_local_name()
+            or self.advertising_data.get_short_local_name()
+        )
 
 
 @dataclass
@@ -171,6 +179,13 @@ class BLEScanner:
     def on_result(self, handler: Callable[[ScanResult], object]) -> None:
         self._handlers.append(handler)
 
+    async def on_hci_event(self, event: HCIEvent) -> None:
+        if not isinstance(event, HCI_LE_Meta_Event):
+            return
+        if event.subevent_code != LEMetaSubEvent.LE_ADVERTISING_REPORT:
+            return
+        await self._on_legacy_advertising_report(event.subevent_parameters)
+
     async def start(self, config: ScanConfig = ScanConfig()) -> None:
         """Start scanning."""
         interval = int(config.interval_ms / 0.625)
@@ -191,6 +206,33 @@ class BLEScanner:
         """Called by HCI event router when an advertising report arrives."""
         for handler in self._handlers:
             handler(result)
+
+    async def _on_legacy_advertising_report(self, data: bytes) -> None:
+        if not data:
+            return
+        count = data[0]
+        offset = 1
+        for _ in range(count):
+            if offset + 10 > len(data):
+                return
+            event_type = data[offset]
+            address_type = data[offset + 1]
+            address = data[offset + 2 : offset + 8]
+            data_len = data[offset + 8]
+            offset += 9
+            if offset + data_len + 1 > len(data):
+                return
+            ad_data = AdvertisingData.from_bytes(data[offset : offset + data_len])
+            offset += data_len
+            rssi = struct.unpack("b", data[offset : offset + 1])[0]
+            offset += 1
+            result = ScanResult(
+                address=BDAddress(address, AddressType(address_type)),
+                rssi=rssi,
+                advertising_data=ad_data,
+                connectable=event_type in (0x00, 0x01, 0x04),
+            )
+            await self._on_advertising_report(result)
 
     async def scan_for(
         self, duration: float, config: ScanConfig = ScanConfig(),

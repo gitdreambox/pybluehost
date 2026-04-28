@@ -159,6 +159,11 @@ class Stack:
         )
         stack._gap = gap
 
+        hci.set_upstream(
+            on_hci_event=stack._on_hci_event,
+            on_acl_data=stack._on_acl_data,
+        )
+
         return stack
 
     @classmethod
@@ -218,6 +223,22 @@ class Stack:
         stack = await cls._build(host_t, config, StackMode.VIRTUAL)
         stack._local_address = vc._address
         return stack
+
+    async def _on_hci_event(self, event: Any) -> None:
+        if self._l2cap is not None:
+            await self._l2cap.on_hci_event(event)
+        if self._gap is None:
+            return
+        ble_scanner = getattr(self._gap, "ble_scanner", None)
+        if ble_scanner is not None and hasattr(ble_scanner, "on_hci_event"):
+            await ble_scanner.on_hci_event(event)
+        classic_discovery = getattr(self._gap, "classic_discovery", None)
+        if classic_discovery is not None and hasattr(classic_discovery, "on_hci_event"):
+            await classic_discovery.on_hci_event(event)
+
+    async def _on_acl_data(self, packet: Any) -> None:
+        if self._l2cap is not None:
+            await self._l2cap.on_acl_data(packet)
 
     # -- Lifecycle -----------------------------------------------------------
 
