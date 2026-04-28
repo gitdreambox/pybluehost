@@ -2593,7 +2593,7 @@ git commit -m "docs: document --transport pytest options"
 **Files:**
 - Modify: `docs/superpowers/STATUS.md`
 
-- [ ] **Step 23.1: Run full suite in default mode (autodetect → virtual on dev box)**
+- [x] **Step 23.1: Run full suite in default mode (autodetect → virtual on dev box)**
 
 ```bash
 uv run pytest tests/ -q
@@ -2604,7 +2604,7 @@ Expected:
 - All tests pass or skip cleanly (no errors)
 - Terminal summary at end shows the fallback warning with non-zero count
 
-Actual: blocked on this host because USB autodetect finds Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`) instead of falling back to virtual. The selected Intel adapter is not usable for HCI traffic in this session: raw Intel tests time out waiting for interrupt events and stack fixture setup exits with `No HCI event received within 5.0s` / `Access denied`. See Troubleshooting entry below.
+Actual: PASS. This host enumerates Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`), but the selected Intel adapter cannot initialize reliably in this session. Autodetect now probes hardware usability and falls back to virtual when the probe fails; the default run exits 0 and prints the fallback summary (`14 tests ran on virtual`).
 
 - [x] **Step 23.2: Run full suite explicitly on virtual (CI scenario)**
 
@@ -2654,7 +2654,7 @@ Expected: 0 matches across all three.
 
 Actual: 0 matches.
 
-- [ ] **Step 23.6: Update `docs/superpowers/STATUS.md`**
+- [x] **Step 23.6: Update `docs/superpowers/STATUS.md`**
 
 Add a row to the "Plan 总览" table for "Pytest Transport Selection" with status ✅, and append a detail block at the end:
 
@@ -2672,7 +2672,7 @@ Add a row to the "Plan 总览" table for "Pytest Transport Selection" with statu
   - CI 切换为 `--transport=virtual`
 ```
 
-- [ ] **Step 23.7: Final commit**
+- [x] **Step 23.7: Final commit**
 
 ```bash
 git add docs/superpowers/STATUS.md docs/superpowers/plans/pytest-transport-selection.md
@@ -2691,10 +2691,10 @@ git commit -m "docs(progress): mark pytest transport selection plan complete"
 - **解决方案**：For Task 2, verify the new virtual-controller behavior with targeted tests and broad non-hardware collection/run using `uv run pytest tests/ -q --ignore=tests/hardware`. Re-run full-suite verification after the later marker enforcement tasks land.
 - **记录人**：Codex session，2026-04-27
 
-### Q: Task 23 default-mode full suite is blocked by unusable autodetected USB hardware
-- **现象**：`uv run --frozen pytest tests/ -q` does not fall back to virtual on this host because autodetect finds Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`). The run then fails in `tests/hardware/test_intel_hw.py` with USB interrupt timeouts, and stack fixture setup can exit with `No HCI event received within 5.0s` / `Access denied`.
-- **原因**：The Task 23 acceptance command assumes a no-hardware development box. This host has detectable USB adapters, but the selected Intel adapter is not usable for reliable HCI traffic in the current session.
-- **解决方案**：Explicit CI path is verified with `uv run --frozen pytest tests/ -q --transport=virtual --cov=pybluehost --cov-fail-under=85` (PASS, coverage 85.03%). Default-mode completion remains blocked until the hardware is unplugged/disabled, the WinUSB/firmware state is repaired, or autodetect gains a usability probe before choosing USB.
+### Q: Task 23 default-mode full suite initially picked unusable autodetected USB hardware
+- **现象**：`uv run --frozen pytest tests/ -q` originally did not fall back to virtual on this host because autodetect found Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`). The run then failed in `tests/hardware/test_intel_hw.py` with USB interrupt timeouts, and stack fixture setup could exit with `No HCI event received within 5.0s` / `Access denied`.
+- **原因**：The host has detectable USB adapters, but the selected Intel adapter is not usable for reliable HCI traffic in the current session. Enumeration alone is not enough to decide that hardware is available.
+- **解决方案**：Autodetect now probes whether the selected hardware spec can initialize and close a `Stack`; if the probe fails, default mode falls back to virtual and records the fallback summary. Explicit `--transport=usb...` still fails loudly instead of falling back.
 - **记录人**：Codex session，2026-04-28
 
 ### Q: `--transport-peer` mismatch was not enforced unless peer fixtures were requested
