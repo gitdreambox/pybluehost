@@ -203,6 +203,76 @@ async def test_connect_classic_channel_opens_dynamic_channel(manager):
     assert m.get_fixed_channel(0x0042, source_cid) is channel
 
 
+async def test_connect_classic_channel_waits_through_pending_response(manager):
+    m, hci = manager
+    await m.on_connection(handle=0x0042, link_type=LinkType.ACL,
+                          peer_address=None, role=None)
+
+    connect_task = asyncio.create_task(
+        m.connect_classic_channel(handle=0x0042, psm=PSM_SDP)
+    )
+    await asyncio.sleep(0)
+
+    request = decode_signaling(hci.sent[0][2][4:])
+    _psm, source_cid = struct.unpack_from("<HH", request.data)
+    pending_rsp = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONNECTION_RESPONSE,
+            identifier=request.identifier,
+            data=struct.pack("<HHHH", 0x0041, source_cid, 0x0001, 0x0000),
+        )
+    )
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(pending_rsp), CID_CLASSIC_SIGNALING) + pending_rsp,
+        )
+    )
+    await asyncio.sleep(0.01)
+
+    assert not connect_task.done()
+    assert len(hci.sent) == 1
+
+    success_rsp = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONNECTION_RESPONSE,
+            identifier=request.identifier,
+            data=struct.pack("<HHHH", 0x0041, source_cid, 0x0000, 0x0000),
+        )
+    )
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(success_rsp), CID_CLASSIC_SIGNALING) + success_rsp,
+        )
+    )
+    for _ in range(10):
+        if len(hci.sent) >= 2:
+            break
+        await asyncio.sleep(0.01)
+
+    config = decode_signaling(hci.sent[1][2][4:])
+    config_rsp = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONFIGURE_RESPONSE,
+            identifier=config.identifier,
+            data=struct.pack("<HHH", source_cid, 0x0000, 0x0000),
+        )
+    )
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(config_rsp), CID_CLASSIC_SIGNALING) + config_rsp,
+        )
+    )
+
+    channel = await asyncio.wait_for(connect_task, timeout=0.5)
+    assert channel.state == ChannelState.OPEN
+
+
 async def test_listen_classic_channel_accepts_incoming_connection(manager):
     m, hci = manager
     await m.on_connection(handle=0x0042, link_type=LinkType.ACL,
@@ -229,7 +299,7 @@ async def test_listen_classic_channel_accepts_incoming_connection(manager):
         )
     )
 
-    assert len(hci.sent) == 1
+    assert len(hci.sent) == 2
     response = decode_signaling(hci.sent[0][2][4:])
     assert response.code == SignalingCode.CONNECTION_RESPONSE
     dest_cid, source_cid, result, status = struct.unpack_from("<HHHH", response.data)
@@ -237,6 +307,9 @@ async def test_listen_classic_channel_accepts_incoming_connection(manager):
     assert source_cid == 0x0041
     assert result == 0
     assert status == 0
+    local_config = decode_signaling(hci.sent[1][2][4:])
+    assert local_config.code == SignalingCode.CONFIGURE_REQUEST
+    assert struct.unpack_from("<HH", local_config.data) == (0x0041, 0x0000)
 
     config = encode_signaling(
         SignalingPacket(
@@ -253,8 +326,8 @@ async def test_listen_classic_channel_accepts_incoming_connection(manager):
         )
     )
 
-    assert len(hci.sent) == 2
-    config_response = decode_signaling(hci.sent[1][2][4:])
+    assert len(hci.sent) == 3
+    config_response = decode_signaling(hci.sent[2][2][4:])
     assert config_response.code == SignalingCode.CONFIGURE_RESPONSE
     assert struct.unpack_from("<HHH", config_response.data) == (0x0041, 0x0000, 0x0000)
     assert len(accepted) == 1

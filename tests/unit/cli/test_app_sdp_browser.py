@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from pybluehost.cli.app.sdp_browser import _sdp_browser_main, register_sdp_browser_command
+from pybluehost.cli._lifecycle import _format_cli_error
 
 
 def test_sdp_browser_parser_has_target_example_and_trace_options():
@@ -57,15 +58,28 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
     class FakeStack:
         def __init__(self):
             self.l2cap = FakeL2CAP()
+            self.authenticated = False
+            self.encrypted = False
 
         async def connect_classic(self, addr):
             assert str(addr) == "A0:90:B5:10:40:82"
             return 0x0042
 
+        async def authenticate_classic(self, handle):
+            assert handle == 0x0042
+            self.authenticated = True
+
+        async def enable_classic_encryption(self, handle):
+            assert handle == 0x0042
+            assert self.authenticated is True
+            self.encrypted = True
+
     async def run_app(transport_arg, main_coro, **kwargs):
         assert transport_arg == "usb:vendor=csr"
         assert kwargs == {"hci_log": True, "btsnoop": Path("sdp.cfa")}
-        await main_coro(FakeStack(), asyncio.Event())
+        stack = FakeStack()
+        await main_coro(stack, asyncio.Event())
+        assert stack.encrypted is True
         return 0
 
     monkeypatch.setattr("pybluehost.cli.app.sdp_browser.run_app_command", run_app)
@@ -94,3 +108,7 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
     assert "Connecting to A0:90:B5:10:40:82" in captured.out
     assert "Connected ACL handle=0x0042" in captured.out
     assert "0x0100: SPP Echo" in captured.out
+
+
+def test_cli_error_format_includes_type_for_empty_message():
+    assert _format_cli_error(TimeoutError()) == "TimeoutError"

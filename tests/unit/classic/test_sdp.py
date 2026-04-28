@@ -1,6 +1,7 @@
 """Tests for the SDP (Service Discovery Protocol) module."""
 from __future__ import annotations
 
+import asyncio
 import struct
 from pybluehost.l2cap.channel import SimpleChannelEvents
 
@@ -238,3 +239,58 @@ async def test_sdp_client_find_rfcomm_channel_over_l2cap_channel():
     channel = await client.find_rfcomm_channel(target=None, service_uuid=0x1101)
 
     assert channel == 7
+
+
+async def test_sdp_client_retries_once_after_request_timeout():
+    server = SDPServer()
+    server.register(make_rfcomm_service_record(service_uuid=0x1101, channel=3, name="SPP"))
+
+    class FakeChannel:
+        def __init__(self):
+            self.events = None
+            self.sent = []
+
+        def set_events(self, events):
+            self.events = events
+
+        async def send(self, data):
+            self.sent.append(data)
+            if len(self.sent) == 2:
+                await self.events.on_data(server.handle_pdu(data))
+
+    channel = FakeChannel()
+    client = SDPClient(channel, request_timeout=0.01, retries=1)
+
+    records = await client.search_attributes(
+        target=None,
+        uuid=0x1101,
+        attr_ids=[0x0004],
+    )
+
+    assert len(records) == 1
+    assert len(channel.sent) == 2
+    assert client._pending == {}
+
+
+async def test_sdp_client_uses_conservative_default_max_attribute_byte_count():
+    class FakeChannel:
+        def __init__(self):
+            self.events = None
+            self.sent = []
+
+        def set_events(self, events):
+            self.events = events
+
+        async def send(self, data):
+            self.sent.append(data)
+
+    channel = FakeChannel()
+    client = SDPClient(channel, request_timeout=0.01, retries=0)
+
+    try:
+        await client.search_attributes(target=None, uuid=0x1101, attr_ids=[0x0004])
+    except TimeoutError:
+        pass
+
+    assert b"\x00\xff" in channel.sent[0]
+    assert b"\xff\xff" not in channel.sent[0]

@@ -85,6 +85,8 @@ class Stack:
         self._config: StackConfig = StackConfig()
         self._le_connection_waiters: list[asyncio.Future[int]] = []
         self._classic_connection_waiters: list[asyncio.Future[int]] = []
+        self._classic_auth_waiters: dict[int, list[asyncio.Future[None]]] = {}
+        self._classic_encryption_waiters: dict[int, list[asyncio.Future[None]]] = {}
         self._connection_event_handlers: list[Callable[[StackConnectionEvent], object]] = []
 
     # -- Factory methods -----------------------------------------------------
@@ -117,6 +119,8 @@ class Stack:
         from pybluehost.core.trace import TraceSystem
         from pybluehost.gap import GAP
         from pybluehost.hci.controller import HCIController
+        from pybluehost.l2cap.channel import SimpleChannelEvents
+        from pybluehost.l2cap.constants import PSM_SDP
         from pybluehost.l2cap.manager import L2CAPManager
 
         cfg = config or StackConfig()
@@ -163,6 +167,14 @@ class Stack:
         # 6. Classic layers
         sdp = SDPServer()
         stack._sdp = sdp
+
+        def on_sdp_channel(channel: Any) -> None:
+            async def on_sdp_data(data: bytes) -> None:
+                await channel.send(sdp.handle_pdu(data))
+
+            channel.set_events(SimpleChannelEvents(on_data=on_sdp_data))
+
+        l2cap.listen_classic_channel(PSM_SDP, on_sdp_channel)
         rfcomm = RFCOMMManager(l2cap=l2cap)
         stack._rfcomm = rfcomm
 
@@ -259,6 +271,9 @@ class Stack:
         classic_discovery = getattr(self._gap, "classic_discovery", None)
         if classic_discovery is not None and hasattr(classic_discovery, "on_hci_event"):
             await classic_discovery.on_hci_event(event)
+        classic_ssp = getattr(self._gap, "classic_ssp", None)
+        if classic_ssp is not None and hasattr(classic_ssp, "on_hci_event"):
+            await classic_ssp.on_hci_event(event)
 
     async def _on_acl_data(self, packet: Any) -> None:
         if self._l2cap is not None:
@@ -303,13 +318,40 @@ class Stack:
         self._connection_event_handlers.append(handler)
 
     def _handle_connection_event(self, event: Any) -> None:
-        from pybluehost.hci.constants import ErrorCode, LEMetaSubEvent
+        from pybluehost.hci.constants import ErrorCode, EventCode, LEMetaSubEvent
         from pybluehost.hci.packets import (
             HCI_Connection_Complete_Event,
             HCI_Disconnection_Complete_Event,
             HCI_LE_Meta_Event,
         )
 
+        if getattr(event, "event_code", None) == EventCode.AUTH_COMPLETE:
+            params = getattr(event, "parameters", b"")
+            if len(params) >= 3:
+                status = params[0]
+                handle = int.from_bytes(params[1:3], "little")
+                self._complete_classic_waiters(
+                    self._classic_auth_waiters,
+                    handle,
+                    status,
+                    "Classic authentication failed",
+                )
+            return
+        if getattr(event, "event_code", None) == EventCode.ENCRYPTION_CHANGE:
+            params = getattr(event, "parameters", b"")
+            if len(params) >= 4:
+                status = params[0]
+                handle = int.from_bytes(params[1:3], "little")
+                encryption_enabled = params[3] != 0
+                if status == ErrorCode.SUCCESS and not encryption_enabled:
+                    status = ErrorCode.ENCRYPTION_MODE_NOT_ACCEPTABLE
+                self._complete_classic_waiters(
+                    self._classic_encryption_waiters,
+                    handle,
+                    status,
+                    "Classic encryption failed",
+                )
+            return
         if isinstance(event, HCI_Disconnection_Complete_Event):
             if event.status == ErrorCode.SUCCESS:
                 self._emit_connection_event(
@@ -373,6 +415,24 @@ class Stack:
                 if not waiter.done():
                     waiter.set_exception(error)
 
+    def _complete_classic_waiters(
+        self,
+        waiters_by_handle: dict[int, list[asyncio.Future[None]]],
+        handle: int,
+        status: int,
+        message: str,
+    ) -> None:
+        waiters = waiters_by_handle.pop(handle, [])
+        if status == 0:
+            for waiter in waiters:
+                if not waiter.done():
+                    waiter.set_result(None)
+            return
+        error = RuntimeError(f"{message}: {_hci_status_text(status)}")
+        for waiter in waiters:
+            if not waiter.done():
+                waiter.set_exception(error)
+
     def _emit_connection_event(self, event: StackConnectionEvent) -> None:
         for handler in list(self._connection_event_handlers):
             handler(event)
@@ -433,6 +493,58 @@ class Stack:
                 waiter.cancel()
             with contextlib.suppress(ValueError):
                 self._classic_connection_waiters.remove(waiter)
+
+    async def authenticate_classic(
+        self,
+        handle: int,
+        *,
+        timeout: float = 10.0,
+    ) -> None:
+        """Authenticate an existing Classic ACL link and wait for completion."""
+        if self._gap is None:
+            raise RuntimeError("Stack is not initialized")
+
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[None] = loop.create_future()
+        self._classic_auth_waiters.setdefault(handle, []).append(waiter)
+        try:
+            await self._gap.classic_connections.authenticate(handle)
+            await asyncio.wait_for(waiter, timeout=timeout)
+        finally:
+            if not waiter.done():
+                waiter.cancel()
+            waiters = self._classic_auth_waiters.get(handle)
+            if waiters is not None:
+                with contextlib.suppress(ValueError):
+                    waiters.remove(waiter)
+                if not waiters:
+                    self._classic_auth_waiters.pop(handle, None)
+
+    async def enable_classic_encryption(
+        self,
+        handle: int,
+        *,
+        timeout: float = 10.0,
+    ) -> None:
+        """Enable encryption on an existing Classic ACL link and wait for completion."""
+        if self._gap is None:
+            raise RuntimeError("Stack is not initialized")
+
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[None] = loop.create_future()
+        self._classic_encryption_waiters.setdefault(handle, []).append(waiter)
+        try:
+            await self._gap.classic_connections.set_encryption(handle, enabled=True)
+            await asyncio.wait_for(waiter, timeout=timeout)
+        finally:
+            if not waiter.done():
+                waiter.cancel()
+            waiters = self._classic_encryption_waiters.get(handle)
+            if waiters is not None:
+                with contextlib.suppress(ValueError):
+                    waiters.remove(waiter)
+                if not waiters:
+                    self._classic_encryption_waiters.pop(handle, None)
 
     # -- Lifecycle -----------------------------------------------------------
 

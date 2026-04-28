@@ -1,6 +1,7 @@
 """Classic GAP — inquiry, discoverability, connections, and SSP."""
 from __future__ import annotations
 
+import asyncio
 import struct
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -11,11 +12,14 @@ from pybluehost.core.gap_common import ClassOfDevice, DeviceInfo
 from pybluehost.hci.constants import (
     EventCode,
     HCI_ACCEPT_CONNECTION_REQ,
+    HCI_AUTH_REQUESTED,
     HCI_CREATE_CONNECTION,
     HCI_INQUIRY,
     HCI_INQUIRY_CANCEL,
     HCI_IO_CAPABILITY_REQUEST_REPLY,
+    HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY,
     HCI_REMOTE_NAME_REQUEST,
+    HCI_SET_CONNECTION_ENCRYPTION,
     HCI_USER_CONFIRMATION_REQUEST_REPLY,
     HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
     HCI_WRITE_CLASS_OF_DEVICE,
@@ -226,6 +230,21 @@ class ClassicConnectionManager:
         await self._hci.send_command(_make_cmd(HCI_DISCONNECT, params))
         self._connections.pop(handle, None)
 
+    async def authenticate(self, handle: int) -> None:
+        """Request Classic link authentication for an ACL handle."""
+        await self._hci.send_command(
+            _make_cmd(HCI_AUTH_REQUESTED, struct.pack("<H", handle))
+        )
+
+    async def set_encryption(self, handle: int, enabled: bool = True) -> None:
+        """Enable or disable Classic link encryption for an ACL handle."""
+        await self._hci.send_command(
+            _make_cmd(
+                HCI_SET_CONNECTION_ENCRYPTION,
+                struct.pack("<HB", handle, 0x01 if enabled else 0x00),
+            )
+        )
+
 
 # ---------------------------------------------------------------------------
 # SSPManager
@@ -238,6 +257,7 @@ class SSPManager:
         self._hci = hci
         self._io_capability: int = 0x03  # NoInputNoOutput
         self._confirm_handler: Callable[[BDAddress, int], bool] | None = None
+        self._pending_replies: set[asyncio.Task[object]] = set()
 
     def set_io_capability(self, cap: int) -> None:
         """Set local IO capability (0x00=Display+Yes/No, 0x03=NoInputNoOutput, etc.)."""
@@ -250,18 +270,41 @@ class SSPManager:
         self._confirm_handler = handler
 
     async def reply_io_capability(
-        self, address: BDAddress, oob_present: bool = False
+        self, address: BDAddress, oob_present: bool = False, auth_req: int = 0x00
     ) -> None:
         """Reply to an IO Capability Request event."""
         params = (
             address.address
             + bytes([self._io_capability])
             + bytes([0x01 if oob_present else 0x00])
-            + bytes([0x05])  # auth req: MITM + Bonding
+            + bytes([auth_req])
         )
         await self._hci.send_command(
             _make_cmd(HCI_IO_CAPABILITY_REQUEST_REPLY, params)
         )
+
+    async def on_hci_event(self, event: HCIEvent) -> None:
+        """Handle Classic SSP HCI events that require host replies."""
+        if event.event_code == EventCode.IO_CAPABILITY_REQUEST:
+            self._schedule_reply(
+                self.reply_io_capability(BDAddress(event.parameters[:6]))
+            )
+            return
+        if event.event_code == EventCode.LINK_KEY_REQUEST:
+            self._schedule_reply(
+                self.reply_link_key_negative(BDAddress(event.parameters[:6]))
+            )
+            return
+        if event.event_code == EventCode.USER_CONFIRMATION_REQUEST:
+            address = BDAddress(event.parameters[:6])
+            numeric_value = int.from_bytes(event.parameters[6:10], "little")
+            accepted = True
+            if self._confirm_handler is not None:
+                accepted = self._confirm_handler(address, numeric_value)
+            if accepted:
+                self._schedule_reply(self.confirm(address))
+            else:
+                self._schedule_reply(self.deny(address))
 
     async def confirm(self, address: BDAddress) -> None:
         """Accept a user confirmation request (numeric comparison)."""
@@ -276,3 +319,14 @@ class SSPManager:
                 HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY, address.address
             )
         )
+
+    async def reply_link_key_negative(self, address: BDAddress) -> None:
+        """Tell the controller that no stored link key is available."""
+        await self._hci.send_command(
+            _make_cmd(HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY, address.address)
+        )
+
+    def _schedule_reply(self, coro: object) -> None:
+        task = asyncio.create_task(coro)
+        self._pending_replies.add(task)
+        task.add_done_callback(self._pending_replies.discard)
