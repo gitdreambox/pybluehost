@@ -186,6 +186,45 @@ def test_primary_resolution_is_cached_per_config(
     assert calls == 1
 
 
+def test_autodetected_usb_falls_back_to_virtual_when_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
+    monkeypatch.setattr(
+        project_conftest,
+        "autodetect_primary",
+        lambda: "usb:vendor=intel,bus=1,address=4",
+    )
+    monkeypatch.setattr(
+        project_conftest,
+        "_probe_autodetected_spec_usable",
+        lambda spec: False,
+    )
+
+    assert project_conftest._resolve_primary_spec(_Config()) == "virtual"
+
+
+def test_autodetected_usb_keeps_hardware_when_probe_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
+    monkeypatch.setattr(
+        project_conftest,
+        "autodetect_primary",
+        lambda: "usb:vendor=intel,bus=1,address=4",
+    )
+    monkeypatch.setattr(
+        project_conftest,
+        "_probe_autodetected_spec_usable",
+        lambda spec: True,
+    )
+
+    assert (
+        project_conftest._resolve_primary_spec(_Config())
+        == "usb:vendor=intel,bus=1,address=4"
+    )
+
+
 def test_explicit_usb_primary_normalizes_to_concrete_adapter_and_peer_second(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

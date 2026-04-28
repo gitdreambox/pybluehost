@@ -1,6 +1,7 @@
 """Shared pytest fixtures and hooks for PyBlueHost test suite."""
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -114,6 +115,11 @@ def _resolve_primary_spec(config: pytest.Config) -> str:
     except InvalidSpec as exc:
         pytest.exit(f"Invalid transport spec: {spec!r} - {exc}", returncode=4)
 
+    if autodetected and family_of_spec in {"usb", "uart"}:
+        if not _probe_autodetected_spec_usable(spec):
+            spec = "virtual"
+            family_of_spec = "virtual"
+
     if not autodetected and family_of_spec in {"usb", "uart"}:
         try:
             verified_spec = _verify_spec_available(spec)
@@ -127,6 +133,26 @@ def _resolve_primary_spec(config: pytest.Config) -> str:
 
     setattr(config, _PRIMARY_CACHE_ATTR, spec)
     return spec
+
+
+def _probe_autodetected_spec_usable(spec: str) -> bool:
+    """Return whether an autodetected hardware transport can initialize a Stack."""
+    try:
+        return asyncio.run(_probe_stack_open_close(spec))
+    except RuntimeError:
+        return False
+
+
+async def _probe_stack_open_close(spec: str) -> bool:
+    stack = None
+    try:
+        stack = await _build_stack_from_spec(spec)
+    except Exception:
+        return False
+    finally:
+        if stack is not None:
+            await stack.close()
+    return True
 
 
 def _verify_spec_available(spec: str) -> str | None:
