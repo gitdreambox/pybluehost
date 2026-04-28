@@ -2149,7 +2149,7 @@ git commit -m "refactor(tests): drop --hardware flag and hardware_required fixtu
 **Files:**
 - Modify: `tests/e2e/conftest.py`
 
-- [ ] **Step 15.1: Verify nobody else uses `single_loopback_stack`**
+- [x] **Step 15.1: Verify nobody else uses `single_loopback_stack`**
 
 ```bash
 grep -rn "single_loopback_stack" tests/ --include="*.py" | grep -v "tests/e2e/conftest.py"
@@ -2157,14 +2157,16 @@ grep -rn "single_loopback_stack" tests/ --include="*.py" | grep -v "tests/e2e/co
 
 Expected: no matches.
 
-- [ ] **Step 15.2: Replace contents**
+Actual: current code used `single_virtual_stack`; no matches existed outside `tests/e2e/conftest.py`.
+
+- [x] **Step 15.2: Replace contents**
 
 ```python
 # tests/e2e/conftest.py
 """E2E tests rely on the top-level stack fixture from tests/conftest.py."""
 ```
 
-- [ ] **Step 15.3: Confirm**
+- [x] **Step 15.3: Confirm**
 
 ```bash
 uv run pytest tests/e2e/ -q --transport=virtual
@@ -2172,7 +2174,9 @@ uv run pytest tests/e2e/ -q --transport=virtual
 
 Expected: 0 tests run, 0 errors.
 
-- [ ] **Step 15.4: Commit**
+Actual: `tests/e2e/` contains no tests, so pytest returned exit 5 with no errors. Full-suite collection with `--transport=virtual` passed.
+
+- [x] **Step 15.4: Commit**
 
 ```bash
 git add tests/e2e/conftest.py
