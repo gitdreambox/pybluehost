@@ -14,6 +14,19 @@ def test_parse_explicit_public():
     assert atype == AddressType.PUBLIC
 
 
+def test_parse_compact_default_public():
+    addr, atype = parse_target_arg("1A8D8D1BF56B")
+    assert str(addr) == "1A:8D:8D:1B:F5:6B"
+    assert atype == AddressType.PUBLIC
+
+
+def test_parse_compact_random():
+    addr, atype = parse_target_arg("1A8D8D1BF56B/random")
+    assert str(addr) == "1A:8D:8D:1B:F5:6B"
+    assert atype == AddressType.RANDOM
+    assert addr.type == AddressType.RANDOM
+
+
 def test_parse_random():
     addr, atype = parse_target_arg("AA:BB:CC:DD:EE:FF/random")
     assert atype == AddressType.RANDOM

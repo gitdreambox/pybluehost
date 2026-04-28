@@ -36,6 +36,7 @@ def test_sdp_browser_parser_has_target_example_and_trace_options():
     )
     target_action = next(action for action in sdp_parser._actions if "--target" in action.option_strings)
     assert "A0:90:B5:10:40:82" in target_action.help
+    assert "A090B5104082" in target_action.help
     assert args.hci_log is True
     assert args.btsnoop == Path("sdp.cfa")
 
