@@ -5,7 +5,7 @@ import asyncio
 import struct
 from dataclasses import dataclass, field
 from enum import IntFlag
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 from pybluehost.core.uuid import UUID16, UUID128
 from pybluehost.ble.att import (
@@ -176,6 +176,8 @@ class GATTServer:
     def __init__(self) -> None:
         self.db = AttributeDatabase()
         self._notification_callback: Callable | None = None
+        self._read_handlers: dict[int, Callable[[], bytes | Awaitable[bytes]]] = {}
+        self._write_handlers: dict[int, Callable[[bytes], object | Awaitable[object]]] = {}
         # conn_handle -> set of value_handles with notifications enabled
         self._notifications_enabled: dict[int, set[int]] = {}
 
@@ -227,9 +229,9 @@ class GATTServer:
     async def handle_request(self, conn_handle: int, pdu: ATTPdu) -> ATTPdu:
         """Handle an incoming ATT request, return the response PDU."""
         if isinstance(pdu, ATT_Read_Request):
-            return self._handle_read(pdu)
+            return await self._handle_read(pdu)
         elif isinstance(pdu, ATT_Write_Request):
-            return self._handle_write(conn_handle, pdu)
+            return await self._handle_write(conn_handle, pdu)
         elif isinstance(pdu, ATT_Exchange_MTU_Request):
             return ATT_Exchange_MTU_Response(server_rx_mtu=512)
         elif isinstance(pdu, ATT_Read_By_Group_Type_Request):
@@ -243,7 +245,7 @@ class GATTServer:
             error_code=0x06,  # Request Not Supported
         )
 
-    def _handle_read(self, pdu: ATT_Read_Request) -> ATTPdu:
+    async def _handle_read(self, pdu: ATT_Read_Request) -> ATTPdu:
         attr = self.db.get(pdu.attribute_handle)
         if attr is None:
             return ATT_Error_Response(
@@ -257,9 +259,15 @@ class GATTServer:
                 attribute_handle_in_error=pdu.attribute_handle,
                 error_code=0x02,  # Read Not Permitted
             )
+        handler = self._read_handlers.get(pdu.attribute_handle)
+        if handler is not None:
+            value = handler()
+            if asyncio.iscoroutine(value):
+                value = await value
+            attr.value = value
         return ATT_Read_Response(attribute_value=attr.value)
 
-    def _handle_write(self, conn_handle: int, pdu: ATT_Write_Request) -> ATTPdu:
+    async def _handle_write(self, conn_handle: int, pdu: ATT_Write_Request) -> ATTPdu:
         attr = self.db.get(pdu.attribute_handle)
         if attr is None:
             return ATT_Error_Response(
@@ -283,6 +291,11 @@ class GATTServer:
             else:
                 self.disable_notifications(conn_handle, value_handle)
         attr.value = pdu.attribute_value
+        handler = self._write_handlers.get(pdu.attribute_handle)
+        if handler is not None:
+            result = handler(pdu.attribute_value)
+            if asyncio.iscoroutine(result):
+                await result
         return ATT_Write_Response()
 
     def _handle_read_by_group_type(self, pdu: ATT_Read_By_Group_Type_Request) -> ATTPdu:
@@ -357,6 +370,20 @@ class GATTServer:
 
     def on_notification_sent(self, handler: Callable) -> None:
         self._notification_callback = handler
+
+    def register_read_handler(
+        self,
+        handle: int,
+        handler: Callable[[], bytes | Awaitable[bytes]],
+    ) -> None:
+        self._read_handlers[handle] = handler
+
+    def register_write_handler(
+        self,
+        handle: int,
+        handler: Callable[[bytes], object | Awaitable[object]],
+    ) -> None:
+        self._write_handlers[handle] = handler
 
     async def notify(self, handle: int, value: bytes, connections: list[int] | None = None) -> None:
         """Send a notification to all subscribed connections (or specified ones)."""

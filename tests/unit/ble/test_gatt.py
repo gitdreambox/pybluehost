@@ -90,6 +90,25 @@ async def test_gatt_server_handle_read_request():
     assert response.attribute_value == b"\x42"
 
 
+async def test_gatt_server_read_request_uses_bound_handler():
+    server = GATTServer()
+    svc = ServiceDefinition(uuid=UUID16(0x180D), characteristics=[
+        CharacteristicDefinition(uuid=UUID16(0x2A38), properties=CharProperties.READ,
+                                  permissions=Permissions.READABLE, value=b"\x01")
+    ])
+    server.add_service(svc)
+
+    async def read_location():
+        return b"\x02"
+
+    server.register_read_handler(0x0003, read_location)
+    response = await server.handle_request(conn_handle=0x0001, pdu=ATT_Read_Request(attribute_handle=0x0003))
+
+    assert isinstance(response, ATT_Read_Response)
+    assert response.attribute_value == b"\x02"
+    assert server.db.read(0x0003) == b"\x02"
+
+
 async def test_gatt_server_handle_read_not_found():
     server = GATTServer()
     req = ATT_Read_Request(attribute_handle=0x9999)
@@ -109,6 +128,29 @@ async def test_gatt_server_handle_write_request():
     response = await server.handle_request(conn_handle=0x0001, pdu=req)
     assert isinstance(response, ATT_Write_Response)
     assert server.db.read(0x0003) == b"\xFF"
+
+
+async def test_gatt_server_write_request_uses_bound_handler():
+    server = GATTServer()
+    svc = ServiceDefinition(uuid=UUID16(0x180D), characteristics=[
+        CharacteristicDefinition(uuid=UUID16(0x2A39), properties=CharProperties.WRITE,
+                                  permissions=Permissions.WRITABLE, value=b"")
+    ])
+    server.add_service(svc)
+    writes = []
+
+    async def write_control_point(value: bytes):
+        writes.append(value)
+
+    server.register_write_handler(0x0003, write_control_point)
+    response = await server.handle_request(
+        conn_handle=0x0001,
+        pdu=ATT_Write_Request(attribute_handle=0x0003, attribute_value=b"\x01"),
+    )
+
+    assert isinstance(response, ATT_Write_Response)
+    assert writes == [b"\x01"]
+    assert server.db.read(0x0003) == b"\x01"
 
 
 async def test_gatt_server_handle_exchange_mtu():

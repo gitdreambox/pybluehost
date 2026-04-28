@@ -20,8 +20,16 @@ class BLEProfileServer(ABC):
 
     service_uuid: UUID16 | UUID128
 
+    def __init__(self) -> None:
+        self._gatt_server: GATTServer | None = None
+        self._notify_value_handles: dict[UUID16 | UUID128, int] = {}
+        self._notify_methods: dict[UUID16 | UUID128, str] = {}
+
     async def register(self, gatt_server: GATTServer) -> ServiceHandles:
         """Register the service and bind decorated callbacks into the GATT DB."""
+        self._gatt_server = gatt_server
+        self._notify_value_handles = {}
+        self._notify_methods = {}
         svc_def = self._build_service_definition()
         handles = gatt_server.add_service(svc_def)
 
@@ -37,8 +45,37 @@ class BLEProfileServer(ABC):
                     bound = getattr(self, name)
                     value = await bound()
                     gatt_server.db.write(handle, value)
+                    gatt_server.register_read_handler(handle, bound)
+            if hasattr(method, "_att_write"):
+                uuid = method._att_write
+                handle = gatt_server.find_characteristic_value_handle(uuid)
+                if handle is not None:
+                    bound = getattr(self, name)
+                    gatt_server.register_write_handler(handle, bound)
+            if hasattr(method, "_att_notify"):
+                uuid = method._att_notify
+                handle = gatt_server.find_characteristic_value_handle(uuid)
+                if handle is not None:
+                    self._notify_value_handles[uuid] = handle
+                    self._notify_methods[uuid] = name
 
         return handles
+
+    async def notify(
+        self,
+        uuid: UUID16 | UUID128,
+        connections: list[int] | None = None,
+    ) -> None:
+        """Refresh and notify a characteristic backed by an ``@on_notify`` method."""
+        if getattr(self, "_gatt_server", None) is None:
+            return
+        handle = getattr(self, "_notify_value_handles", {}).get(uuid)
+        method_name = getattr(self, "_notify_methods", {}).get(uuid)
+        if handle is None or method_name is None:
+            return
+        value = await getattr(self, method_name)()
+        self._gatt_server.db.write(handle, value)
+        await self._gatt_server.notify(handle=handle, value=value, connections=connections)
 
     def _build_service_definition(self):
         """Introspect decorated methods and build a ServiceDefinition."""

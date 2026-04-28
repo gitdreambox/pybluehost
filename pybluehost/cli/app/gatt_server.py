@@ -1,11 +1,12 @@
 # pybluehost/cli/app/gatt_server.py
-"""'app gatt-server' — register Battery + HRS, await connections."""
+"""'app gatt-server' - register Battery + HRS, advertise, await connections."""
 from __future__ import annotations
 
 import argparse
 import asyncio
 
 from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
+from pybluehost.cli.app._ble_peripheral import start_connectable_advertising, stop_advertising
 from pybluehost.profiles.ble import BatteryServer, HeartRateServer
 from pybluehost.stack import Stack
 
@@ -24,7 +25,15 @@ async def _gatt_server_main(stack: Stack, stop: asyncio.Event) -> None:
     hrs = HeartRateServer(sensor_location=0x02)
     await battery.register(stack.gatt_server)
     await hrs.register(stack.gatt_server)
-    print(f"GATT server up: BatteryServer + HeartRateServer registered")
+    await start_connectable_advertising(
+        stack,
+        service_uuids=[0x180F, 0x180D],
+        local_name="PyBlueHost GATT",
+    )
+    print("GATT server up: BatteryServer + HeartRateServer registered")
     print(f"Local address: {stack.local_address}")
-    print("Awaiting connections — Ctrl+C to stop")
-    await stop.wait()
+    print("Advertising connectable BLE peripheral; Ctrl+C to stop")
+    try:
+        await stop.wait()
+    finally:
+        await stop_advertising(stack)

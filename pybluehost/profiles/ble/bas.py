@@ -22,6 +22,7 @@ class BatteryServer(BLEProfileServer):
 
     async def update_level(self, level: int) -> None:
         self._level = level
+        await self.notify(UUID16(0x2A19))
 
 
 class BatteryClient(BLEProfileClient):

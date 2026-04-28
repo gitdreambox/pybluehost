@@ -97,6 +97,24 @@ async def test_bas_update_level():
     assert data == bytes([50])
 
 
+async def test_bas_update_level_refreshes_gatt_value_and_notifies():
+    from pybluehost.profiles.ble.bas import BatteryServer
+
+    server = BatteryServer(initial_level=50)
+    gatt = GATTServer()
+    await server.register(gatt)
+    handle = gatt.find_characteristic_value_handle(UUID16(0x2A19))
+    assert handle is not None
+    notifications = []
+    gatt.on_notification_sent(lambda h, value, conn: notifications.append((h, value, conn)))
+    gatt.enable_notifications(conn_handle=0x0040, value_handle=handle)
+
+    await server.update_level(73)
+
+    assert gatt.db.read(handle) == bytes([73])
+    assert notifications == [(handle, bytes([73]), 0x0040)]
+
+
 # ---------------------------------------------------------------------------
 # HRS
 # ---------------------------------------------------------------------------
@@ -119,6 +137,44 @@ async def test_hrs_update_measurement():
     await server.update_measurement(72)
     data = await server.notify_hrm()
     assert data == bytes([0x00, 72])
+
+
+async def test_hrs_update_measurement_refreshes_gatt_value_and_notifies():
+    from pybluehost.profiles.ble.hrs import HeartRateServer
+
+    server = HeartRateServer()
+    server._energy_expended = 10
+    gatt = GATTServer()
+    await server.register(gatt)
+    handle = gatt.find_characteristic_value_handle(UUID16(0x2A37))
+    assert handle is not None
+    notifications = []
+    gatt.on_notification_sent(lambda h, value, conn: notifications.append((h, value, conn)))
+    gatt.enable_notifications(conn_handle=0x0041, value_handle=handle)
+
+    await server.update_measurement(91)
+
+    assert gatt.db.read(handle) == bytes([0x00, 91])
+    assert notifications == [(handle, bytes([0x00, 91]), 0x0041)]
+
+
+async def test_hrs_write_control_point_is_bound_to_att_request():
+    from pybluehost.ble.att import ATT_Write_Request, ATT_Write_Response
+    from pybluehost.profiles.ble.hrs import HeartRateServer
+
+    server = HeartRateServer()
+    gatt = GATTServer()
+    await server.register(gatt)
+    handle = gatt.find_characteristic_value_handle(UUID16(0x2A39))
+    assert handle is not None
+
+    response = await gatt.handle_request(
+        conn_handle=0x0041,
+        pdu=ATT_Write_Request(attribute_handle=handle, attribute_value=b"\x01"),
+    )
+
+    assert isinstance(response, ATT_Write_Response)
+    assert server._energy_expended == 0
 
 
 # ---------------------------------------------------------------------------
