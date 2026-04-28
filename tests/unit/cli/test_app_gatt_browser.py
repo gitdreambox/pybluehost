@@ -96,4 +96,5 @@ async def test_gatt_browser_real_transport_prints_characteristics_and_descriptor
     out = capsys.readouterr().out
     assert rc == 0
     assert "Char 0x2A19" in out
+    assert "props=0x12 READ|NOTIFY" in out
     assert "Descriptor 0x2902" in out
