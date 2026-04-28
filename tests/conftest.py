@@ -65,10 +65,6 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "virtual_only: deterministic test, only valid on virtual controller",
     )
-    config.addinivalue_line(
-        "markers",
-        "hardware: legacy real USB Bluetooth adapter marker; TODO remove after Tasks 19-20",
-    )
     config.addinivalue_line("markers", "slow: tests taking >5s")
 
     if config.getoption("--list-transports"):

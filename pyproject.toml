@@ -55,7 +55,6 @@ markers = [
     "btsnoop: btsnoop file replay tests",
     "real_hardware_only(transport=..., vendor=...): requires real hardware; see transport selection spec section 7",
     "virtual_only: deterministic test, only valid on virtual controller",
-    "hardware: legacy real USB Bluetooth adapter marker; TODO remove after Tasks 19-20 migrate hardware tests",
     "slow: tests taking >5s",
 ]
 addopts = "--strict-markers -q"
