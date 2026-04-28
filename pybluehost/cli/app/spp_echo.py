@@ -19,6 +19,13 @@ def register_spp_echo_command(subparsers: argparse._SubParsersAction) -> None:
 
 
 async def _spp_echo_main(stack: Stack, stop: asyncio.Event) -> None:
+    service_name = "PyBlueHost SPP Echo"
+    discoverability = getattr(getattr(stack, "gap", None), "classic_discoverability", None)
+    if discoverability is not None:
+        await discoverability.set_device_name(service_name)
+        await discoverability.set_discoverable(True)
+        await discoverability.set_connectable(True)
+
     service = SPPService(rfcomm=stack.rfcomm, sdp=stack.sdp)
 
     async def _echo_handler(conn: SPPConnection) -> None:
@@ -27,6 +34,11 @@ async def _spp_echo_main(stack: Stack, stop: asyncio.Event) -> None:
             await conn.send(data)
 
     service.on_connection(_echo_handler)
-    await service.register(channel=1, name="PyBlueHost SPP Echo")
+    await service.register(channel=1, name=service_name)
     print(f"SPP echo server listening on RFCOMM channel 1; local={stack.local_address}")
-    await stop.wait()
+    try:
+        await stop.wait()
+    finally:
+        if discoverability is not None:
+            await discoverability.set_discoverable(False)
+            await discoverability.set_connectable(False)
