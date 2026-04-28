@@ -2246,13 +2246,13 @@ git commit -m "refactor(tests): hci init tests use stack fixture"
 **Files:**
 - Modify: `tests/integration/test_hci_l2cap.py`
 
-- [ ] **Step 17.1: Inspect current tests**
+- [x] **Step 17.1: Inspect current tests**
 
 ```bash
 uv run pytest tests/integration/test_hci_l2cap.py -v --transport=virtual
 ```
 
-- [ ] **Step 17.2: Translate each test to use `stack` fixture**
+- [x] **Step 17.2: Translate each test to use `stack` fixture**
 
 Pattern: replace
 ```python
@@ -2275,13 +2275,13 @@ If a test claims to operate on two controllers, **read the test carefully first*
 
 Keep every test function name and every assertion exactly as before.
 
-- [ ] **Step 17.3: Run**
+- [x] **Step 17.3: Run**
 
 ```bash
 uv run pytest tests/integration/test_hci_l2cap.py -v --transport=virtual
 ```
 
-- [ ] **Step 17.4: Commit**
+- [x] **Step 17.4: Commit**
 
 ```bash
 git add tests/integration/test_hci_l2cap.py
