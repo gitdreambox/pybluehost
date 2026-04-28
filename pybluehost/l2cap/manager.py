@@ -37,6 +37,12 @@ class _ClassicConfigPending:
     future: asyncio.Future[ClassicChannel]
 
 
+@dataclass
+class _ClassicInboundPending:
+    channel: ClassicChannel
+    handler: Callable[[ClassicChannel], object]
+
+
 class L2CAPManager:
     """Manages L2CAP connections, channels, and PDU routing.
 
@@ -53,6 +59,8 @@ class L2CAPManager:
         self._next_signaling_id = 1
         self._classic_connect_pending: dict[tuple[int, int], _ClassicConnectPending] = {}
         self._classic_config_pending: dict[tuple[int, int], _ClassicConfigPending] = {}
+        self._classic_listeners: dict[int, Callable[[ClassicChannel], object]] = {}
+        self._classic_inbound_pending: dict[tuple[int, int], _ClassicInboundPending] = {}
 
     # -- HCI upstream callbacks (registered via hci.set_upstream) --
 
@@ -236,6 +244,14 @@ class L2CAPManager:
         finally:
             self._classic_config_pending.pop((handle, config_ident), None)
 
+    def listen_classic_channel(
+        self,
+        psm: int,
+        handler: Callable[[ClassicChannel], object],
+    ) -> None:
+        """Register an incoming Classic L2CAP dynamic channel handler for a PSM."""
+        self._classic_listeners[psm] = handler
+
     def _allocate_dynamic_cid(self) -> int:
         cid = self._next_dynamic_cid
         self._next_dynamic_cid += 1
@@ -252,6 +268,14 @@ class L2CAPManager:
 
     async def _on_classic_signaling(self, handle: int, data: bytes) -> None:
         packet = decode_signaling(data)
+        if packet.code == SignalingCode.CONNECTION_REQUEST:
+            await self._handle_classic_connection_request(handle, packet)
+            return
+
+        if packet.code == SignalingCode.CONFIGURE_REQUEST:
+            await self._handle_classic_configure_request(handle, packet)
+            return
+
         if packet.code == SignalingCode.CONNECTION_RESPONSE:
             pending = self._classic_connect_pending.get((handle, packet.identifier))
             if pending is None or pending.future.done():
@@ -299,3 +323,67 @@ class L2CAPManager:
                 return
             pending.channel.open()
             pending.future.set_result(pending.channel)
+
+    async def _handle_classic_connection_request(
+        self,
+        handle: int,
+        packet: SignalingPacket,
+    ) -> None:
+        signaling = self.get_fixed_channel(handle, CID_CLASSIC_SIGNALING)
+        if signaling is None:
+            return
+        if len(packet.data) < 4:
+            return
+        psm, source_cid = struct.unpack_from("<HH", packet.data)
+        handler = self._classic_listeners.get(psm)
+        if handler is None:
+            response = SignalingPacket(
+                code=SignalingCode.CONNECTION_RESPONSE,
+                identifier=packet.identifier,
+                data=struct.pack("<HHHH", 0x0000, source_cid, 0x0002, 0x0000),
+            )
+            await signaling.send(encode_signaling(response))
+            return
+
+        local_cid = self._allocate_dynamic_cid()
+        channel = ClassicChannel(
+            connection_handle=handle,
+            local_cid=local_cid,
+            peer_cid=source_cid,
+            mode=ChannelMode.BASIC,
+            hci=self._hci,
+        )
+        self.register_channel(handle, channel)
+        self._classic_inbound_pending[(handle, local_cid)] = _ClassicInboundPending(
+            channel=channel,
+            handler=handler,
+        )
+        response = SignalingPacket(
+            code=SignalingCode.CONNECTION_RESPONSE,
+            identifier=packet.identifier,
+            data=struct.pack("<HHHH", local_cid, source_cid, 0x0000, 0x0000),
+        )
+        await signaling.send(encode_signaling(response))
+
+    async def _handle_classic_configure_request(
+        self,
+        handle: int,
+        packet: SignalingPacket,
+    ) -> None:
+        signaling = self.get_fixed_channel(handle, CID_CLASSIC_SIGNALING)
+        if signaling is None or len(packet.data) < 4:
+            return
+        dest_cid, _flags = struct.unpack_from("<HH", packet.data)
+        pending = self._classic_inbound_pending.pop((handle, dest_cid), None)
+        response = SignalingPacket(
+            code=SignalingCode.CONFIGURE_RESPONSE,
+            identifier=packet.identifier,
+            data=struct.pack("<HHH", pending.channel._peer_cid if pending else 0x0000, 0x0000, 0x0000),
+        )
+        await signaling.send(encode_signaling(response))
+        if pending is None:
+            return
+        pending.channel.open()
+        result = pending.handler(pending.channel)
+        if asyncio.iscoroutine(result):
+            await result

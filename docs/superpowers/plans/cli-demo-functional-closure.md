@@ -126,17 +126,17 @@ uv run --frozen pytest tests/unit/classic/test_rfcomm.py tests/unit/cli/test_app
 
 提供类似 `Stack.connect_gatt()` 的 app-level Classic ACL handle 获取 API。
 
-- [ ] **Step 2：实现 Classic L2CAP dynamic PSM connect/listen**
+- [x] **Step 2：实现 Classic L2CAP dynamic PSM connect/listen**
 
-已完成 outgoing connect 路径，支持连接 SDP PSM `0x0001` 和 RFCOMM PSM `0x0003`。incoming listen/accept 路径仍待实现。
+已完成 outgoing connect 与 incoming listen/accept 路径，支持连接和监听 SDP PSM `0x0001`、RFCOMM PSM `0x0003`。
 
 - [x] **Step 3：实现基于 L2CAP 的 SDPClient**
 
 `sdp-browser` 必须发送真实 ServiceSearchAttribute request，并打印远端 SDP records。
 
-- [ ] **Step 4：实现 RFCOMM session state machine**
+- [x] **Step 4：实现 RFCOMM session state machine**
 
-已完成 outgoing SABM/UA multiplexer + DLC 打开，以及 `SPPClient.connect()`。server-side listen/echo 所需的 incoming SABM/UA、UIH data dispatch 仍待实现。
+已完成 outgoing SABM/UA multiplexer + DLC 打开、server-side incoming SABM/UA、UIH data dispatch、`SPPClient.connect()` 与 `spp_echo` listen 注册路径。
 
 - [ ] **Step 5：新增 CSR 硬件验收**
 

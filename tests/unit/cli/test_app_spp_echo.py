@@ -1,16 +1,8 @@
 import asyncio
-import pytest
 from pybluehost.cli.app.spp_echo import _spp_echo_main
 
 
-async def test_spp_echo_fails_loudly_until_rfcomm_listen_is_implemented(stack):
-    stop = asyncio.Event()
-
-    with pytest.raises(NotImplementedError, match="RFCOMM listen requires Classic L2CAP"):
-        await _spp_echo_main(stack, stop)
-
-
-async def test_spp_echo_registers_sdp_record_when_rfcomm_listen_exists():
+async def test_spp_echo_registers_sdp_record_and_rfcomm_listener():
     class FakeRFCOMM:
         def __init__(self):
             self.listen_calls = []

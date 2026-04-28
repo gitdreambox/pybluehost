@@ -144,10 +144,15 @@ def decode_frame(data: bytes) -> RFCOMMFrame:
 class RFCOMMSession:
     """Manages an RFCOMM session over an L2CAP channel."""
 
-    def __init__(self, l2cap_channel: object | None = None) -> None:
+    def __init__(
+        self,
+        l2cap_channel: object | None = None,
+        server_handlers: dict[int, object] | None = None,
+    ) -> None:
         self._l2cap_channel = l2cap_channel
         self._dlcs: dict[int, RFCOMMChannel] = {}
         self._ua_waiters: dict[int, asyncio.Future[None]] = {}
+        self._server_handlers = server_handlers or {}
         if l2cap_channel is not None and hasattr(l2cap_channel, "set_events"):
             l2cap_channel.set_events(SimpleChannelEvents(on_data=self._on_frame))
 
@@ -194,6 +199,41 @@ class RFCOMMSession:
             waiter = self._ua_waiters.get(frame.dlci)
             if waiter is not None and not waiter.done():
                 waiter.set_result(None)
+            return
+        if frame.frame_type == RFCOMMFrameType.SABM:
+            await self._send_ua(frame.dlci)
+            if frame.dlci != 0 and frame.dlci not in self._dlcs:
+                server_channel = frame.dlci >> 1
+                handler = self._server_handlers.get(server_channel)
+                if handler is not None:
+                    channel = RFCOMMChannel(
+                        dlci=frame.dlci,
+                        session=self,
+                        max_frame_size=127,
+                    )
+                    self._dlcs[frame.dlci] = channel
+                    result = handler(channel)
+                    if asyncio.iscoroutine(result):
+                        await result
+            return
+        if frame.frame_type == RFCOMMFrameType.UIH:
+            channel = self._dlcs.get(frame.dlci)
+            if channel is not None:
+                await channel._on_data(frame.data)
+
+    async def _send_ua(self, dlci: int) -> None:
+        if self._l2cap_channel is None:
+            return
+        await self._l2cap_channel.send(
+            encode_frame(
+                RFCOMMFrame(
+                    dlci=dlci,
+                    frame_type=RFCOMMFrameType.UA,
+                    pf=True,
+                    data=b"",
+                )
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +252,7 @@ class RFCOMMChannel:
         self._dlci = dlci
         self._session = session
         self._max_frame_size = max_frame_size
+        self._data_handler: object | None = None
 
     @property
     def dlci(self) -> int:
@@ -245,6 +286,16 @@ class RFCOMMChannel:
         frame = RFCOMMFrame(dlci=self._dlci, frame_type=RFCOMMFrameType.DISC, pf=True, data=b"")
         await self._session._l2cap_channel.send(encode_frame(frame))
 
+    def on_data(self, handler: object) -> None:
+        self._data_handler = handler
+
+    async def _on_data(self, data: bytes) -> None:
+        if self._data_handler is None:
+            return
+        result = self._data_handler(data)  # type: ignore[operator]
+        if asyncio.iscoroutine(result):
+            await result
+
 
 # ---------------------------------------------------------------------------
 # RFCOMMManager
@@ -256,6 +307,7 @@ class RFCOMMManager:
     def __init__(self, l2cap: object | None = None) -> None:
         self._l2cap = l2cap
         self._sessions: dict[int, RFCOMMSession] = {}  # handle -> session
+        self._listeners: dict[int, object] = {}
 
     async def connect(self, acl_handle: int, server_channel: int) -> RFCOMMChannel:
         """Connect to a remote RFCOMM server channel."""
@@ -270,4 +322,12 @@ class RFCOMMManager:
 
     async def listen(self, server_channel: int, handler: object) -> None:
         """Register a handler for incoming connections on a server channel."""
-        raise NotImplementedError("RFCOMM listen requires Classic L2CAP PSM 0x0003 support")
+        if self._l2cap is None or not hasattr(self._l2cap, "listen_classic_channel"):
+            raise NotImplementedError("RFCOMM listen requires Classic L2CAP PSM 0x0003 support")
+        self._listeners[server_channel] = handler
+
+        async def on_l2cap_channel(channel: object) -> None:
+            session = RFCOMMSession(channel, server_handlers=self._listeners)
+            self._sessions[getattr(channel, "connection_handle", id(channel))] = session
+
+        self._l2cap.listen_classic_channel(PSM_RFCOMM, on_l2cap_channel)
