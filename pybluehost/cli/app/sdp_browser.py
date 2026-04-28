@@ -35,6 +35,24 @@ DEFAULT_SCAN_UUIDS = (
     0x1200,  # PnP Information
 )
 DEFAULT_MAX_ATTRIBUTE_BYTES = 0x03F0
+SDP_ATTRIBUTE_NAMES = {
+    0x0000: "ServiceRecordHandle",
+    0x0001: "ServiceClassIDList",
+    0x0002: "ServiceRecordState",
+    0x0003: "ServiceID",
+    0x0004: "ProtocolDescriptorList",
+    0x0005: "BrowseGroupList",
+    0x0006: "LanguageBaseAttributeIDList",
+    0x0007: "ServiceInfoTimeToLive",
+    0x0008: "ServiceAvailability",
+    0x0009: "BluetoothProfileDescriptorList",
+    0x000A: "DocumentationURL",
+    0x000B: "ClientExecutableURL",
+    0x000C: "IconURL",
+    0x0100: "ServiceName",
+    0x0101: "ServiceDescription",
+    0x0102: "ProviderName",
+}
 
 
 def _parse_uuid_arg(value: str) -> int:
@@ -132,7 +150,7 @@ async def _sdp_browser_run(
     for index, record in enumerate(records, start=1):
         print(f"Record {index}:")
         for attr_id, value in sorted(record.items()):
-            print(f"  0x{attr_id:04X}: {_format_sdp_value(value)}")
+            print(f"  {_format_sdp_attr_id(attr_id)}: {_format_sdp_value(value)}")
 
 
 async def _query_sdp_records(
@@ -171,5 +189,14 @@ def _format_sdp_value(value: object) -> str:
     if isinstance(value, DataElement):
         if value.type in (DataElementType.SEQUENCE, DataElementType.ALTERNATIVE):
             return "[" + ", ".join(_format_sdp_value(v) for v in value.value) + "]"
-        return str(value.value)
+        return _format_sdp_value(value.value)
+    if isinstance(value, str):
+        return value.rstrip("\x00")
     return str(value)
+
+
+def _format_sdp_attr_id(attr_id: int) -> str:
+    name = SDP_ATTRIBUTE_NAMES.get(attr_id)
+    if name is None:
+        return f"0x{attr_id:04X}"
+    return f"0x{attr_id:04X} ({name})"

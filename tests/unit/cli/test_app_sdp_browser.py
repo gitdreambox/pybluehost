@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from pybluehost.cli.app.sdp_browser import _sdp_browser_main, register_sdp_browser_command
+from pybluehost.classic.sdp import DataElement
+from pybluehost.cli.app.sdp_browser import (
+    _format_sdp_value,
+    _sdp_browser_main,
+    register_sdp_browser_command,
+)
 from pybluehost.cli._lifecycle import _format_cli_error
 
 
@@ -141,7 +146,8 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
     assert rc == 0
     assert "Connecting to A0:90:B5:10:40:82" in captured.out
     assert "Connected ACL handle=0x0042" in captured.out
-    assert "0x0100: SPP Echo" in captured.out
+    assert "0x0000 (ServiceRecordHandle): 65537" in captured.out
+    assert "0x0100 (ServiceName): SPP Echo" in captured.out
 
 
 async def test_sdp_browser_default_scan_deduplicates_records(monkeypatch, capsys):
@@ -192,6 +198,7 @@ async def test_sdp_browser_default_scan_deduplicates_records(monkeypatch, capsys
     out = capsys.readouterr().out
     assert out.count("Record ") == 1
     assert "Same Record" in out
+    assert "0x0100 (ServiceName): Same Record" in out
 
 
 async def test_sdp_browser_accepts_custom_uuid(monkeypatch):
@@ -251,3 +258,8 @@ async def test_sdp_browser_accepts_custom_uuid(monkeypatch):
 
 def test_cli_error_format_includes_type_for_empty_message():
     assert _format_cli_error(TimeoutError()) == "TimeoutError"
+
+
+def test_sdp_value_format_strips_trailing_nul_from_text():
+    assert _format_sdp_value("COM6\x00") == "COM6"
+    assert _format_sdp_value(DataElement.text("COM6\x00")) == "COM6"
