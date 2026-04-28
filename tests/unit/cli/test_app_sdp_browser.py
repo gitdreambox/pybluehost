@@ -44,8 +44,8 @@ def test_sdp_browser_parser_has_target_example_and_trace_options():
     assert "10" in timeout_action.help
     assert args.sdp_timeout == 10.0
     max_attr_action = next(action for action in sdp_parser._actions if "--max-attribute-bytes" in action.option_strings)
-    assert "0x1008" in max_attr_action.help
-    assert args.max_attribute_bytes == 0x1008
+    assert "0x03F0" in max_attr_action.help
+    assert args.max_attribute_bytes == 0x03F0
     override_args = parser.parse_args(
         [
             "sdp-browser",
@@ -112,7 +112,7 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
             assert kwargs == {
                 "request_timeout": 10.0,
                 "retries": 0,
-                "max_attribute_byte_count": 0x1008,
+                "max_attribute_byte_count": 0x03F0,
             }
 
         async def search_attributes(self, target, uuid, attr_ids=None):
@@ -131,7 +131,7 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
         target="A0:90:B5:10:40:82",
         uuid=None,
         sdp_timeout=10.0,
-        max_attribute_bytes=0x1008,
+        max_attribute_bytes=0x03F0,
         hci_log=True,
         btsnoop=Path("sdp.cfa"),
     )
@@ -183,7 +183,7 @@ async def test_sdp_browser_default_scan_deduplicates_records(monkeypatch, capsys
         target="A0:90:B5:10:40:82",
         uuid=None,
         sdp_timeout=10.0,
-        max_attribute_bytes=0x1008,
+        max_attribute_bytes=0x03F0,
         hci_log=False,
         btsnoop=None,
     )
@@ -235,7 +235,7 @@ async def test_sdp_browser_accepts_custom_uuid(monkeypatch):
         target="A0:90:B5:10:40:82",
         uuid=0x1101,
         sdp_timeout=10.0,
-        max_attribute_bytes=0x1008,
+        max_attribute_bytes=0x03F0,
         hci_log=False,
         btsnoop=None,
     )
@@ -245,7 +245,7 @@ async def test_sdp_browser_accepts_custom_uuid(monkeypatch):
     assert seen["client_kwargs"] == {
         "request_timeout": 10.0,
         "retries": 0,
-        "max_attribute_byte_count": 0x1008,
+        "max_attribute_byte_count": 0x03F0,
     }
 
 

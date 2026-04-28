@@ -34,7 +34,7 @@ DEFAULT_SCAN_UUIDS = (
     0x112D,  # SIM Access
     0x1200,  # PnP Information
 )
-DEFAULT_MAX_ATTRIBUTE_BYTES = 0x1008
+DEFAULT_MAX_ATTRIBUTE_BYTES = 0x03F0
 
 
 def _parse_uuid_arg(value: str) -> int:
@@ -78,7 +78,7 @@ def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None
         "--max-attribute-bytes",
         type=_parse_max_attribute_bytes_arg,
         default=DEFAULT_MAX_ATTRIBUTE_BYTES,
-        help="SDP MaxAttributeByteCount, accepts decimal or hex; default 0x1008",
+        help="SDP MaxAttributeByteCount, accepts decimal or hex; default 0x03F0",
     )
     add_trace_arguments(p)
     p.set_defaults(func=lambda args: asyncio.run(_sdp_browser_main(args)))

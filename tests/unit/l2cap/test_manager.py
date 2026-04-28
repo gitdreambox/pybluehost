@@ -196,6 +196,29 @@ async def test_connect_classic_channel_opens_dynamic_channel(manager):
         )
     )
 
+    await asyncio.sleep(0)
+    assert not connect_task.done()
+
+    peer_config_req = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONFIGURE_REQUEST,
+            identifier=0x33,
+            data=struct.pack("<HH", source_cid, 0x0000),
+        )
+    )
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(peer_config_req), CID_CLASSIC_SIGNALING) + peer_config_req,
+        )
+    )
+
+    assert len(hci.sent) == 3
+    peer_config_rsp = decode_signaling(hci.sent[2][2][4:])
+    assert peer_config_rsp.code == SignalingCode.CONFIGURE_RESPONSE
+    assert struct.unpack_from("<HHH", peer_config_rsp.data) == (0x0041, 0x0000, 0x0000)
+
     channel = await asyncio.wait_for(connect_task, timeout=0.5)
     assert isinstance(channel, ClassicChannel)
     assert channel.cid == source_cid
@@ -266,6 +289,21 @@ async def test_connect_classic_channel_waits_through_pending_response(manager):
             handle=0x0042,
             pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
             data=struct.pack("<HH", len(config_rsp), CID_CLASSIC_SIGNALING) + config_rsp,
+        )
+    )
+
+    peer_config_req = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONFIGURE_REQUEST,
+            identifier=0x34,
+            data=struct.pack("<HH", source_cid, 0x0000),
+        )
+    )
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(peer_config_req), CID_CLASSIC_SIGNALING) + peer_config_req,
         )
     )
 
