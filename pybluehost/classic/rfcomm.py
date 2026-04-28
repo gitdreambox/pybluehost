@@ -146,7 +146,7 @@ class RFCOMMSession:
 
     async def open(self) -> None:
         """Open the multiplexer session (SABM on DLCI 0)."""
-        pass  # Requires L2CAP channel
+        raise NotImplementedError("RFCOMM multiplexer open requires Classic L2CAP dynamic channel support")
 
     async def open_dlc(self, server_channel: int) -> RFCOMMChannel:
         """Open a data link connection to a remote server channel."""
@@ -191,11 +191,23 @@ class RFCOMMChannel:
 
     async def send(self, data: bytes) -> None:
         """Send data over this DLC, segmenting by max_frame_size."""
-        pass  # Requires session L2CAP channel
+        if self._session is None or self._session._l2cap_channel is None:
+            raise NotImplementedError("RFCOMM send requires an open L2CAP-backed session")
+        for offset in range(0, len(data), self._max_frame_size):
+            frame = RFCOMMFrame(
+                dlci=self._dlci,
+                frame_type=RFCOMMFrameType.UIH,
+                pf=False,
+                data=data[offset:offset + self._max_frame_size],
+            )
+            await self._session._l2cap_channel.send(encode_frame(frame))
 
     async def close(self) -> None:
         """Close this DLC (send DISC)."""
-        pass
+        if self._session is None or self._session._l2cap_channel is None:
+            raise NotImplementedError("RFCOMM close requires an open L2CAP-backed session")
+        frame = RFCOMMFrame(dlci=self._dlci, frame_type=RFCOMMFrameType.DISC, pf=True, data=b"")
+        await self._session._l2cap_channel.send(encode_frame(frame))
 
 
 # ---------------------------------------------------------------------------
@@ -215,4 +227,4 @@ class RFCOMMManager:
 
     async def listen(self, server_channel: int, handler: object) -> None:
         """Register a handler for incoming connections on a server channel."""
-        pass
+        raise NotImplementedError("RFCOMM listen requires Classic L2CAP PSM 0x0003 support")

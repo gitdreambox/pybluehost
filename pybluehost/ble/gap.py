@@ -18,6 +18,7 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_ADVERTISE_ENABLE,
     HCI_LE_SET_ADVERTISING_DATA,
     HCI_LE_SET_ADVERTISING_PARAMS,
+    HCI_LE_SET_SCAN_RESPONSE_DATA,
     HCI_LE_SET_EXTENDED_ADVERTISING_DATA,
     HCI_LE_SET_EXTENDED_ADVERTISING_ENABLE,
     HCI_LE_SET_EXTENDED_ADVERTISING_PARAMS,
@@ -147,6 +148,13 @@ class BLEAdvertiser:
             await self._hci.send_command(_make_cmd(HCI_LE_SET_ADVERTISING_DATA, ad_params))
         else:
             await self._hci.send_command(_make_cmd(HCI_LE_SET_ADVERTISING_DATA, bytes(32)))
+
+        if scan_rsp_data is not None:
+            raw_scan_rsp = scan_rsp_data.to_bytes()
+            scan_rsp_params = bytes([len(raw_scan_rsp)]) + raw_scan_rsp + bytes(31 - len(raw_scan_rsp))
+            await self._hci.send_command(_make_cmd(HCI_LE_SET_SCAN_RESPONSE_DATA, scan_rsp_params))
+        else:
+            await self._hci.send_command(_make_cmd(HCI_LE_SET_SCAN_RESPONSE_DATA, bytes(32)))
 
         # Enable advertising
         await self._hci.send_command(_make_cmd(HCI_LE_SET_ADVERTISE_ENABLE, bytes([0x01])))

@@ -12,6 +12,7 @@ class HeartRateServer(BLEProfileServer):
     def __init__(self, sensor_location: int = 0x00) -> None:
         self._location = sensor_location
         self._last_bpm = 0
+        self._energy_expended = 0
 
     @on_read(UUID16(0x2A38))
     async def read_location(self) -> bytes:
@@ -23,10 +24,12 @@ class HeartRateServer(BLEProfileServer):
 
     @on_write(UUID16(0x2A39))
     async def write_control_point(self, value: bytes) -> None:
-        pass
+        if value == b"\x01":
+            self._energy_expended = 0
 
     async def update_measurement(self, bpm: int) -> None:
         self._last_bpm = bpm
+        await self.notify(UUID16(0x2A37))
 
 
 class HeartRateClient(BLEProfileClient):

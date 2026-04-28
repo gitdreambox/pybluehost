@@ -164,6 +164,33 @@ def test_rfcomm_channel_properties():
     assert ch.max_frame_size == 127
 
 
+async def test_rfcomm_channel_send_writes_uih_frames_to_l2cap():
+    class FakeL2CAPChannel:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, data):
+            self.sent.append(data)
+
+    l2cap = FakeL2CAPChannel()
+    session = RFCOMMSession(l2cap_channel=l2cap)
+    ch = RFCOMMChannel(dlci=2, session=session, max_frame_size=3)
+
+    await ch.send(b"hello")
+
+    decoded = [decode_frame(raw) for raw in l2cap.sent]
+    assert [frame.data for frame in decoded] == [b"hel", b"lo"]
+    assert all(frame.frame_type == RFCOMMFrameType.UIH for frame in decoded)
+
+
+async def test_rfcomm_listen_fails_loudly_until_classic_l2cap_psm_exists():
+    mgr = RFCOMMManager(l2cap=None)
+    import pytest
+
+    with pytest.raises(NotImplementedError, match="Classic L2CAP PSM 0x0003"):
+        await mgr.listen(server_channel=1, handler=lambda _ch: None)
+
+
 def test_rfcomm_manager_construction():
     mgr = RFCOMMManager(l2cap=None)
     assert mgr is not None

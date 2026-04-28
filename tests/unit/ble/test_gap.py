@@ -26,6 +26,7 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_ADVERTISE_ENABLE,
     HCI_LE_SET_ADVERTISING_DATA,
     HCI_LE_SET_ADVERTISING_PARAMS,
+    HCI_LE_SET_SCAN_RESPONSE_DATA,
     HCI_LE_SET_EXTENDED_ADVERTISING_ENABLE,
     HCI_LE_SET_EXTENDED_ADVERTISING_PARAMS,
     LEMetaSubEvent,
@@ -64,6 +65,18 @@ async def test_advertiser_start_sends_hci_commands():
     assert HCI_LE_SET_ADVERTISING_PARAMS in opcodes
     assert HCI_LE_SET_ADVERTISING_DATA in opcodes
     assert HCI_LE_SET_ADVERTISE_ENABLE in opcodes
+
+
+async def test_advertiser_start_sends_scan_response_data():
+    hci = FakeHCI()
+    advertiser = BLEAdvertiser(hci=hci)
+    scan_rsp = AdvertisingData()
+    scan_rsp.set_complete_local_name("PyBlueHost HR")
+
+    await advertiser.start(config=AdvertisingConfig(), ad_data=AdvertisingData(), scan_rsp_data=scan_rsp)
+
+    scan_rsp_cmd = next(cmd for cmd in hci.commands if cmd.opcode == HCI_LE_SET_SCAN_RESPONSE_DATA)
+    assert b"PyBlueHost HR" in scan_rsp_cmd.parameters
 
 
 async def test_advertiser_stop():
