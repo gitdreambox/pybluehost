@@ -11,6 +11,7 @@ from pybluehost.core.errors import CommandTimeoutError
 from pybluehost.hci.constants import (
     HCI_ACL_PACKET,
     HCI_EVENT_PACKET,
+    HCI_READ_BUFFER_SIZE,
     HCI_RESET,
     EventCode,
 )
@@ -118,6 +119,21 @@ async def test_send_command_timeout():
     cmd = HCI_Reset()
     with pytest.raises(CommandTimeoutError):
         await ctrl.send_command(cmd)
+
+
+def test_configure_acl_flow_from_read_buffer_size_complete():
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    event = HCI_Command_Complete_Event(
+        num_hci_command_packets=1,
+        command_opcode=HCI_READ_BUFFER_SIZE,
+        return_parameters=b"\x00" + struct.pack("<HBHH", 0x0136, 0x40, 10, 0),
+    )
+
+    ctrl._configure_acl_flow_from_command_complete(event)
+
+    assert ctrl._acl_flow.buffer_size == 0x0136
+    assert ctrl._acl_flow.available == 10
 
 
 # ---------------------------------------------------------------------------

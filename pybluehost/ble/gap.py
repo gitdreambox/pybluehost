@@ -274,11 +274,11 @@ class BLEConnectionManager:
         max_interval = int(config.max_interval_ms / 1.25)
         supervision = int(config.supervision_timeout_ms / 10)
         params = struct.pack(
-            "<HH B B 6s HHHHHH",
+            "<HHBB6sBHHHHHH",
             scan_interval, scan_window,
             0x00,  # filter policy
             target.type,  # peer address type
-            target.address,  # peer address
+            target.address[::-1],  # HCI peer address is little-endian on the wire
             0x00,  # own address type
             min_interval, max_interval,
             config.latency,
