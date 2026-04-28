@@ -173,7 +173,29 @@ class HCIController:
                 f"HCI command 0x{command.opcode:04X} timed out after {self._command_timeout}s"
             )
 
+        if isinstance(event, HCI_Command_Complete_Event):
+            self._configure_acl_flow_from_command_complete(event)
         return event
+
+    def _configure_acl_flow_from_command_complete(
+        self, event: HCI_Command_Complete_Event
+    ) -> None:
+        """Configure ACL flow control from controller buffer-size responses."""
+        import struct
+        from pybluehost.hci.constants import HCI_READ_BUFFER_SIZE, HCI_LE_READ_BUFFER_SIZE
+
+        params = event.return_parameters
+        if not params or params[0] != 0x00:
+            return
+
+        if event.command_opcode == HCI_READ_BUFFER_SIZE and len(params) >= 8:
+            acl_len, _sco_len, acl_count, _sco_count = struct.unpack_from("<HBHH", params, 1)
+            if acl_len and acl_count:
+                self._acl_flow.configure(num_buffers=acl_count, buffer_size=acl_len)
+        elif event.command_opcode == HCI_LE_READ_BUFFER_SIZE and len(params) >= 4:
+            le_acl_len, le_acl_count = struct.unpack_from("<HB", params, 1)
+            if le_acl_len and le_acl_count:
+                self._acl_flow.configure(num_buffers=le_acl_count, buffer_size=le_acl_len)
 
     # ------------------------------------------------------------------
     # ACL data sending

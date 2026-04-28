@@ -22,6 +22,7 @@ from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.hci.constants import (
     HCI_LE_ADD_DEVICE_TO_WHITE_LIST,
     HCI_LE_CLEAR_WHITE_LIST,
+    HCI_LE_CREATE_CONNECTION,
     HCI_LE_SET_ADVERTISE_ENABLE,
     HCI_LE_SET_ADVERTISING_DATA,
     HCI_LE_SET_ADVERTISING_PARAMS,
@@ -214,3 +215,15 @@ def test_connection_manager_construction():
     hci = FakeHCI()
     mgr = BLEConnectionManager(hci=hci)
     assert mgr is not None
+
+
+async def test_connection_manager_connect_packs_le_create_connection():
+    hci = FakeHCI()
+    mgr = BLEConnectionManager(hci=hci)
+    target = BDAddress.from_string("A0:90:B5:10:40:82")
+
+    await mgr.connect(target)
+
+    assert hci.commands[-1].opcode == HCI_LE_CREATE_CONNECTION
+    assert len(hci.commands[-1].parameters) == 25
+    assert hci.commands[-1].parameters[6:12] == bytes.fromhex("82 40 10 b5 90 a0")
