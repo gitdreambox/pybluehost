@@ -16,8 +16,8 @@ from pybluehost.ble.gatt import (
 from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.core.types import IOCapability
 from pybluehost.core.uuid import UUID16
-from pybluehost.hci.constants import LEMetaSubEvent
-from pybluehost.hci.packets import HCIACLData, HCI_LE_Meta_Event
+from pybluehost.hci.constants import ErrorCode, LEMetaSubEvent
+from pybluehost.hci.packets import HCIACLData, HCI_Disconnection_Complete_Event, HCI_LE_Meta_Event
 from pybluehost.stack import Stack, StackConfig, StackMode
 
 
@@ -257,4 +257,43 @@ async def test_stack_connect_gatt_waits_for_le_connection_and_returns_client(mon
 
     assert isinstance(client, GATTClient)
     assert stack.l2cap.get_fixed_channel(0x0041, 0x0004) is not None
+    await stack.close()
+
+
+async def test_stack_connect_gatt_reports_le_connection_failure(monkeypatch):
+    stack = await Stack.virtual()
+
+    async def connect(target, config=None):
+        event = HCI_LE_Meta_Event(
+            subevent_code=LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+            subevent_parameters=bytes([ErrorCode.FAILED_TO_ESTABLISH_CONNECTION])
+            + struct.pack("<H", 0x0000)
+            + bytes(16),
+        )
+        await stack._on_hci_event(event)
+
+    monkeypatch.setattr(stack.gap.ble_connections, "connect", connect)
+
+    with pytest.raises(RuntimeError, match="FAILED_TO_ESTABLISH_CONNECTION"):
+        await stack.connect_gatt(stack.local_address)
+
+    await stack.close()
+
+
+async def test_stack_reports_disconnection_events():
+    stack = await Stack.virtual()
+    events = []
+    stack.on_connection_event(lambda event: events.append(event))
+
+    await stack._on_hci_event(
+        HCI_Disconnection_Complete_Event(
+            status=ErrorCode.SUCCESS,
+            connection_handle=0x0041,
+            reason=ErrorCode.FAILED_TO_ESTABLISH_CONNECTION,
+        )
+    )
+
+    assert events[-1].state == "disconnected"
+    assert events[-1].handle == 0x0041
+    assert "FAILED_TO_ESTABLISH_CONNECTION" in events[-1].reason
     await stack.close()

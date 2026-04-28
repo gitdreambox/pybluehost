@@ -1,5 +1,6 @@
 """Tests for 'app gatt-browser' command."""
 import argparse
+import asyncio
 import pytest
 from pybluehost.cli.app.gatt_browser import _gatt_browser_main
 
@@ -98,3 +99,63 @@ async def test_gatt_browser_real_transport_prints_characteristics_and_descriptor
     assert "Char 0x2A19" in out
     assert "props=0x12 READ|NOTIFY" in out
     assert "Descriptor 0x2902" in out
+
+
+async def test_gatt_browser_prints_meaningful_timeout(monkeypatch, capsys):
+    class FakeStack:
+        def on_connection_event(self, handler):
+            pass
+
+        async def connect_gatt(self, target):
+            raise asyncio.TimeoutError()
+
+        async def close(self):
+            pass
+
+    async def build_stack(transport_arg):
+        return FakeStack()
+
+    monkeypatch.setattr("pybluehost.cli.app.gatt_browser._build_stack", build_stack)
+
+    args = argparse.Namespace(
+        transport="usb:vendor=csr",
+        target="11:22:33:44:55:66/public",
+    )
+    rc = await _gatt_browser_main(args)
+
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "Timed out waiting for BLE connection or GATT response" in err
+
+
+async def test_gatt_browser_prints_connection_events(monkeypatch, capsys):
+    class FakeEvent:
+        state = "disconnected"
+        handle = 0x0041
+        reason = "FAILED_TO_ESTABLISH_CONNECTION (0x3E)"
+
+    class FakeStack:
+        def on_connection_event(self, handler):
+            handler(FakeEvent())
+
+        async def connect_gatt(self, target):
+            raise RuntimeError("LE connection failed: FAILED_TO_ESTABLISH_CONNECTION (0x3E)")
+
+        async def close(self):
+            pass
+
+    async def build_stack(transport_arg):
+        return FakeStack()
+
+    monkeypatch.setattr("pybluehost.cli.app.gatt_browser._build_stack", build_stack)
+
+    args = argparse.Namespace(
+        transport="usb:vendor=csr",
+        target="11:22:33:44:55:66/public",
+    )
+    rc = await _gatt_browser_main(args)
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "Disconnected handle=0x0041 reason=FAILED_TO_ESTABLISH_CONNECTION (0x3E)" in captured.err
+    assert "LE connection failed: FAILED_TO_ESTABLISH_CONNECTION (0x3E)" in captured.err

@@ -5,7 +5,7 @@ import asyncio
 import contextlib
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from pybluehost.ble.security import SecurityConfig
 from pybluehost.core.address import BDAddress
@@ -42,6 +42,24 @@ class StackConfig:
     trace_sinks: list = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class StackConnectionEvent:
+    """Application-visible connection state update."""
+
+    state: str
+    handle: int | None = None
+    reason: str | None = None
+
+
+def _hci_status_text(status: int) -> str:
+    from pybluehost.hci.constants import ErrorCode
+
+    try:
+        return f"{ErrorCode(status).name} (0x{status:02X})"
+    except ValueError:
+        return f"UNKNOWN_STATUS (0x{status:02X})"
+
+
 # ---------------------------------------------------------------------------
 # Stack
 # ---------------------------------------------------------------------------
@@ -66,6 +84,7 @@ class Stack:
         self._mode: StackMode = StackMode.LIVE
         self._config: StackConfig = StackConfig()
         self._le_connection_waiters: list[asyncio.Future[int]] = []
+        self._connection_event_handlers: list[Callable[[StackConnectionEvent], object]] = []
 
     # -- Factory methods -----------------------------------------------------
 
@@ -230,7 +249,7 @@ class Stack:
         if self._l2cap is not None:
             await self._l2cap.on_hci_event(event)
             self._attach_gatt_server_to_att_channels()
-        self._notify_le_connection_waiters(event)
+        self._handle_connection_event(event)
         if self._gap is None:
             return
         ble_scanner = getattr(self._gap, "ble_scanner", None)
@@ -279,13 +298,23 @@ class Stack:
             channel.set_events(SimpleChannelEvents(on_data=on_att_data))
             setattr(channel, "_gatt_server_bound", True)
 
-    def _notify_le_connection_waiters(self, event: Any) -> None:
-        if not self._le_connection_waiters:
+    def on_connection_event(self, handler: Callable[[StackConnectionEvent], object]) -> None:
+        self._connection_event_handlers.append(handler)
+
+    def _handle_connection_event(self, event: Any) -> None:
+        from pybluehost.hci.constants import ErrorCode, LEMetaSubEvent
+        from pybluehost.hci.packets import HCI_Disconnection_Complete_Event, HCI_LE_Meta_Event
+
+        if isinstance(event, HCI_Disconnection_Complete_Event):
+            if event.status == ErrorCode.SUCCESS:
+                self._emit_connection_event(
+                    StackConnectionEvent(
+                        state="disconnected",
+                        handle=event.connection_handle,
+                        reason=_hci_status_text(event.reason),
+                    )
+                )
             return
-
-        from pybluehost.hci.constants import LEMetaSubEvent
-        from pybluehost.hci.packets import HCI_LE_Meta_Event
-
         if not isinstance(event, HCI_LE_Meta_Event):
             return
         if event.subevent_code not in (
@@ -295,17 +324,29 @@ class Stack:
             return
         if len(event.subevent_parameters) < 3:
             return
-        if event.subevent_parameters[0] != 0:
-            return
 
         import struct
 
+        status = event.subevent_parameters[0]
         handle = struct.unpack_from("<H", event.subevent_parameters, 1)[0]
         waiters = self._le_connection_waiters
         self._le_connection_waiters = []
-        for waiter in waiters:
-            if not waiter.done():
-                waiter.set_result(handle)
+        if status == ErrorCode.SUCCESS:
+            self._emit_connection_event(StackConnectionEvent(state="connected", handle=handle))
+            for waiter in waiters:
+                if not waiter.done():
+                    waiter.set_result(handle)
+        else:
+            reason = _hci_status_text(status)
+            self._emit_connection_event(StackConnectionEvent(state="failed", handle=handle, reason=reason))
+            error = RuntimeError(f"LE connection failed: {reason}")
+            for waiter in waiters:
+                if not waiter.done():
+                    waiter.set_exception(error)
+
+    def _emit_connection_event(self, event: StackConnectionEvent) -> None:
+        for handler in list(self._connection_event_handlers):
+            handler(event)
 
     async def connect_gatt(
         self,
