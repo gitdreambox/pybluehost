@@ -23,6 +23,10 @@ class RFCOMMFrameType(IntEnum):
     UI = 0x03    # Unnumbered Information
 
 
+_MCC_TYPE_PN_COMMAND = 0x83
+_MCC_TYPE_PN_RESPONSE = 0x81
+
+
 # ---------------------------------------------------------------------------
 # FCS (CRC-8) calculation per TS 07.10
 # ---------------------------------------------------------------------------
@@ -217,6 +221,9 @@ class RFCOMMSession:
                         await result
             return
         if frame.frame_type == RFCOMMFrameType.UIH:
+            if frame.dlci == 0:
+                await self._handle_mcc(frame.data)
+                return
             channel = self._dlcs.get(frame.dlci)
             if channel is not None:
                 await channel._on_data(frame.data)
@@ -231,6 +238,28 @@ class RFCOMMSession:
                     frame_type=RFCOMMFrameType.UA,
                     pf=True,
                     data=b"",
+                )
+            )
+        )
+
+    async def _handle_mcc(self, data: bytes) -> None:
+        if self._l2cap_channel is None or len(data) < 2:
+            return
+        command_type = data[0]
+        length_field = data[1]
+        if command_type != _MCC_TYPE_PN_COMMAND or not length_field & 0x01:
+            return
+        length = length_field >> 1
+        payload = data[2:2 + length]
+        if len(payload) != length:
+            return
+        await self._l2cap_channel.send(
+            encode_frame(
+                RFCOMMFrame(
+                    dlci=0,
+                    frame_type=RFCOMMFrameType.UIH,
+                    pf=False,
+                    data=bytes([_MCC_TYPE_PN_RESPONSE, length_field]) + payload,
                 )
             )
         )
