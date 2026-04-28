@@ -1,8 +1,43 @@
 """Tests for 'app gatt-browser' command."""
 import argparse
 import asyncio
+from pathlib import Path
+
 import pytest
-from pybluehost.cli.app.gatt_browser import _gatt_browser_main
+from pybluehost.cli.app.gatt_browser import _gatt_browser_main, register_gatt_browser_command
+
+
+def test_gatt_browser_parser_has_target_example_and_trace_options():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="cmd")
+    register_gatt_browser_command(subparsers)
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["gatt-browser", "--help"])
+    assert exc.value.code == 0
+    args = parser.parse_args(
+        [
+            "gatt-browser",
+            "-t",
+            "usb:vendor=csr",
+            "-a",
+            "A0:90:B5:10:40:82",
+            "--hci-log",
+            "--btsnoop",
+            "gatt.cfa",
+        ]
+    )
+
+    # Re-parse help through capsys is not available here, so inspect action metadata too.
+    gatt_parser = next(
+        action.choices["gatt-browser"]
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    target_action = next(action for action in gatt_parser._actions if "--target" in action.option_strings)
+    assert "A0:90:B5:10:40:82" in target_action.help
+    assert args.hci_log is True
+    assert args.btsnoop == Path("gatt.cfa")
 
 
 async def test_gatt_browser_requires_target_for_all_transports(capsys):
@@ -33,17 +68,19 @@ async def test_gatt_browser_real_transport_discovers_services(monkeypatch, capsy
         async def close(self):
             self.closed = True
 
-    fake_stack = FakeStack()
-
-    async def build_stack(transport_arg):
+    async def run_app(transport_arg, main_coro, **kwargs):
         assert transport_arg == "usb:vendor=csr"
-        return fake_stack
+        assert kwargs == {"hci_log": False, "btsnoop": None}
+        await main_coro(FakeStack(), asyncio.Event())
+        return 0
 
-    monkeypatch.setattr("pybluehost.cli.app.gatt_browser._build_stack", build_stack)
+    monkeypatch.setattr("pybluehost.cli.app.gatt_browser.run_app_command", run_app)
 
     args = argparse.Namespace(
         transport="usb:vendor=csr",
         target="11:22:33:44:55:66/public",
+        hci_log=False,
+        btsnoop=None,
     )
     rc = await _gatt_browser_main(args)
 
@@ -52,7 +89,6 @@ async def test_gatt_browser_real_transport_discovers_services(monkeypatch, capsy
     assert "Connected to 11:22:33:44:55:66" in out
     assert "Service 0x180F" in out
     assert "not implemented" not in out
-    assert fake_stack.closed
 
 
 async def test_gatt_browser_real_transport_prints_characteristics_and_descriptors(monkeypatch, capsys):
@@ -83,14 +119,17 @@ async def test_gatt_browser_real_transport_prints_characteristics_and_descriptor
         async def close(self):
             pass
 
-    async def build_stack(transport_arg):
-        return FakeStack()
+    async def run_app(transport_arg, main_coro, **kwargs):
+        await main_coro(FakeStack(), asyncio.Event())
+        return 0
 
-    monkeypatch.setattr("pybluehost.cli.app.gatt_browser._build_stack", build_stack)
+    monkeypatch.setattr("pybluehost.cli.app.gatt_browser.run_app_command", run_app)
 
     args = argparse.Namespace(
         transport="usb:vendor=csr",
         target="11:22:33:44:55:66/public",
+        hci_log=False,
+        btsnoop=None,
     )
     rc = await _gatt_browser_main(args)
 
@@ -112,14 +151,21 @@ async def test_gatt_browser_prints_meaningful_timeout(monkeypatch, capsys):
         async def close(self):
             pass
 
-    async def build_stack(transport_arg):
-        return FakeStack()
+    async def run_app(transport_arg, main_coro, **kwargs):
+        try:
+            await main_coro(FakeStack(), asyncio.Event())
+        except Exception as e:
+            print(f"Error: {e}", file=__import__("sys").stderr)
+            return 1
+        return 0
 
-    monkeypatch.setattr("pybluehost.cli.app.gatt_browser._build_stack", build_stack)
+    monkeypatch.setattr("pybluehost.cli.app.gatt_browser.run_app_command", run_app)
 
     args = argparse.Namespace(
         transport="usb:vendor=csr",
         target="11:22:33:44:55:66/public",
+        hci_log=False,
+        btsnoop=None,
     )
     rc = await _gatt_browser_main(args)
 
@@ -144,14 +190,21 @@ async def test_gatt_browser_prints_connection_events(monkeypatch, capsys):
         async def close(self):
             pass
 
-    async def build_stack(transport_arg):
-        return FakeStack()
+    async def run_app(transport_arg, main_coro, **kwargs):
+        try:
+            await main_coro(FakeStack(), asyncio.Event())
+        except Exception as e:
+            print(f"Error: {e}", file=__import__("sys").stderr)
+            return 1
+        return 0
 
-    monkeypatch.setattr("pybluehost.cli.app.gatt_browser._build_stack", build_stack)
+    monkeypatch.setattr("pybluehost.cli.app.gatt_browser.run_app_command", run_app)
 
     args = argparse.Namespace(
         transport="usb:vendor=csr",
         target="11:22:33:44:55:66/public",
+        hci_log=False,
+        btsnoop=None,
     )
     rc = await _gatt_browser_main(args)
 

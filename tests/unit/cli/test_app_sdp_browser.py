@@ -1,5 +1,42 @@
 import argparse
-from pybluehost.cli.app.sdp_browser import _sdp_browser_main
+import asyncio
+from pathlib import Path
+
+import pytest
+
+from pybluehost.cli.app.sdp_browser import _sdp_browser_main, register_sdp_browser_command
+
+
+def test_sdp_browser_parser_has_target_example_and_trace_options():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="cmd")
+    register_sdp_browser_command(subparsers)
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["sdp-browser", "--help"])
+    assert exc.value.code == 0
+    args = parser.parse_args(
+        [
+            "sdp-browser",
+            "-t",
+            "usb:vendor=csr",
+            "-a",
+            "A0:90:B5:10:40:82",
+            "--hci-log",
+            "--btsnoop",
+            "sdp.cfa",
+        ]
+    )
+
+    sdp_parser = next(
+        action.choices["sdp-browser"]
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    target_action = next(action for action in sdp_parser._actions if "--target" in action.option_strings)
+    assert "A0:90:B5:10:40:82" in target_action.help
+    assert args.hci_log is True
+    assert args.btsnoop == Path("sdp.cfa")
 
 
 async def test_sdp_browser_requires_target_for_all_transports(capsys):
@@ -8,3 +45,30 @@ async def test_sdp_browser_requires_target_for_all_transports(capsys):
     err = capsys.readouterr().err
     assert rc == 2
     assert "--target is required" in err
+
+
+async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
+    async def run_app(transport_arg, main_coro, **kwargs):
+        assert transport_arg == "usb:vendor=csr"
+        assert kwargs == {"hci_log": True, "btsnoop": Path("sdp.cfa")}
+        try:
+            await main_coro(object(), asyncio.Event())
+        except Exception as e:
+            print(f"Error: {e}", file=__import__("sys").stderr)
+            return 1
+        return 0
+
+    monkeypatch.setattr("pybluehost.cli.app.sdp_browser.run_app_command", run_app)
+
+    args = argparse.Namespace(
+        transport="usb:vendor=csr",
+        target="A0:90:B5:10:40:82",
+        hci_log=True,
+        btsnoop=Path("sdp.cfa"),
+    )
+    rc = await _sdp_browser_main(args)
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "Connecting to A0:90:B5:10:40:82" in captured.out
+    assert "SDP query over BR/EDR ACL is not implemented" in captured.err
