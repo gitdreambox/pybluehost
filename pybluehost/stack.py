@@ -107,6 +107,8 @@ class Stack:
         trace = TraceSystem()
         for sink in cfg.trace_sinks:
             trace.add_sink(sink)
+        if cfg.trace_sinks:
+            await trace.start()
         stack._trace = trace
 
         # 2. HCI Controller
@@ -235,6 +237,8 @@ class Stack:
     async def close(self) -> None:
         """Release all resources."""
         self._powered = False
+        if self._trace is not None:
+            await self._trace.stop()
         if self._transport is not None and hasattr(self._transport, "close"):
             await self._transport.close()
 

@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import time
 from typing import Callable, Awaitable
 
 from pybluehost.core.errors import CommandTimeoutError, TransportError
-from pybluehost.core.trace import TraceSystem
+from pybluehost.core.trace import Direction, TraceEvent, TraceSystem
 from pybluehost.hci.flow import ACLFlowController, CommandFlowController
 from pybluehost.hci.packets import (
     HCIACLData,
@@ -125,6 +127,7 @@ class HCIController:
 
     async def on_transport_data(self, data: bytes) -> None:
         """Called by the transport when raw HCI bytes arrive."""
+        self._emit_trace(Direction.UP, data)
         packet = decode_hci_packet(data)
 
         if isinstance(packet, HCIACLData):
@@ -158,6 +161,7 @@ class HCIController:
         raw = command.to_bytes()
         fut = self._cmd_flow.register(command.opcode)
 
+        self._emit_trace(Direction.DOWN, raw)
         await self._transport.send(raw)  # type: ignore[union-attr]
 
         try:
@@ -241,7 +245,25 @@ class HCIController:
         """Send ACL data, respecting controller flow control."""
         await self._acl_flow.acquire(handle)
         packet = HCIACLData(handle=handle, pb_flag=pb_flag, data=data)
-        await self._transport.send(packet.to_bytes())  # type: ignore[union-attr]
+        raw = packet.to_bytes()
+        self._emit_trace(Direction.DOWN, raw)
+        await self._transport.send(raw)  # type: ignore[union-attr]
+
+    def _emit_trace(self, direction: Direction, raw: bytes) -> None:
+        if self._trace is None:
+            return
+        self._trace.emit(
+            TraceEvent(
+                timestamp=time.time(),
+                wall_clock=datetime.now(timezone.utc),
+                source_layer="hci",
+                direction=direction,
+                raw_bytes=raw,
+                decoded=None,
+                connection_handle=None,
+                metadata={},
+            )
+        )
 
     # ------------------------------------------------------------------
     # Event handling (internal)

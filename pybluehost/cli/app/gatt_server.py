@@ -5,15 +5,18 @@ from __future__ import annotations
 import argparse
 import asyncio
 
-from pybluehost.cli._lifecycle import run_app_command
+from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.profiles.ble import BatteryServer, HeartRateServer
 from pybluehost.stack import Stack
 
 
 def register_gatt_server_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("gatt-server", help="Run Battery + HRS GATT server (Ctrl+C to stop)")
-    p.add_argument("--transport", required=True)
-    p.set_defaults(func=lambda args: asyncio.run(run_app_command(args.transport, _gatt_server_main)))
+    p.add_argument("-t", "--transport", required=True)
+    add_trace_arguments(p)
+    p.set_defaults(func=lambda args: asyncio.run(
+        run_app_command(args.transport, _gatt_server_main, **trace_kwargs_from_args(args))
+    ))
 
 
 async def _gatt_server_main(stack: Stack, stop: asyncio.Event) -> None:

@@ -23,10 +23,10 @@ def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
         "probe", help="Enumerate and inspect USB Bluetooth devices"
     )
     probe_parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show USB endpoint details"
+        "-v", "--verbose", action="store_true", help="Show USB endpoint details"
     )
     probe_parser.add_argument(
-        "--intel-tlv", action="store_true",
+        "-i", "--intel-tlv", action="store_true",
         help="Read Intel TLV version data (sends HCI command to device)",
     )
     probe_parser.set_defaults(func=_cmd_usb_probe)

@@ -5,15 +5,18 @@ import argparse
 import asyncio
 import random
 
-from pybluehost.cli._lifecycle import run_app_command
+from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.profiles.ble import HeartRateServer
 from pybluehost.stack import Stack
 
 
 def register_hr_monitor_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("hr-monitor", help="HRS server pushing random heart-rate (Ctrl+C to stop)")
-    p.add_argument("--transport", required=True)
-    p.set_defaults(func=lambda args: asyncio.run(run_app_command(args.transport, _hr_monitor_main)))
+    p.add_argument("-t", "--transport", required=True)
+    add_trace_arguments(p)
+    p.set_defaults(func=lambda args: asyncio.run(
+        run_app_command(args.transport, _hr_monitor_main, **trace_kwargs_from_args(args))
+    ))
 
 
 async def _hr_monitor_main(stack: Stack, stop: asyncio.Event, *, interval: float = 1.0) -> None:

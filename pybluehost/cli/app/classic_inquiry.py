@@ -5,14 +5,17 @@ import argparse
 import asyncio
 
 from pybluehost.classic.gap import InquiryConfig
-from pybluehost.cli._lifecycle import run_app_command
+from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.stack import Stack
 
 
 def register_classic_inquiry_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("classic-inquiry", help="Loop Classic inquiry (Ctrl+C to stop)")
-    p.add_argument("--transport", required=True)
-    p.set_defaults(func=lambda args: asyncio.run(run_app_command(args.transport, _classic_inquiry_main)))
+    p.add_argument("-t", "--transport", required=True)
+    add_trace_arguments(p)
+    p.set_defaults(func=lambda args: asyncio.run(
+        run_app_command(args.transport, _classic_inquiry_main, **trace_kwargs_from_args(args))
+    ))
 
 
 async def _classic_inquiry_main(stack: Stack, stop: asyncio.Event) -> None:

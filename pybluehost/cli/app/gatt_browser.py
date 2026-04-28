@@ -14,8 +14,8 @@ from pybluehost.stack import Stack
 
 def register_gatt_browser_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("gatt-browser", help="Connect, discover GATT, print, exit")
-    p.add_argument("--transport", required=True)
-    p.add_argument("--target", help="BD_ADDR (required unless --transport virtual)")
+    p.add_argument("-t", "--transport", required=True)
+    p.add_argument("-a", "--target", help="BD_ADDR (required unless --transport virtual)")
     p.set_defaults(func=lambda args: asyncio.run(_gatt_browser_main(args)))
 
 

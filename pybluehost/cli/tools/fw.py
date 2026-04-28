@@ -157,13 +157,13 @@ def register_fw_commands(subparsers: argparse._SubParsersAction) -> None:
 
     # fw list
     list_parser = fw_sub.add_parser("list", help="List installed firmware")
-    list_parser.add_argument("--dir", type=Path, default=None, help="Firmware directory")
+    list_parser.add_argument("-d", "--dir", type=Path, default=None, help="Firmware directory")
     list_parser.set_defaults(func=_cmd_fw_list)
 
     # fw download
     dl_parser = fw_sub.add_parser("download", help="Download firmware")
     dl_parser.add_argument("vendor", choices=_SUPPORTED_VENDORS, help="Chip vendor")
-    dl_parser.add_argument("--dir", type=Path, default=None, help="Target directory")
+    dl_parser.add_argument("-d", "--dir", type=Path, default=None, help="Target directory")
     dl_parser.set_defaults(func=_cmd_fw_download)
 
     # fw info
@@ -173,7 +173,7 @@ def register_fw_commands(subparsers: argparse._SubParsersAction) -> None:
 
     # fw clean
     clean_parser = fw_sub.add_parser("clean", help="Clean firmware cache")
-    clean_parser.add_argument("--dir", type=Path, default=None, help="Directory to clean")
+    clean_parser.add_argument("-d", "--dir", type=Path, default=None, help="Directory to clean")
     clean_parser.set_defaults(func=_cmd_fw_clean)
 
     fw_parser.set_defaults(func=lambda args: fw_parser.print_help() or 0)

@@ -38,15 +38,27 @@ def test_main_dispatches_to_command(capsys):
 
 
 def test_main_app_without_subcommand_returns_2(capsys):
-    """Passing 'app' without a sub-command hits the no-func branch and returns 2."""
+    """Passing 'app' without a sub-command prints app-specific help."""
     rc = main(["app"])
+    captured = capsys.readouterr()
     assert rc == 2
+    assert "usage: pybluehost app" in captured.out
+    assert "ble-scan" in captured.out
+    assert "ble-adv" in captured.out
+    assert "tools" not in captured.out
 
 
 def test_main_tools_without_subcommand_returns_2(capsys):
-    """Passing 'tools' without a sub-command hits the no-func branch and returns 2."""
+    """Passing 'tools' without a sub-command prints tools-specific help."""
     rc = main(["tools"])
+    captured = capsys.readouterr()
     assert rc == 2
+    assert "usage: pybluehost tools" in captured.out
+    assert "decode" in captured.out
+    assert "rpa" in captured.out
+    assert "fw" in captured.out
+    assert "usb" in captured.out
+    assert "ble-scan" not in captured.out
 
 
 def test_main_dunder_main_block(monkeypatch):

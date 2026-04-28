@@ -2,19 +2,44 @@
 """Lifecycle helpers for long-running CLI commands."""
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import signal
 import sys
-from typing import Awaitable, Callable
+from pathlib import Path
+from typing import Any, Awaitable, Callable
 
 from pybluehost.cli._transport import parse_transport_arg
-from pybluehost.stack import Stack
+from pybluehost.core.trace import BtsnoopSink, CallbackSink, Direction, TraceEvent
+from pybluehost.stack import Stack, StackConfig
+
+
+async def _print_hci_trace(event: TraceEvent) -> None:
+    if event.source_layer != "hci" or not event.raw_bytes:
+        return
+    label = "TX" if event.direction == Direction.DOWN else "RX"
+    print(f"[HCI {label}] {event.raw_bytes.hex(' ')}", file=sys.stderr, flush=True)
+
+
+def add_trace_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--hci-log", action="store_true", help="Print HCI TX/RX packets to stderr")
+    parser.add_argument("--btsnoop", type=Path, help="Write HCI btsnoop log to a .cfa file")
+
+
+def trace_kwargs_from_args(args: Any) -> dict[str, Any]:
+    return {
+        "hci_log": getattr(args, "hci_log", False),
+        "btsnoop": getattr(args, "btsnoop", None),
+    }
 
 
 async def run_app_command(
     transport_arg: str,
     main_coro: Callable[[Stack, asyncio.Event], Awaitable[None]],
+    *,
+    hci_log: bool = False,
+    btsnoop: str | Path | None = None,
 ) -> int:
     """Run a long-running app command with SIGINT/SIGTERM handling.
 
@@ -39,7 +64,14 @@ async def run_app_command(
 
     try:
         transport = await parse_transport_arg(transport_arg)
-        stack = await Stack._build(transport=transport)
+        if not transport.is_open:
+            await transport.open()
+        config = StackConfig()
+        if hci_log:
+            config.trace_sinks.append(CallbackSink(_print_hci_trace))
+        if btsnoop is not None:
+            config.trace_sinks.append(BtsnoopSink(btsnoop))
+        stack = await Stack._build(transport=transport, config=config)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

@@ -8,6 +8,7 @@ import argparse
 def register_tools_commands(subparsers: argparse._SubParsersAction) -> None:
     """Register the 'tools' subcommand with all its sub-subcommands."""
     tools_parser = subparsers.add_parser("tools", help="Offline utility tools")
+    tools_parser.set_defaults(func=lambda _args: tools_parser.print_help() or 2)
     tools_subs = tools_parser.add_subparsers(dest="tools_cmd")
 
     from pybluehost.cli.tools.decode import register_decode_command
