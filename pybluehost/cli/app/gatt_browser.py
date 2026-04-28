@@ -45,10 +45,11 @@ async def _gatt_browser_main(args: argparse.Namespace) -> int:
         stack = None
         try:
             stack = await _build_stack(args.transport)
+            print(f"Connecting to {addr}")
             client = await stack.connect_gatt(addr)
             services = await client.discover_all_services()
             print(f"Connected to {addr}")
-            _print_discovered_services(services)
+            await _print_discovered_gatt_tree(client, services)
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
@@ -73,6 +74,28 @@ def _print_discovered_services(services: list[tuple[int, int, bytes]]) -> None:
     for start_handle, end_handle, uuid_bytes in services:
         uuid_text = _format_uuid(uuid_bytes)
         print(f"- Service {uuid_text}  handles=0x{start_handle:04X}-0x{end_handle:04X}")
+
+
+async def _print_discovered_gatt_tree(client, services: list[tuple[int, int, bytes]]) -> None:
+    for svc_start, svc_end, svc_uuid in services:
+        print(f"- Service {_format_uuid(svc_uuid)}  handles=0x{svc_start:04X}-0x{svc_end:04X}")
+        characteristics = await client.discover_characteristics(svc_start, svc_end)
+        for index, char in enumerate(characteristics):
+            print(
+                f"  - Char {_format_uuid(char.uuid)}  "
+                f"decl=0x{char.declaration_handle:04X} "
+                f"value=0x{char.value_handle:04X} "
+                f"props=0x{char.properties:02X}"
+            )
+            next_decl = (
+                characteristics[index + 1].declaration_handle
+                if index + 1 < len(characteristics)
+                else svc_end + 1
+            )
+            desc_start = char.value_handle + 1
+            desc_end = min(next_decl - 1, svc_end)
+            for desc in await client.discover_descriptors(desc_start, desc_end):
+                print(f"    - Descriptor {_format_uuid(desc.uuid)}  handle=0x{desc.handle:04X}")
 
 
 def _format_uuid(uuid_bytes: bytes) -> str:

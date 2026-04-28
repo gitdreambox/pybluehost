@@ -156,6 +156,20 @@ class ServiceHandles:
     characteristic_handles: list[CharacteristicHandles] = field(default_factory=list)
 
 
+@dataclass
+class DiscoveredCharacteristic:
+    declaration_handle: int
+    value_handle: int
+    properties: int
+    uuid: bytes
+
+
+@dataclass
+class DiscoveredDescriptor:
+    handle: int
+    uuid: bytes
+
+
 class GATTServer:
     """GATT Server: manages attribute database and handles ATT requests."""
 
@@ -403,6 +417,91 @@ class GATTClient:
             else:
                 break
         return services
+
+    async def discover_characteristics(
+        self, start_handle: int, end_handle: int
+    ) -> list[DiscoveredCharacteristic]:
+        """Discover characteristic declarations in a handle range."""
+        characteristics: list[DiscoveredCharacteristic] = []
+        start = start_handle
+        while start <= end_handle:
+            req = ATT_Read_By_Type_Request(
+                starting_handle=start,
+                ending_handle=end_handle,
+                attribute_type=UUID_CHARACTERISTIC.to_bytes(),
+            )
+            resp = await self._bearer._request(req, ATTOpcode.READ_BY_TYPE_RESPONSE)
+            if isinstance(resp, ATT_Error_Response):
+                break
+            if not isinstance(resp, ATT_Read_By_Type_Response):
+                break
+            entry_len = resp.length
+            data = resp.attribute_data_list
+            offset = 0
+            last_decl_handle = 0
+            while entry_len >= 7 and offset + entry_len <= len(data):
+                decl_handle = struct.unpack_from("<H", data, offset)[0]
+                value = data[offset + 2: offset + entry_len]
+                if len(value) < 5:
+                    break
+                properties = value[0]
+                value_handle = struct.unpack_from("<H", value, 1)[0]
+                uuid = value[3:]
+                if decl_handle >= start:
+                    characteristics.append(
+                        DiscoveredCharacteristic(
+                            declaration_handle=decl_handle,
+                            value_handle=value_handle,
+                            properties=properties,
+                            uuid=uuid,
+                        )
+                    )
+                    last_decl_handle = decl_handle
+                offset += entry_len
+            if last_decl_handle == 0:
+                break
+            if last_decl_handle < start:
+                break
+            start = last_decl_handle + 1
+        return characteristics
+
+    async def discover_descriptors(
+        self, start_handle: int, end_handle: int
+    ) -> list[DiscoveredDescriptor]:
+        """Discover attribute UUIDs in a descriptor/value handle range."""
+        descriptors: list[DiscoveredDescriptor] = []
+        if start_handle > end_handle:
+            return descriptors
+        start = start_handle
+        while start <= end_handle:
+            req = ATT_Find_Information_Request(
+                starting_handle=start,
+                ending_handle=end_handle,
+            )
+            resp = await self._bearer._request(req, ATTOpcode.FIND_INFORMATION_RESPONSE)
+            if isinstance(resp, ATT_Error_Response):
+                break
+            if not isinstance(resp, ATT_Find_Information_Response):
+                break
+            entry_len = 4 if resp.format == 0x01 else 18 if resp.format == 0x02 else 0
+            if entry_len == 0:
+                break
+            data = resp.information_data
+            offset = 0
+            last_handle = 0
+            while offset + entry_len <= len(data):
+                handle = struct.unpack_from("<H", data, offset)[0]
+                uuid = data[offset + 2: offset + entry_len]
+                if handle >= start:
+                    descriptors.append(DiscoveredDescriptor(handle=handle, uuid=uuid))
+                    last_handle = handle
+                offset += entry_len
+            if last_handle == 0:
+                break
+            if last_handle < start:
+                break
+            start = last_handle + 1
+        return descriptors
 
     async def read_characteristic(self, handle: int) -> bytes:
         return await self._bearer.read(handle)

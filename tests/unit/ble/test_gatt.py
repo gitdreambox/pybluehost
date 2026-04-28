@@ -10,6 +10,8 @@ from pybluehost.ble.att import (
     ATT_Write_Request, ATT_Write_Response,
     ATT_Error_Response, ATT_Exchange_MTU_Request,
     ATT_Exchange_MTU_Response,
+    ATT_Find_Information_Response,
+    ATT_Read_By_Type_Response,
     ATTOpcode,
 )
 from pybluehost.core.uuid import UUID16
@@ -141,3 +143,49 @@ def test_gatt_server_find_characteristic_value_handle():
     server.add_service(svc)
     handle = server.find_characteristic_value_handle(UUID16(0x2A37))
     assert handle == 0x0003  # service(1) + char_decl(2) + value(3)
+
+
+async def test_gatt_client_discovers_characteristics():
+    class FakeBearer:
+        async def _request(self, pdu, response_opcode):
+            assert response_opcode == ATTOpcode.READ_BY_TYPE_RESPONSE
+            assert pdu.attribute_type == UUID16(0x2803).to_bytes()
+            return ATT_Read_By_Type_Response(
+                length=7,
+                attribute_data_list=(
+                    struct.pack("<H", 0x0002)
+                    + bytes([int(CharProperties.READ)])
+                    + struct.pack("<H", 0x0003)
+                    + UUID16(0x2A19).to_bytes()
+                ),
+            )
+
+    client = GATTClient(FakeBearer())
+
+    chars = await client.discover_characteristics(0x0001, 0x0005)
+
+    assert len(chars) == 1
+    assert chars[0].declaration_handle == 0x0002
+    assert chars[0].value_handle == 0x0003
+    assert chars[0].uuid == UUID16(0x2A19).to_bytes()
+
+
+async def test_gatt_client_discovers_descriptors():
+    class FakeBearer:
+        async def _request(self, pdu, response_opcode):
+            assert response_opcode == ATTOpcode.FIND_INFORMATION_RESPONSE
+            return ATT_Find_Information_Response(
+                format=0x01,
+                information_data=(
+                    struct.pack("<H", 0x0004)
+                    + UUID16(0x2902).to_bytes()
+                ),
+            )
+
+    client = GATTClient(FakeBearer())
+
+    descriptors = await client.discover_descriptors(0x0004, 0x0005)
+
+    assert len(descriptors) == 1
+    assert descriptors[0].handle == 0x0004
+    assert descriptors[0].uuid == UUID16(0x2902).to_bytes()
