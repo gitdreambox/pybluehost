@@ -34,6 +34,17 @@ async def test_spp_connection_close():
     channel.close.assert_called_once()
 
 
+async def test_spp_connection_recv_gets_rfcomm_channel_data():
+    from pybluehost.classic.rfcomm import RFCOMMChannel
+
+    channel = RFCOMMChannel(dlci=2, session=None)
+    conn = SPPConnection(rfcomm_channel=channel)
+
+    await channel._on_data(b"hello")
+
+    assert await conn.recv() == b"hello"
+
+
 def test_spp_service_construction():
     svc = SPPService(rfcomm=None, sdp=None)
     assert svc is not None

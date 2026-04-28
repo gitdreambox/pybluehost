@@ -19,6 +19,10 @@ class SPPConnection:
     rfcomm_channel: RFCOMMChannel
     _recv_queue: asyncio.Queue[bytes] = field(default_factory=asyncio.Queue)
 
+    def __post_init__(self) -> None:
+        if hasattr(self.rfcomm_channel, "on_data"):
+            self.rfcomm_channel.on_data(self._recv_queue.put_nowait)
+
     async def send(self, data: bytes) -> None:
         """Send data over the SPP connection."""
         await self.rfcomm_channel.send(data)

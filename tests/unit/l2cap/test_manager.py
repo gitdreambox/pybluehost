@@ -9,6 +9,7 @@ from pybluehost.l2cap.constants import (
     CID_LE_SIGNALING,
     CID_SMP,
     PSM_SDP,
+    PSM_RFCOMM,
     SignalingCode,
 )
 from pybluehost.l2cap.channel import ChannelState, SimpleChannelEvents
@@ -200,3 +201,62 @@ async def test_connect_classic_channel_opens_dynamic_channel(manager):
     assert channel.cid == source_cid
     assert channel.state == ChannelState.OPEN
     assert m.get_fixed_channel(0x0042, source_cid) is channel
+
+
+async def test_listen_classic_channel_accepts_incoming_connection(manager):
+    m, hci = manager
+    await m.on_connection(handle=0x0042, link_type=LinkType.ACL,
+                          peer_address=None, role=None)
+    accepted = []
+
+    async def on_channel(channel):
+        accepted.append(channel)
+
+    m.listen_classic_channel(psm=PSM_RFCOMM, handler=on_channel)
+    request = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONNECTION_REQUEST,
+            identifier=0x33,
+            data=struct.pack("<HH", PSM_RFCOMM, 0x0041),
+        )
+    )
+
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(request), CID_CLASSIC_SIGNALING) + request,
+        )
+    )
+
+    assert len(hci.sent) == 1
+    response = decode_signaling(hci.sent[0][2][4:])
+    assert response.code == SignalingCode.CONNECTION_RESPONSE
+    dest_cid, source_cid, result, status = struct.unpack_from("<HHHH", response.data)
+    assert dest_cid == 0x0040
+    assert source_cid == 0x0041
+    assert result == 0
+    assert status == 0
+
+    config = encode_signaling(
+        SignalingPacket(
+            code=SignalingCode.CONFIGURE_REQUEST,
+            identifier=0x34,
+            data=struct.pack("<HH", dest_cid, 0x0000),
+        )
+    )
+    await m.on_acl_data(
+        HCIACLData(
+            handle=0x0042,
+            pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+            data=struct.pack("<HH", len(config), CID_CLASSIC_SIGNALING) + config,
+        )
+    )
+
+    assert len(hci.sent) == 2
+    config_response = decode_signaling(hci.sent[1][2][4:])
+    assert config_response.code == SignalingCode.CONFIGURE_RESPONSE
+    assert struct.unpack_from("<HHH", config_response.data) == (0x0041, 0x0000, 0x0000)
+    assert len(accepted) == 1
+    assert accepted[0].cid == dest_cid
+    assert accepted[0].state == ChannelState.OPEN

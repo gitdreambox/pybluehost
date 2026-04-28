@@ -238,3 +238,55 @@ async def test_rfcomm_manager_connect_opens_l2cap_session_and_dlc():
     assert l2cap.calls == [(0x0042, PSM_RFCOMM)]
     assert ch.server_channel == 3
     assert [decode_frame(raw).dlci for raw in l2cap.channel.sent] == [0, 6]
+
+
+async def test_rfcomm_manager_listen_accepts_sabm_and_dispatches_uih():
+    class FakeL2CAPChannel:
+        def __init__(self):
+            self.events = None
+            self.sent = []
+
+        def set_events(self, events):
+            self.events = events
+
+        async def send(self, data):
+            self.sent.append(data)
+
+    class FakeL2CAP:
+        def __init__(self):
+            self.handler = None
+
+        def listen_classic_channel(self, psm, handler):
+            assert psm == PSM_RFCOMM
+            self.handler = handler
+
+    l2cap = FakeL2CAP()
+    mgr = RFCOMMManager(l2cap=l2cap)
+    accepted = []
+    received = []
+
+    async def on_channel(channel):
+        accepted.append(channel)
+        channel.on_data(lambda data: received.append(data))
+
+    await mgr.listen(server_channel=3, handler=on_channel)
+    l2cap_channel = FakeL2CAPChannel()
+    await l2cap.handler(l2cap_channel)
+
+    await l2cap_channel.events.on_data(
+        encode_frame(RFCOMMFrame(dlci=0, frame_type=RFCOMMFrameType.SABM, pf=True, data=b""))
+    )
+    await l2cap_channel.events.on_data(
+        encode_frame(RFCOMMFrame(dlci=6, frame_type=RFCOMMFrameType.SABM, pf=True, data=b""))
+    )
+    await l2cap_channel.events.on_data(
+        encode_frame(RFCOMMFrame(dlci=6, frame_type=RFCOMMFrameType.UIH, pf=False, data=b"hello"))
+    )
+
+    assert [decode_frame(raw).frame_type for raw in l2cap_channel.sent] == [
+        RFCOMMFrameType.UA,
+        RFCOMMFrameType.UA,
+    ]
+    assert len(accepted) == 1
+    assert accepted[0].server_channel == 3
+    assert received == [b"hello"]
