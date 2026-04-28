@@ -15,6 +15,25 @@ async def test_spp_echo_runs_on_stack_rfcomm_listener(stack):
 
 
 async def test_spp_echo_registers_sdp_record_and_rfcomm_listener():
+    class FakeClassicDiscoverability:
+        def __init__(self):
+            self.device_names = []
+            self.discoverable = []
+            self.connectable = []
+
+        async def set_device_name(self, name):
+            self.device_names.append(name)
+
+        async def set_discoverable(self, enabled):
+            self.discoverable.append(enabled)
+
+        async def set_connectable(self, enabled):
+            self.connectable.append(enabled)
+
+    class FakeGAP:
+        def __init__(self):
+            self.classic_discoverability = FakeClassicDiscoverability()
+
     class FakeRFCOMM:
         def __init__(self):
             self.listen_calls = []
@@ -28,6 +47,7 @@ async def test_spp_echo_registers_sdp_record_and_rfcomm_listener():
 
             self.rfcomm = FakeRFCOMM()
             self.sdp = SDPServer()
+            self.gap = FakeGAP()
             self.local_address = "00:11:22:33:44:55"
 
     stack = FakeStack()
@@ -43,3 +63,6 @@ async def test_spp_echo_registers_sdp_record_and_rfcomm_listener():
 
     assert stack.rfcomm.listen_calls[0][0] == 1
     assert len(stack.sdp._records) == 1
+    assert stack.gap.classic_discoverability.device_names == ["PyBlueHost SPP Echo"]
+    assert stack.gap.classic_discoverability.discoverable == [True, False]
+    assert stack.gap.classic_discoverability.connectable == [True, False]
