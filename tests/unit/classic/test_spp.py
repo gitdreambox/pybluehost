@@ -42,3 +42,44 @@ def test_spp_service_construction():
 def test_spp_client_construction():
     client = SPPClient(rfcomm=None, sdp_client=None)
     assert client is not None
+
+
+async def test_spp_client_connect_uses_sdp_and_rfcomm():
+    class FakeSDPClient:
+        def __init__(self):
+            self.calls = []
+
+        async def find_rfcomm_channel(self, target, service_uuid):
+            self.calls.append((target, service_uuid))
+            return 5
+
+    class FakeRFCOMM:
+        def __init__(self):
+            self.calls = []
+            self.channel = MagicMock()
+
+        async def connect(self, acl_handle, server_channel):
+            self.calls.append((acl_handle, server_channel))
+            return self.channel
+
+    sdp = FakeSDPClient()
+    rfcomm = FakeRFCOMM()
+    client = SPPClient(rfcomm=rfcomm, sdp_client=sdp)
+
+    conn = await client.connect(target=0x0042)
+
+    assert sdp.calls == [(0x0042, 0x1101)]
+    assert rfcomm.calls == [(0x0042, 5)]
+    assert isinstance(conn, SPPConnection)
+    assert conn.rfcomm_channel is rfcomm.channel
+
+
+async def test_spp_client_connect_reports_missing_sdp_record():
+    class FakeSDPClient:
+        async def find_rfcomm_channel(self, target, service_uuid):
+            return None
+
+    client = SPPClient(rfcomm=MagicMock(), sdp_client=FakeSDPClient())
+
+    with pytest.raises(RuntimeError, match="SPP service not found"):
+        await client.connect(target=0x0042)

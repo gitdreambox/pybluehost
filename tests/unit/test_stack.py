@@ -17,7 +17,12 @@ from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.core.types import IOCapability
 from pybluehost.core.uuid import UUID16
 from pybluehost.hci.constants import ErrorCode, LEMetaSubEvent
-from pybluehost.hci.packets import HCIACLData, HCI_Disconnection_Complete_Event, HCI_LE_Meta_Event
+from pybluehost.hci.packets import (
+    HCIACLData,
+    HCI_Connection_Complete_Event,
+    HCI_Disconnection_Complete_Event,
+    HCI_LE_Meta_Event,
+)
 from pybluehost.stack import Stack, StackConfig, StackMode
 
 
@@ -276,6 +281,49 @@ async def test_stack_connect_gatt_reports_le_connection_failure(monkeypatch):
 
     with pytest.raises(RuntimeError, match="FAILED_TO_ESTABLISH_CONNECTION"):
         await stack.connect_gatt(stack.local_address)
+
+    await stack.close()
+
+
+async def test_stack_connect_classic_waits_for_acl_connection_and_returns_handle(monkeypatch):
+    stack = await Stack.virtual()
+    target = stack.local_address
+
+    async def connect(addr, allow_role_switch=True):
+        event = HCI_Connection_Complete_Event(
+            status=ErrorCode.SUCCESS,
+            connection_handle=0x0042,
+            bd_addr=target.address,
+            link_type=0x01,
+        )
+        await stack._on_hci_event(event)
+
+    monkeypatch.setattr(stack.gap.classic_connections, "connect", connect)
+
+    handle = await stack.connect_classic(target)
+
+    assert handle == 0x0042
+    assert stack.l2cap.get_fixed_channel(0x0042, 0x0001) is not None
+    await stack.close()
+
+
+async def test_stack_connect_classic_reports_acl_connection_failure(monkeypatch):
+    stack = await Stack.virtual()
+    target = stack.local_address
+
+    async def connect(addr, allow_role_switch=True):
+        event = HCI_Connection_Complete_Event(
+            status=ErrorCode.PAGE_TIMEOUT,
+            connection_handle=0x0000,
+            bd_addr=target.address,
+            link_type=0x01,
+        )
+        await stack._on_hci_event(event)
+
+    monkeypatch.setattr(stack.gap.classic_connections, "connect", connect)
+
+    with pytest.raises(RuntimeError, match="PAGE_TIMEOUT"):
+        await stack.connect_classic(target)
 
     await stack.close()
 

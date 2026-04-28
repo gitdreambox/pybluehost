@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import struct
+import asyncio
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
+
+from pybluehost.l2cap.channel import SimpleChannelEvents
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +397,50 @@ class SDPClient:
 
     def __init__(self, l2cap: object | None = None) -> None:
         self._l2cap = l2cap
+        self._txn_id = 1
+        self._pending: dict[int, asyncio.Future[bytes]] = {}
+        if l2cap is not None and hasattr(l2cap, "set_events"):
+            l2cap.set_events(SimpleChannelEvents(on_data=self._on_pdu))
+
+    async def _on_pdu(self, data: bytes) -> None:
+        if len(data) < 5:
+            return
+        txn_id = struct.unpack_from(">H", data, 1)[0]
+        future = self._pending.pop(txn_id, None)
+        if future is not None and not future.done():
+            future.set_result(data)
+
+    def _next_txn_id(self) -> int:
+        txn_id = self._txn_id
+        self._txn_id += 1
+        if self._txn_id > 0xFFFF:
+            self._txn_id = 1
+        return txn_id
+
+    def _build_attr_id_list(
+        self,
+        attr_ids: list[int | tuple[int, int]] | None,
+    ) -> DataElement:
+        if attr_ids is None:
+            return DataElement.sequence([DataElement.uint32(0x0000FFFF)])
+        elements = []
+        for attr in attr_ids:
+            if isinstance(attr, tuple):
+                elements.append(DataElement.uint32(((attr[0] & 0xFFFF) << 16) | (attr[1] & 0xFFFF)))
+            else:
+                elements.append(DataElement.uint16(attr))
+        return DataElement.sequence(elements)
+
+    async def _request(self, pdu_id: _SDPPDU, params: bytes) -> bytes:
+        if self._l2cap is None or not hasattr(self._l2cap, "send"):
+            raise NotImplementedError("Requires L2CAP connection")
+        txn_id = self._next_txn_id()
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bytes] = loop.create_future()
+        self._pending[txn_id] = future
+        pdu = bytes([pdu_id]) + struct.pack(">HH", txn_id, len(params)) + params
+        await self._l2cap.send(pdu)
+        return await asyncio.wait_for(future, timeout=5.0)
 
     async def search(self, target: object, uuid: int) -> list[int]:
         """Send ServiceSearchRequest; return list of service record handles."""
@@ -411,10 +458,64 @@ class SDPClient:
         attr_ids: list[int | tuple[int, int]] | None = None,
     ) -> list[dict[int, DataElement]]:
         """Send ServiceSearchAttributeRequest (combined search + attributes)."""
-        raise NotImplementedError("Requires L2CAP connection")
+        del target
+        search_pattern = encode_data_element(
+            DataElement.sequence([DataElement.uuid16(uuid)])
+        )
+        attr_id_list = encode_data_element(self._build_attr_id_list(attr_ids))
+        params = search_pattern + struct.pack(">H", 0xFFFF) + attr_id_list + b"\x00"
+        response = await self._request(_SDPPDU.SERVICE_SEARCH_ATTRIBUTE_REQUEST, params)
+        if response[0] != _SDPPDU.SERVICE_SEARCH_ATTRIBUTE_RESPONSE:
+            return []
+        param_len = struct.unpack_from(">H", response, 3)[0]
+        params = response[5:5 + param_len]
+        if len(params) < 3:
+            return []
+        attr_byte_count = struct.unpack_from(">H", params)[0]
+        attr_bytes = params[2:2 + attr_byte_count]
+        if not attr_bytes:
+            return []
+        attr_lists_de, _consumed = decode_data_element(attr_bytes)
+        records: list[dict[int, DataElement]] = []
+        if attr_lists_de.type != DataElementType.SEQUENCE:
+            return records
+        for attr_list in attr_lists_de.value:
+            if attr_list.type != DataElementType.SEQUENCE:
+                continue
+            record: dict[int, DataElement] = {}
+            values = attr_list.value
+            for i in range(0, len(values) - 1, 2):
+                attr_id_de = values[i]
+                attr_value_de = values[i + 1]
+                if attr_id_de.type == DataElementType.UINT:
+                    record[attr_id_de.value] = attr_value_de
+            records.append(record)
+        return records
 
     async def find_rfcomm_channel(
         self, target: object, service_uuid: int,
     ) -> int | None:
         """Convenience: find RFCOMM channel number for a given service UUID."""
-        raise NotImplementedError("Requires L2CAP connection")
+        records = await self.search_attributes(
+            target=target,
+            uuid=service_uuid,
+            attr_ids=[0x0004],
+        )
+        for record in records:
+            protocol_list = record.get(0x0004)
+            channel = self._find_rfcomm_channel_in_protocol_list(protocol_list)
+            if channel is not None:
+                return channel
+        return None
+
+    def _find_rfcomm_channel_in_protocol_list(self, de: DataElement | None) -> int | None:
+        if de is None or de.type != DataElementType.SEQUENCE:
+            return None
+        for proto in de.value:
+            if proto.type != DataElementType.SEQUENCE or not proto.value:
+                continue
+            first = proto.value[0]
+            if first.type == DataElementType.UUID and first.value == 0x0003:
+                if len(proto.value) >= 2 and proto.value[1].type == DataElementType.UINT:
+                    return proto.value[1].value
+        return None

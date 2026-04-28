@@ -84,6 +84,7 @@ class Stack:
         self._mode: StackMode = StackMode.LIVE
         self._config: StackConfig = StackConfig()
         self._le_connection_waiters: list[asyncio.Future[int]] = []
+        self._classic_connection_waiters: list[asyncio.Future[int]] = []
         self._connection_event_handlers: list[Callable[[StackConnectionEvent], object]] = []
 
     # -- Factory methods -----------------------------------------------------
@@ -303,7 +304,11 @@ class Stack:
 
     def _handle_connection_event(self, event: Any) -> None:
         from pybluehost.hci.constants import ErrorCode, LEMetaSubEvent
-        from pybluehost.hci.packets import HCI_Disconnection_Complete_Event, HCI_LE_Meta_Event
+        from pybluehost.hci.packets import (
+            HCI_Connection_Complete_Event,
+            HCI_Disconnection_Complete_Event,
+            HCI_LE_Meta_Event,
+        )
 
         if isinstance(event, HCI_Disconnection_Complete_Event):
             if event.status == ErrorCode.SUCCESS:
@@ -313,7 +318,31 @@ class Stack:
                         handle=event.connection_handle,
                         reason=_hci_status_text(event.reason),
                     )
+            )
+            return
+        if isinstance(event, HCI_Connection_Complete_Event):
+            waiters = self._classic_connection_waiters
+            self._classic_connection_waiters = []
+            if event.status == ErrorCode.SUCCESS:
+                self._emit_connection_event(
+                    StackConnectionEvent(state="connected", handle=event.connection_handle)
                 )
+                for waiter in waiters:
+                    if not waiter.done():
+                        waiter.set_result(event.connection_handle)
+            else:
+                reason = _hci_status_text(event.status)
+                self._emit_connection_event(
+                    StackConnectionEvent(
+                        state="failed",
+                        handle=event.connection_handle,
+                        reason=reason,
+                    )
+                )
+                error = RuntimeError(f"Classic ACL connection failed: {reason}")
+                for waiter in waiters:
+                    if not waiter.done():
+                        waiter.set_exception(error)
             return
         if not isinstance(event, HCI_LE_Meta_Event):
             return
@@ -382,6 +411,28 @@ class Stack:
         channel.set_events(SimpleChannelEvents(on_data=bearer._on_pdu))
         setattr(channel, "_gatt_client_bound", True)
         return GATTClient(bearer)
+
+    async def connect_classic(
+        self,
+        target: BDAddress,
+        *,
+        timeout: float = 10.0,
+    ) -> int:
+        """Connect to a Classic BR/EDR peer and return the ACL handle."""
+        if self._gap is None or self._l2cap is None:
+            raise RuntimeError("Stack is not initialized")
+
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[int] = loop.create_future()
+        self._classic_connection_waiters.append(waiter)
+        try:
+            await self._gap.classic_connections.connect(target)
+            return await asyncio.wait_for(waiter, timeout=timeout)
+        finally:
+            if not waiter.done():
+                waiter.cancel()
+            with contextlib.suppress(ValueError):
+                self._classic_connection_waiters.remove(waiter)
 
     # -- Lifecycle -----------------------------------------------------------
 

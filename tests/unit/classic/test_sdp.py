@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import struct
+from pybluehost.l2cap.channel import SimpleChannelEvents
 
 from pybluehost.classic.sdp import (
     DataElement,
@@ -185,3 +186,55 @@ def test_sdp_client_has_search_attributes():
     params = list(sig.parameters)
     assert "uuid" in params
     assert "attr_ids" in params
+
+
+async def test_sdp_client_search_attributes_over_l2cap_channel():
+    server = SDPServer()
+    server.register(make_rfcomm_service_record(service_uuid=0x1101, channel=3, name="SPP"))
+
+    class FakeChannel:
+        def __init__(self):
+            self.sent = []
+            self.events = None
+
+        def set_events(self, events):
+            self.events = events
+
+        async def send(self, data):
+            self.sent.append(data)
+            response = server.handle_pdu(data)
+            await self.events.on_data(response)
+
+    channel = FakeChannel()
+    client = SDPClient(channel)
+
+    records = await client.search_attributes(
+        target=None,
+        uuid=0x1101,
+        attr_ids=[0x0001, 0x0004, 0x0100],
+    )
+
+    assert len(records) == 1
+    assert records[0][0x0100].value == "SPP"
+    assert channel.sent[0][0] == 0x06
+
+
+async def test_sdp_client_find_rfcomm_channel_over_l2cap_channel():
+    server = SDPServer()
+    server.register(make_rfcomm_service_record(service_uuid=0x1101, channel=7, name="SPP"))
+
+    class FakeChannel:
+        def __init__(self):
+            self.events = None
+
+        def set_events(self, events):
+            self.events = events
+
+        async def send(self, data):
+            await self.events.on_data(server.handle_pdu(data))
+
+    client = SDPClient(FakeChannel())
+
+    channel = await client.find_rfcomm_channel(target=None, service_uuid=0x1101)
+
+    assert channel == 7

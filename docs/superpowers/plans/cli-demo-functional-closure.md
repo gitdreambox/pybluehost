@@ -122,21 +122,21 @@ uv run --frozen pytest tests/unit/classic/test_rfcomm.py tests/unit/cli/test_app
 - 后续修改：`pybluehost/cli/app/sdp_browser.py`
 - 后续修改：`pybluehost/cli/app/spp_echo.py`
 
-- [ ] **Step 1：实现 BR/EDR ACL connection waiter**
+- [x] **Step 1：实现 BR/EDR ACL connection waiter**
 
 提供类似 `Stack.connect_gatt()` 的 app-level Classic ACL handle 获取 API。
 
 - [ ] **Step 2：实现 Classic L2CAP dynamic PSM connect/listen**
 
-支持 SDP PSM `0x0001` 和 RFCOMM PSM `0x0003`。
+已完成 outgoing connect 路径，支持连接 SDP PSM `0x0001` 和 RFCOMM PSM `0x0003`。incoming listen/accept 路径仍待实现。
 
-- [ ] **Step 3：实现基于 L2CAP 的 SDPClient**
+- [x] **Step 3：实现基于 L2CAP 的 SDPClient**
 
 `sdp-browser` 必须发送真实 ServiceSearchAttribute request，并打印远端 SDP records。
 
 - [ ] **Step 4：实现 RFCOMM session state machine**
 
-支持 SPP connect/listen/echo 所需的 SABM、UA、DM、DISC、UIH。
+已完成 outgoing SABM/UA multiplexer + DLC 打开，以及 `SPPClient.connect()`。server-side listen/echo 所需的 incoming SABM/UA、UIH data dispatch 仍待实现。
 
 - [ ] **Step 5：新增 CSR 硬件验收**
 

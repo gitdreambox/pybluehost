@@ -1,9 +1,13 @@
 """RFCOMM — serial port emulation over L2CAP (TS 07.10 adaptation)."""
 from __future__ import annotations
 
+import asyncio
 import struct
 from dataclasses import dataclass
 from enum import IntEnum
+
+from pybluehost.l2cap.channel import SimpleChannelEvents
+from pybluehost.l2cap.constants import PSM_RFCOMM
 
 
 # ---------------------------------------------------------------------------
@@ -143,14 +147,18 @@ class RFCOMMSession:
     def __init__(self, l2cap_channel: object | None = None) -> None:
         self._l2cap_channel = l2cap_channel
         self._dlcs: dict[int, RFCOMMChannel] = {}
+        self._ua_waiters: dict[int, asyncio.Future[None]] = {}
+        if l2cap_channel is not None and hasattr(l2cap_channel, "set_events"):
+            l2cap_channel.set_events(SimpleChannelEvents(on_data=self._on_frame))
 
     async def open(self) -> None:
         """Open the multiplexer session (SABM on DLCI 0)."""
-        raise NotImplementedError("RFCOMM multiplexer open requires Classic L2CAP dynamic channel support")
+        await self._send_sabm_and_wait_ua(dlci=0)
 
     async def open_dlc(self, server_channel: int) -> RFCOMMChannel:
         """Open a data link connection to a remote server channel."""
         dlci = server_channel << 1  # initiator direction bit = 0
+        await self._send_sabm_and_wait_ua(dlci=dlci)
         ch = RFCOMMChannel(dlci=dlci, session=self, max_frame_size=127)
         self._dlcs[dlci] = ch
         return ch
@@ -158,6 +166,34 @@ class RFCOMMSession:
     async def close(self) -> None:
         """Close the multiplexer session."""
         self._dlcs.clear()
+
+    async def _send_sabm_and_wait_ua(self, dlci: int) -> None:
+        if self._l2cap_channel is None:
+            raise NotImplementedError("RFCOMM multiplexer open requires Classic L2CAP dynamic channel support")
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[None] = loop.create_future()
+        self._ua_waiters[dlci] = waiter
+        await self._l2cap_channel.send(
+            encode_frame(
+                RFCOMMFrame(
+                    dlci=dlci,
+                    frame_type=RFCOMMFrameType.SABM,
+                    pf=True,
+                    data=b"",
+                )
+            )
+        )
+        try:
+            await asyncio.wait_for(waiter, timeout=5.0)
+        finally:
+            self._ua_waiters.pop(dlci, None)
+
+    async def _on_frame(self, data: bytes) -> None:
+        frame = decode_frame(data)
+        if frame.frame_type == RFCOMMFrameType.UA:
+            waiter = self._ua_waiters.get(frame.dlci)
+            if waiter is not None and not waiter.done():
+                waiter.set_result(None)
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +259,14 @@ class RFCOMMManager:
 
     async def connect(self, acl_handle: int, server_channel: int) -> RFCOMMChannel:
         """Connect to a remote RFCOMM server channel."""
-        raise NotImplementedError("Requires L2CAP connection")
+        if self._l2cap is None or not hasattr(self._l2cap, "connect_classic_channel"):
+            raise NotImplementedError("Requires L2CAP connection")
+        l2cap_channel = await self._l2cap.connect_classic_channel(acl_handle, PSM_RFCOMM)
+        session = RFCOMMSession(l2cap_channel)
+        await session.open()
+        channel = await session.open_dlc(server_channel)
+        self._sessions[acl_handle] = session
+        return channel
 
     async def listen(self, server_channel: int, handler: object) -> None:
         """Register a handler for incoming connections on a server channel."""

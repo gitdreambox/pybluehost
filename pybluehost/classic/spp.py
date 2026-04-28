@@ -99,4 +99,12 @@ class SPPClient:
         2. RFCOMM: connect(acl_handle, channel)
         3. Wrap in SPPConnection
         """
-        raise NotImplementedError("Requires L2CAP + RFCOMM connection")
+        if self._sdp_client is None:
+            raise NotImplementedError("Requires SDP client")
+        if self._rfcomm is None:
+            raise NotImplementedError("Requires RFCOMM manager")
+        channel = await self._sdp_client.find_rfcomm_channel(target, 0x1101)
+        if channel is None:
+            raise RuntimeError("SPP service not found")
+        rfcomm_channel = await self._rfcomm.connect(target, channel)
+        return SPPConnection(rfcomm_channel=rfcomm_channel)

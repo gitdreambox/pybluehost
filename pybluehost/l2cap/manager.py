@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
+from dataclasses import dataclass
 from typing import Callable, Awaitable
 
 from pybluehost.core.types import LinkType
@@ -10,8 +11,30 @@ from pybluehost.hci.constants import ACL_PB_FIRST_AUTO_FLUSH
 from pybluehost.hci.packets import HCIACLData, HCIEvent
 from pybluehost.l2cap.ble import FixedChannel
 from pybluehost.l2cap.channel import Channel, ChannelState, SimpleChannelEvents
-from pybluehost.l2cap.constants import CID_ATT, CID_CLASSIC_SIGNALING, CID_LE_SIGNALING, CID_SMP
+from pybluehost.l2cap.classic import ChannelMode, ClassicChannel
+from pybluehost.l2cap.constants import (
+    CID_ATT,
+    CID_CLASSIC_SIGNALING,
+    CID_DYNAMIC_MAX,
+    CID_DYNAMIC_MIN,
+    CID_LE_SIGNALING,
+    CID_SMP,
+    SignalingCode,
+)
 from pybluehost.l2cap.sar import Reassembler
+from pybluehost.l2cap.signaling import SignalingPacket, decode_signaling, encode_signaling
+
+
+@dataclass
+class _ClassicConnectPending:
+    local_cid: int
+    future: asyncio.Future[int]
+
+
+@dataclass
+class _ClassicConfigPending:
+    channel: ClassicChannel
+    future: asyncio.Future[ClassicChannel]
 
 
 class L2CAPManager:
@@ -26,6 +49,10 @@ class L2CAPManager:
         self._sar = Reassembler()
         # handle -> {cid -> Channel}
         self._connections: dict[int, dict[int, Channel]] = {}
+        self._next_dynamic_cid = CID_DYNAMIC_MIN
+        self._next_signaling_id = 1
+        self._classic_connect_pending: dict[tuple[int, int], _ClassicConnectPending] = {}
+        self._classic_config_pending: dict[tuple[int, int], _ClassicConfigPending] = {}
 
     # -- HCI upstream callbacks (registered via hci.set_upstream) --
 
@@ -106,9 +133,15 @@ class L2CAPManager:
             )
         else:
             # Classic connections get signaling fixed channel
-            channels[CID_CLASSIC_SIGNALING] = FixedChannel(
+            signaling = FixedChannel(
                 connection_handle=handle, cid=CID_CLASSIC_SIGNALING, hci=self._hci, mtu=48,
             )
+            signaling.set_events(
+                SimpleChannelEvents(
+                    on_data=lambda data, conn_handle=handle: self._on_classic_signaling(conn_handle, data)
+                )
+            )
+            channels[CID_CLASSIC_SIGNALING] = signaling
         self._connections[handle] = channels
 
     async def on_disconnection(self, handle: int, reason: int) -> None:
@@ -143,3 +176,126 @@ class L2CAPManager:
         if handle not in self._connections:
             self._connections[handle] = {}
         self._connections[handle][channel.cid] = channel
+
+    async def connect_classic_channel(
+        self,
+        handle: int,
+        psm: int,
+        *,
+        timeout: float = 5.0,
+    ) -> ClassicChannel:
+        """Open a Classic L2CAP dynamic channel to a remote PSM."""
+        signaling = self.get_fixed_channel(handle, CID_CLASSIC_SIGNALING)
+        if signaling is None:
+            raise RuntimeError(f"Classic signaling channel not available for handle 0x{handle:04X}")
+
+        local_cid = self._allocate_dynamic_cid()
+        conn_ident = self._next_identifier()
+        loop = asyncio.get_running_loop()
+        conn_future: asyncio.Future[int] = loop.create_future()
+        self._classic_connect_pending[(handle, conn_ident)] = _ClassicConnectPending(
+            local_cid=local_cid,
+            future=conn_future,
+        )
+        request = SignalingPacket(
+            code=SignalingCode.CONNECTION_REQUEST,
+            identifier=conn_ident,
+            data=struct.pack("<HH", psm, local_cid),
+        )
+        await signaling.send(encode_signaling(request))
+
+        try:
+            peer_cid = await asyncio.wait_for(conn_future, timeout=timeout)
+        finally:
+            self._classic_connect_pending.pop((handle, conn_ident), None)
+
+        channel = ClassicChannel(
+            connection_handle=handle,
+            local_cid=local_cid,
+            peer_cid=peer_cid,
+            mode=ChannelMode.BASIC,
+            hci=self._hci,
+        )
+        self.register_channel(handle, channel)
+
+        config_ident = self._next_identifier()
+        config_future: asyncio.Future[ClassicChannel] = loop.create_future()
+        self._classic_config_pending[(handle, config_ident)] = _ClassicConfigPending(
+            channel=channel,
+            future=config_future,
+        )
+        configure = SignalingPacket(
+            code=SignalingCode.CONFIGURE_REQUEST,
+            identifier=config_ident,
+            data=struct.pack("<HH", peer_cid, 0x0000),
+        )
+        await signaling.send(encode_signaling(configure))
+
+        try:
+            return await asyncio.wait_for(config_future, timeout=timeout)
+        finally:
+            self._classic_config_pending.pop((handle, config_ident), None)
+
+    def _allocate_dynamic_cid(self) -> int:
+        cid = self._next_dynamic_cid
+        self._next_dynamic_cid += 1
+        if self._next_dynamic_cid > CID_DYNAMIC_MAX:
+            self._next_dynamic_cid = CID_DYNAMIC_MIN
+        return cid
+
+    def _next_identifier(self) -> int:
+        ident = self._next_signaling_id
+        self._next_signaling_id += 1
+        if self._next_signaling_id > 0xFF:
+            self._next_signaling_id = 1
+        return ident
+
+    async def _on_classic_signaling(self, handle: int, data: bytes) -> None:
+        packet = decode_signaling(data)
+        if packet.code == SignalingCode.CONNECTION_RESPONSE:
+            pending = self._classic_connect_pending.get((handle, packet.identifier))
+            if pending is None or pending.future.done():
+                return
+            if len(packet.data) < 8:
+                pending.future.set_exception(RuntimeError("Malformed L2CAP Connection Response"))
+                return
+            dest_cid, source_cid, result, status = struct.unpack_from("<HHHH", packet.data)
+            if source_cid != pending.local_cid:
+                pending.future.set_exception(
+                    RuntimeError(
+                        f"L2CAP Connection Response source CID mismatch: 0x{source_cid:04X}"
+                    )
+                )
+                return
+            if result != 0:
+                pending.future.set_exception(
+                    RuntimeError(
+                        f"L2CAP Connection Response failed: result=0x{result:04X} status=0x{status:04X}"
+                    )
+                )
+                return
+            pending.future.set_result(dest_cid)
+            return
+
+        if packet.code == SignalingCode.CONFIGURE_RESPONSE:
+            pending = self._classic_config_pending.get((handle, packet.identifier))
+            if pending is None or pending.future.done():
+                return
+            if len(packet.data) < 6:
+                pending.future.set_exception(RuntimeError("Malformed L2CAP Configure Response"))
+                return
+            source_cid, _flags, result = struct.unpack_from("<HHH", packet.data)
+            if source_cid != pending.channel.cid:
+                pending.future.set_exception(
+                    RuntimeError(
+                        f"L2CAP Configure Response source CID mismatch: 0x{source_cid:04X}"
+                    )
+                )
+                return
+            if result != 0:
+                pending.future.set_exception(
+                    RuntimeError(f"L2CAP Configure Response failed: result=0x{result:04X}")
+                )
+                return
+            pending.channel.open()
+            pending.future.set_result(pending.channel)
