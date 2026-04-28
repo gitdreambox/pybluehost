@@ -24,4 +24,4 @@ def parse_target_arg(s: str) -> tuple[BDAddress, AddressType]:
     else:
         addr_s = s
         atype = AddressType.PUBLIC
-    return (BDAddress.from_string(addr_s), atype)
+    return (BDAddress.from_string(addr_s, type=atype), atype)

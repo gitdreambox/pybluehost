@@ -5,9 +5,11 @@ import argparse
 import asyncio
 import sys
 
-from pybluehost.cli._virtual_peer import virtual_peer_with
 from pybluehost.cli._target import parse_target_arg
+from pybluehost.cli._transport import parse_transport_arg
+from pybluehost.cli._virtual_peer import virtual_peer_with
 from pybluehost.ble.gatt import UUID_PRIMARY_SERVICE, UUID_CHARACTERISTIC
+from pybluehost.core.uuid import UUID16, UUID128
 from pybluehost.profiles.ble import BatteryServer
 from pybluehost.stack import Stack
 
@@ -40,9 +42,49 @@ async def _gatt_browser_main(args: argparse.Namespace) -> int:
         return 0
     else:
         addr, _atype = parse_target_arg(args.target)
-        print(f"Connected to {addr}")
-        print("(Real-hardware GATT discovery not implemented in v1; virtual only.)")
+        stack = None
+        try:
+            stack = await _build_stack(args.transport)
+            client = await stack.connect_gatt(addr)
+            services = await client.discover_all_services()
+            print(f"Connected to {addr}")
+            _print_discovered_services(services)
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        finally:
+            if stack is not None:
+                await stack.close()
         return 0
+
+
+async def _build_stack(transport_arg: str) -> Stack:
+    transport = await parse_transport_arg(transport_arg)
+    if not transport.is_open:
+        await transport.open()
+    try:
+        return await Stack._build(transport=transport)
+    except Exception:
+        await transport.close()
+        raise
+
+
+def _print_discovered_services(services: list[tuple[int, int, bytes]]) -> None:
+    for start_handle, end_handle, uuid_bytes in services:
+        uuid_text = _format_uuid(uuid_bytes)
+        print(f"- Service {uuid_text}  handles=0x{start_handle:04X}-0x{end_handle:04X}")
+
+
+def _format_uuid(uuid_bytes: bytes) -> str:
+    if len(uuid_bytes) == 2:
+        return f"0x{UUID16.from_bytes(uuid_bytes).value:04X}"
+    if len(uuid_bytes) == 16:
+        uuid = UUID128.from_bytes(uuid_bytes)
+        uuid16 = uuid.to_uuid16()
+        if uuid16 is not None:
+            return f"0x{uuid16.value:04X}"
+        return str(uuid)
+    return uuid_bytes.hex()
 
 
 def _print_gatt_tree(gatt_server) -> None:
