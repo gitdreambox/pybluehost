@@ -9,6 +9,7 @@ from pybluehost.ble.att import ATT_Read_Request, ATT_Write_Request, ATTOpcode
 from pybluehost.ble.gatt import (
     CharacteristicDefinition,
     CharProperties,
+    GATTClient,
     Permissions,
     ServiceDefinition,
 )
@@ -237,4 +238,23 @@ async def test_stack_sends_gatt_notifications_over_att_channel(monkeypatch):
     assert len(sent_acl) == 1
     expected_att = bytes([ATTOpcode.HANDLE_VALUE_NOTIFICATION]) + struct.pack("<H", 0x0003) + bytes([0x00, 72])
     assert sent_acl[0][2] == struct.pack("<HH", len(expected_att), 0x0004) + expected_att
+    await stack.close()
+
+
+async def test_stack_connect_gatt_waits_for_le_connection_and_returns_client(monkeypatch):
+    stack = await Stack.virtual()
+
+    async def connect(target, config=None):
+        event = HCI_LE_Meta_Event(
+            subevent_code=LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+            subevent_parameters=b"\x00" + struct.pack("<H", 0x0041) + bytes(16),
+        )
+        await stack._on_hci_event(event)
+
+    monkeypatch.setattr(stack.gap.ble_connections, "connect", connect)
+
+    client = await stack.connect_gatt(stack.local_address)
+
+    assert isinstance(client, GATTClient)
+    assert stack.l2cap.get_fixed_channel(0x0041, 0x0004) is not None
     await stack.close()

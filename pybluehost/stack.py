@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -64,6 +65,7 @@ class Stack:
         self._powered = False
         self._mode: StackMode = StackMode.LIVE
         self._config: StackConfig = StackConfig()
+        self._le_connection_waiters: list[asyncio.Future[int]] = []
 
     # -- Factory methods -----------------------------------------------------
 
@@ -228,6 +230,7 @@ class Stack:
         if self._l2cap is not None:
             await self._l2cap.on_hci_event(event)
             self._attach_gatt_server_to_att_channels()
+        self._notify_le_connection_waiters(event)
         if self._gap is None:
             return
         ble_scanner = getattr(self._gap, "ble_scanner", None)
@@ -275,6 +278,69 @@ class Stack:
 
             channel.set_events(SimpleChannelEvents(on_data=on_att_data))
             setattr(channel, "_gatt_server_bound", True)
+
+    def _notify_le_connection_waiters(self, event: Any) -> None:
+        if not self._le_connection_waiters:
+            return
+
+        from pybluehost.hci.constants import LEMetaSubEvent
+        from pybluehost.hci.packets import HCI_LE_Meta_Event
+
+        if not isinstance(event, HCI_LE_Meta_Event):
+            return
+        if event.subevent_code not in (
+            LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+            LEMetaSubEvent.LE_ENHANCED_CONNECTION_COMPLETE,
+        ):
+            return
+        if len(event.subevent_parameters) < 3:
+            return
+        if event.subevent_parameters[0] != 0:
+            return
+
+        import struct
+
+        handle = struct.unpack_from("<H", event.subevent_parameters, 1)[0]
+        waiters = self._le_connection_waiters
+        self._le_connection_waiters = []
+        for waiter in waiters:
+            if not waiter.done():
+                waiter.set_result(handle)
+
+    async def connect_gatt(
+        self,
+        target: BDAddress,
+        *,
+        timeout: float = 10.0,
+    ) -> Any:
+        """Connect to a BLE peer and return a GATT client bound to ATT CID."""
+        if self._gap is None or self._l2cap is None:
+            raise RuntimeError("Stack is not initialized")
+
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[int] = loop.create_future()
+        self._le_connection_waiters.append(waiter)
+        try:
+            await self._gap.ble_connections.connect(target)
+            handle = await asyncio.wait_for(waiter, timeout=timeout)
+        finally:
+            if not waiter.done():
+                waiter.cancel()
+            with contextlib.suppress(ValueError):
+                self._le_connection_waiters.remove(waiter)
+
+        from pybluehost.ble.att import ATTBearer
+        from pybluehost.ble.gatt import GATTClient
+        from pybluehost.l2cap.channel import SimpleChannelEvents
+        from pybluehost.l2cap.constants import CID_ATT
+
+        channel = self._l2cap.get_fixed_channel(handle, CID_ATT)
+        if channel is None:
+            raise RuntimeError(f"ATT fixed channel not available for handle 0x{handle:04X}")
+        bearer = ATTBearer(channel, mtu=getattr(channel, "mtu", 23))
+        channel.set_events(SimpleChannelEvents(on_data=bearer._on_pdu))
+        setattr(channel, "_gatt_client_bound", True)
+        return GATTClient(bearer)
 
     # -- Lifecycle -----------------------------------------------------------
 

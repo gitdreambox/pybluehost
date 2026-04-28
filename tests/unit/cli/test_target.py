@@ -17,6 +17,7 @@ def test_parse_explicit_public():
 def test_parse_random():
     addr, atype = parse_target_arg("AA:BB:CC:DD:EE:FF/random")
     assert atype == AddressType.RANDOM
+    assert addr.type == AddressType.RANDOM
 
 
 def test_parse_invalid_address_raises():
