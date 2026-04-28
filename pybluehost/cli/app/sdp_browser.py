@@ -43,6 +43,13 @@ def _parse_uuid_arg(value: str) -> int:
     return uuid
 
 
+def _parse_timeout_arg(value: str) -> float:
+    timeout = float(value)
+    if timeout <= 0:
+        raise argparse.ArgumentTypeError("timeout must be > 0")
+    return timeout
+
+
 def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("sdp-browser", help="Connect, query SDP, print, exit")
     p.add_argument("-t", "--transport", required=True)
@@ -52,6 +59,12 @@ def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None
         type=_parse_uuid_arg,
         default=None,
         help="Service UUID16 to query; omit to scan common SDP service UUIDs",
+    )
+    p.add_argument(
+        "--sdp-timeout",
+        type=_parse_timeout_arg,
+        default=10.0,
+        help="Seconds to wait for each SDP request; default 10",
     )
     add_trace_arguments(p)
     p.set_defaults(func=lambda args: asyncio.run(_sdp_browser_main(args)))
@@ -64,14 +77,23 @@ async def _sdp_browser_main(args: argparse.Namespace) -> int:
 
     addr, _atype = parse_target_arg(args.target)
     service_uuid = getattr(args, "uuid", None)
+    sdp_timeout = getattr(args, "sdp_timeout", 10.0)
     return await run_app_command(
         args.transport,
-        lambda stack, stop: _sdp_browser_run(stack, stop, addr, service_uuid),
+        lambda stack, stop: _sdp_browser_run(
+            stack, stop, addr, service_uuid, sdp_timeout
+        ),
         **trace_kwargs_from_args(args),
     )
 
 
-async def _sdp_browser_run(stack: Stack, stop: asyncio.Event, addr, service_uuid: int) -> None:
+async def _sdp_browser_run(
+    stack: Stack,
+    stop: asyncio.Event,
+    addr,
+    service_uuid: int | None,
+    sdp_timeout: float,
+) -> None:
     del stop
     print(f"Connecting to {addr}")
     handle = await stack.connect_classic(addr)
@@ -82,9 +104,9 @@ async def _sdp_browser_run(stack: Stack, stop: asyncio.Event, addr, service_uuid
     print(f"Encrypted ACL handle=0x{handle:04X}")
     channel = await stack.l2cap.connect_classic_channel(handle=handle, psm=PSM_SDP)
     if service_uuid is None:
-        client = SDPClient(channel, request_timeout=1.0, retries=0)
+        client = SDPClient(channel, request_timeout=sdp_timeout, retries=0)
     else:
-        client = SDPClient(channel)
+        client = SDPClient(channel, request_timeout=sdp_timeout, retries=0)
     records = await _query_sdp_records(client, service_uuid)
     if not records:
         print("No SDP records found")

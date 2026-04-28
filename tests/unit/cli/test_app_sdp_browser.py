@@ -40,6 +40,9 @@ def test_sdp_browser_parser_has_target_example_and_trace_options():
     uuid_action = next(action for action in sdp_parser._actions if "--uuid" in action.option_strings)
     assert "omit to scan" in uuid_action.help
     assert args.uuid is None
+    timeout_action = next(action for action in sdp_parser._actions if "--sdp-timeout" in action.option_strings)
+    assert "10" in timeout_action.help
+    assert args.sdp_timeout == 10.0
     assert args.hci_log is True
     assert args.btsnoop == Path("sdp.cfa")
 
@@ -91,7 +94,7 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
     class FakeSDPClient:
         def __init__(self, channel, **kwargs):
             assert channel is not None
-            assert kwargs == {"request_timeout": 1.0, "retries": 0}
+            assert kwargs == {"request_timeout": 10.0, "retries": 0}
 
         async def search_attributes(self, target, uuid, attr_ids=None):
             assert target is None
@@ -108,6 +111,7 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
         transport="usb:vendor=csr",
         target="A0:90:B5:10:40:82",
         uuid=None,
+        sdp_timeout=10.0,
         hci_log=True,
         btsnoop=Path("sdp.cfa"),
     )
@@ -158,6 +162,7 @@ async def test_sdp_browser_default_scan_deduplicates_records(monkeypatch, capsys
         transport="usb:vendor=csr",
         target="A0:90:B5:10:40:82",
         uuid=None,
+        sdp_timeout=10.0,
         hci_log=False,
         btsnoop=None,
     )
@@ -208,13 +213,14 @@ async def test_sdp_browser_accepts_custom_uuid(monkeypatch):
         transport="usb:vendor=csr",
         target="A0:90:B5:10:40:82",
         uuid=0x1101,
+        sdp_timeout=10.0,
         hci_log=False,
         btsnoop=None,
     )
 
     assert await _sdp_browser_main(args) == 0
     assert seen["uuid"] == 0x1101
-    assert seen["client_kwargs"] == {}
+    assert seen["client_kwargs"] == {"request_timeout": 10.0, "retries": 0}
 
 
 def test_cli_error_format_includes_type_for_empty_message():
