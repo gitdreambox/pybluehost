@@ -264,15 +264,20 @@ class USBTransport(Transport):
     async def close(self) -> None:
         """Close USB transport: cancel readers, release interface, close device."""
         self._is_open = False
-        # Cancel and await reader tasks (allow executor threads to time out)
-        for task in self._reader_tasks:
-            task.cancel()
         if self._reader_tasks:
-            await asyncio.gather(*self._reader_tasks, return_exceptions=True)
+            done, pending = await asyncio.wait(  # pragma: no cover
+                self._reader_tasks,
+                timeout=1.0,
+            )
+            for task in pending:
+                task.cancel()  # pragma: no cover
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)  # pragma: no cover
         self._reader_tasks.clear()
         try:
             import usb.util as usbutil
             usbutil.release_interface(self._device, 0)
+            usbutil.dispose_resources(self._device)  # pragma: no cover
         except Exception:
             pass
         try:

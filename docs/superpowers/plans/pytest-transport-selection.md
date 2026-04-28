@@ -2604,7 +2604,7 @@ Expected:
 - All tests pass or skip cleanly (no errors)
 - Terminal summary at end shows the fallback warning with non-zero count
 
-Actual: PASS. This host enumerates Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`), but the selected Intel adapter cannot initialize reliably in this session. Autodetect now probes hardware usability and falls back to virtual when the probe fails; the default run exits 0 and prints the fallback summary (`14 tests ran on virtual`).
+Actual: PASS. This host enumerates Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`). Autodetect probes candidates in order; Intel fails the usability probe, CSR passes and becomes the selected primary hardware transport.
 
 - [x] **Step 23.2: Run full suite explicitly on virtual (CI scenario)**
 
@@ -2614,7 +2614,7 @@ uv run pytest tests/ -q --transport=virtual --cov=pybluehost --cov-fail-under=85
 
 Expected: PASS, coverage ≥ 85%, **no** fallback summary.
 
-Actual: PASS, 826 passed, 14 skipped, coverage 85.03%.
+Actual: PASS, coverage 85.05%.
 
 - [x] **Step 23.3: Verify error paths**
 
@@ -2692,9 +2692,9 @@ git commit -m "docs(progress): mark pytest transport selection plan complete"
 - **记录人**：Codex session，2026-04-27
 
 ### Q: Task 23 default-mode full suite initially picked unusable autodetected USB hardware
-- **现象**：`uv run --frozen pytest tests/ -q` originally did not fall back to virtual on this host because autodetect found Intel BE200 (`bus=1 address=9`) and CSR8510 (`bus=1 address=8`). The run then failed in `tests/hardware/test_intel_hw.py` with USB interrupt timeouts, and stack fixture setup could exit with `No HCI event received within 5.0s` / `Access denied`.
-- **原因**：The host has detectable USB adapters, but the selected Intel adapter is not usable for reliable HCI traffic in the current session. Enumeration alone is not enough to decide that hardware is available.
-- **解决方案**：Autodetect now probes whether the selected hardware spec can initialize and close a `Stack`; if the probe fails, default mode falls back to virtual and records the fallback summary. Explicit `--transport=usb...` still fails loudly instead of falling back.
+- **现象**：`uv run --frozen pytest tests/ -q` originally selected the first enumerated USB adapter, Intel BE200 (`bus=1 address=9`), and then failed in hardware paths with USB interrupt timeouts / `Access denied`.
+- **原因**：The host has multiple detectable USB adapters. Enumeration order alone is not a reliable hardware availability signal; the first adapter can be unusable while a later adapter is usable.
+- **解决方案**：Autodetect now probes every concrete USB candidate in order and selects the first candidate that can initialize and close a `Stack`; only if all candidates fail does default mode fall back to virtual. `USBTransport.close()` now waits for reader loops to exit before disposing libusb resources, avoiding Windows access violations during close. Explicit `--transport=usb...` still fails loudly instead of falling back.
 - **记录人**：Codex session，2026-04-28
 
 ### Q: `--transport-peer` mismatch was not enforced unless peer fixtures were requested

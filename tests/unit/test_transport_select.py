@@ -9,6 +9,7 @@ from tests._transport_select import (
     InvalidSpec,
     SameFamilyError,
     autodetect_primary,
+    autodetect_usb_candidates,
     enforce_same_family,
     family_of,
     find_second_usb_adapter,
@@ -90,6 +91,23 @@ def test_autodetect_returns_usb_spec_with_bus_address():
     cand.address = 4
     with patch("pybluehost.transport.usb.USBTransport.list_devices", return_value=[cand]):
         assert autodetect_primary() == "usb:vendor=intel,bus=1,address=4"
+
+
+def test_autodetect_usb_candidates_returns_all_concrete_specs():
+    a = MagicMock()
+    a.vendor = "intel"
+    a.bus = 1
+    a.address = 4
+    b = MagicMock()
+    b.vendor = "csr"
+    b.bus = 2
+    b.address = 5
+
+    with patch("pybluehost.transport.usb.USBTransport.list_devices", return_value=[a, b]):
+        assert autodetect_usb_candidates() == [
+            "usb:vendor=intel,bus=1,address=4",
+            "usb:vendor=csr,bus=2,address=5",
+        ]
 
 
 def test_autodetect_wraps_list_devices_errors():

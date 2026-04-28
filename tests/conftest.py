@@ -11,6 +11,7 @@ from tests._transport_select import (
     InvalidSpec,
     SameFamilyError,
     autodetect_primary,
+    autodetect_usb_candidates,
     enforce_same_family,
     family_of,
     find_second_usb_adapter,
@@ -99,22 +100,20 @@ def _resolve_primary_spec(config: pytest.Config) -> str:
         spec = os.environ.get("PYBLUEHOST_TEST_TRANSPORT")
 
     autodetected = False
+    hardware_probe_failed = False
     if spec is None:
         try:
-            spec = autodetect_primary()
+            usb_candidates = autodetect_usb_candidates()
         except InvalidSpec as exc:
             pytest.exit(f"Invalid transport spec from autodetect: {exc}", returncode=4)
         autodetected = True
+        spec = _first_usable_autodetected_spec(usb_candidates)
+        hardware_probe_failed = bool(usb_candidates) and spec == "virtual"
 
     try:
         family_of_spec = family_of(spec)
     except InvalidSpec as exc:
         pytest.exit(f"Invalid transport spec: {spec!r} - {exc}", returncode=4)
-
-    if autodetected and family_of_spec in {"usb", "uart"}:
-        if not _probe_autodetected_spec_usable(spec):
-            spec = "virtual"
-            family_of_spec = "virtual"
 
     if not autodetected and family_of_spec in {"usb", "uart"}:
         try:
@@ -126,9 +125,19 @@ def _resolve_primary_spec(config: pytest.Config) -> str:
 
     if autodetected and spec == "virtual":
         _FALLBACK_TRACKER.mark_fallback()
+        if hardware_probe_failed:
+            _FALLBACK_TRACKER.mark_unusable_hardware()
 
     setattr(config, _PRIMARY_CACHE_ATTR, spec)
     return spec
+
+
+def _first_usable_autodetected_spec(candidates: list[str]) -> str:
+    """Return first usable autodetected USB spec, or virtual if none works."""
+    for candidate in candidates:
+        if _probe_autodetected_spec_usable(candidate):
+            return candidate
+    return "virtual"
 
 
 def _probe_autodetected_spec_usable(spec: str) -> bool:
@@ -243,6 +252,8 @@ def _header_source_label(config: pytest.Config) -> str:
     if os.environ.get("PYBLUEHOST_TEST_TRANSPORT") is not None:
         return "explicit"
     if _FALLBACK_TRACKER.is_fallback():
+        if _FALLBACK_TRACKER.has_unusable_hardware():
+            return "auto-detected — hardware unusable"
         return "auto-detected — no hardware found"
     return "auto-detected"
 
@@ -304,9 +315,14 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
 
     n = _FALLBACK_TRACKER.count
     terminalreporter.write_sep("=", "pybluehost transport summary")
-    terminalreporter.write_line(
-        f"⚠  Auto-detect found no hardware. {n} tests ran on virtual."
-    )
+    if _FALLBACK_TRACKER.has_unusable_hardware():
+        terminalreporter.write_line(
+            f"⚠  Auto-detect found no usable hardware. {n} tests ran on virtual."
+        )
+    else:
+        terminalreporter.write_line(
+            f"⚠  Auto-detect found no hardware. {n} tests ran on virtual."
+        )
     terminalreporter.write_line(
         "   Set --transport=usb (or PYBLUEHOST_TEST_TRANSPORT=usb) to validate"
     )

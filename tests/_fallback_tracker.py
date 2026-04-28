@@ -10,13 +10,20 @@ class FallbackTracker:
 
     def __init__(self) -> None:
         self._fallback = False
+        self._unusable_hardware = False
         self._count = 0
 
     def mark_fallback(self) -> None:
         self._fallback = True
 
+    def mark_unusable_hardware(self) -> None:
+        self._unusable_hardware = True
+
     def is_fallback(self) -> bool:
         return self._fallback
+
+    def has_unusable_hardware(self) -> bool:
+        return self._unusable_hardware
 
     def increment(self) -> None:
         self._count += 1

@@ -48,15 +48,21 @@ def parse_spec(spec: str) -> tuple[str, dict[str, str]]:
 
 def autodetect_primary() -> str:
     """Return a usb:... spec for the first detected adapter, or 'virtual'."""
+    candidates = autodetect_usb_candidates()
+    if not candidates:
+        return "virtual"
+    return candidates[0]
+
+
+def autodetect_usb_candidates() -> list[str]:
+    """Return every detected USB adapter as a concrete transport spec."""
     from pybluehost.transport.usb import USBTransport
 
     try:
         candidates = USBTransport.list_devices()
     except Exception as exc:
         raise InvalidSpec("Unable to enumerate USB transports") from exc
-    if not candidates:
-        return "virtual"
-    return _usb_candidate_spec(candidates[0])
+    return [_usb_candidate_spec(candidate) for candidate in candidates]
 
 
 def find_second_usb_adapter(

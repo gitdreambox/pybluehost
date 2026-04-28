@@ -172,13 +172,13 @@ def test_primary_resolution_is_cached_per_config(
 ) -> None:
     calls = 0
 
-    def fake_autodetect() -> str:
+    def fake_autodetect() -> list[str]:
         nonlocal calls
         calls += 1
-        return "virtual"
+        return []
 
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
-    monkeypatch.setattr(project_conftest, "autodetect_primary", fake_autodetect)
+    monkeypatch.setattr(project_conftest, "autodetect_usb_candidates", fake_autodetect)
     config = _Config()
 
     assert project_conftest._resolve_primary_spec(config) == "virtual"
@@ -192,8 +192,8 @@ def test_autodetected_usb_falls_back_to_virtual_when_probe_fails(
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
     monkeypatch.setattr(
         project_conftest,
-        "autodetect_primary",
-        lambda: "usb:vendor=intel,bus=1,address=4",
+        "autodetect_usb_candidates",
+        lambda: ["usb:vendor=intel,bus=1,address=4"],
     )
     monkeypatch.setattr(
         project_conftest,
@@ -210,8 +210,8 @@ def test_autodetected_usb_keeps_hardware_when_probe_passes(
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
     monkeypatch.setattr(
         project_conftest,
-        "autodetect_primary",
-        lambda: "usb:vendor=intel,bus=1,address=4",
+        "autodetect_usb_candidates",
+        lambda: ["usb:vendor=intel,bus=1,address=4"],
     )
     monkeypatch.setattr(
         project_conftest,
@@ -222,6 +222,47 @@ def test_autodetected_usb_keeps_hardware_when_probe_passes(
     assert (
         project_conftest._resolve_primary_spec(_Config())
         == "usb:vendor=intel,bus=1,address=4"
+    )
+
+
+def test_autodetected_usb_tries_next_candidate_when_first_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidates = [
+        "usb:vendor=intel,bus=1,address=4",
+        "usb:vendor=csr,bus=2,address=5",
+    ]
+    seen: list[str] = []
+
+    def fake_probe(spec: str) -> bool:
+        seen.append(spec)
+        return spec.endswith("address=5")
+
+    monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
+    monkeypatch.setattr(project_conftest, "autodetect_usb_candidates", lambda: candidates)
+    monkeypatch.setattr(project_conftest, "_probe_autodetected_spec_usable", fake_probe)
+
+    assert (
+        project_conftest._resolve_primary_spec(_Config())
+        == "usb:vendor=csr,bus=2,address=5"
+    )
+    assert seen == candidates
+
+
+def test_first_usable_autodetected_spec_returns_virtual_when_all_probes_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        project_conftest,
+        "_probe_autodetected_spec_usable",
+        lambda spec: False,
+    )
+
+    assert (
+        project_conftest._first_usable_autodetected_spec(
+            ["usb:vendor=intel,bus=1,address=4"]
+        )
+        == "virtual"
     )
 
 
