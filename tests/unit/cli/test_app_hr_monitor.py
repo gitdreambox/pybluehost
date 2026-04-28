@@ -1,10 +1,8 @@
 import asyncio
 from pybluehost.cli.app.hr_monitor import _hr_monitor_main
-from pybluehost.stack import Stack
 
 
-async def test_hr_monitor_pushes_measurements_until_stop():
-    stack = await Stack.virtual()
+async def test_hr_monitor_pushes_measurements_until_stop(stack):
     stop = asyncio.Event()
 
     async def stopper():
@@ -14,4 +12,3 @@ async def test_hr_monitor_pushes_measurements_until_stop():
     task = asyncio.create_task(_hr_monitor_main(stack, stop, interval=0.05))
     asyncio.create_task(stopper())
     await task
-    await stack.close()

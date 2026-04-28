@@ -1,11 +1,9 @@
 import asyncio
 import pytest
 from pybluehost.cli.app.ble_adv import _ble_adv_main
-from pybluehost.stack import Stack
 
 
-async def test_ble_adv_starts_and_stops_cleanly():
-    stack = await Stack.virtual()
+async def test_ble_adv_starts_and_stops_cleanly(stack):
     stop = asyncio.Event()
 
     async def stopper():
@@ -16,4 +14,3 @@ async def test_ble_adv_starts_and_stops_cleanly():
     task = asyncio.create_task(_ble_adv_main(stack, stop, name=args_name))
     asyncio.create_task(stopper())
     await task
-    await stack.close()

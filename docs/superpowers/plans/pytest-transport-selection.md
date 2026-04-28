@@ -2300,13 +2300,13 @@ git commit -m "refactor(tests): use stack fixture in test_hci_l2cap"
 - Modify: `tests/unit/cli/test_app_hr_monitor.py`
 - Modify: `tests/unit/cli/test_app_spp_echo.py`
 
-- [ ] **Step 18.1: Identify all inline `Stack.virtual()` call sites (Task 1 already renamed from `Stack.loopback()`)**
+- [x] **Step 18.1: Identify all inline `Stack.virtual()` call sites (Task 1 already renamed from `Stack.loopback()`)**
 
 ```bash
 grep -n "Stack.virtual()" tests/unit/cli/test_app_*.py
 ```
 
-- [ ] **Step 18.2: For each file, do the same transformation**
+- [x] **Step 18.2: For each file, do the same transformation**
 
 Pattern (apply to every test that calls `await Stack.virtual()`):
 
@@ -2330,7 +2330,7 @@ async def test_xyz(stack):
 
 Drop the `from pybluehost.stack import Stack` import if `Stack` is no longer referenced anywhere in the file.
 
-- [ ] **Step 18.3: Run all six files**
+- [x] **Step 18.3: Run all six files**
 
 ```bash
 uv run pytest tests/unit/cli/test_app_ble_scan.py \
@@ -2344,7 +2344,17 @@ uv run pytest tests/unit/cli/test_app_ble_scan.py \
 
 Expected: all PASS, no `Stack.virtual()` calls remain.
 
-- [ ] **Step 18.4: Commit**
+Actual Task 18 verification:
+
+```bash
+uv run --frozen pytest tests/unit/cli/test_app_ble_scan.py tests/unit/cli/test_app_ble_adv.py tests/unit/cli/test_app_classic_inquiry.py tests/unit/cli/test_app_gatt_server.py tests/unit/cli/test_app_hr_monitor.py tests/unit/cli/test_app_spp_echo.py -v --transport=virtual
+# 6 passed
+
+Select-String -Path tests\unit\cli\test_app_ble_scan.py,tests\unit\cli\test_app_ble_adv.py,tests\unit\cli\test_app_classic_inquiry.py,tests\unit\cli\test_app_gatt_server.py,tests\unit\cli\test_app_hr_monitor.py,tests\unit\cli\test_app_spp_echo.py -Pattern "Stack\.virtual\("
+# 0 matches
+```
+
+- [x] **Step 18.4: Commit**
 
 ```bash
 git add tests/unit/cli/test_app_*.py
