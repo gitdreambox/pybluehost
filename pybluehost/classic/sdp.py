@@ -401,7 +401,7 @@ class SDPClient:
         *,
         request_timeout: float = 5.0,
         retries: int = 1,
-        max_attribute_byte_count: int = 0x00FF,
+        max_attribute_byte_count: int = 0xFFFF,
     ) -> None:
         self._l2cap = l2cap
         self._txn_id = 1
