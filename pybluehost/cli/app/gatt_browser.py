@@ -45,11 +45,19 @@ async def _gatt_browser_main(args: argparse.Namespace) -> int:
         stack = None
         try:
             stack = await _build_stack(args.transport)
+            if hasattr(stack, "on_connection_event"):
+                stack.on_connection_event(_print_connection_event)
             print(f"Connecting to {addr}")
             client = await stack.connect_gatt(addr)
             services = await client.discover_all_services()
             print(f"Connected to {addr}")
             await _print_discovered_gatt_tree(client, services)
+        except asyncio.TimeoutError:
+            print(
+                "Error: Timed out waiting for BLE connection or GATT response",
+                file=sys.stderr,
+            )
+            return 1
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1
@@ -68,6 +76,18 @@ async def _build_stack(transport_arg: str) -> Stack:
     except Exception:
         await transport.close()
         raise
+
+
+def _print_connection_event(event) -> None:
+    if event.state == "connected":
+        print(f"Connected handle=0x{event.handle:04X}", file=sys.stderr)
+    elif event.state == "disconnected":
+        print(
+            f"Disconnected handle=0x{event.handle:04X} reason={event.reason}",
+            file=sys.stderr,
+        )
+    elif event.state == "failed":
+        print(f"Connection failed reason={event.reason}", file=sys.stderr)
 
 
 def _print_discovered_services(services: list[tuple[int, int, bytes]]) -> None:
