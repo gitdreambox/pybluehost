@@ -276,18 +276,25 @@ PyBlueHost CLI 分为两个命名空间：
 ```bash
 # 长跑命令（Ctrl+C 结束）
 uv run pybluehost app ble-scan --transport usb
+uv run pybluehost app ble-scan --transport usb:vendor=csr --hci-log
 uv run pybluehost app ble-adv --transport usb --name MyDevice
 uv run pybluehost app classic-inquiry --transport usb
 uv run pybluehost app gatt-server --transport virtual
 uv run pybluehost app hr-monitor --transport virtual
-uv run pybluehost app spp-echo --transport usb
+uv run pybluehost app spp-echo --transport usb:vendor=csr --hci-log
 
 # 一次性命令
-uv run pybluehost app gatt-browser --transport virtual
-uv run pybluehost app sdp-browser --transport virtual
+uv run pybluehost app gatt-browser --transport usb:vendor=csr --addr A0:90:B5:10:40:82
+uv run pybluehost app gatt-browser --transport usb:vendor=csr --addr A090B5104082 --btsnoop gatt.cfa
+uv run pybluehost app sdp-browser --transport usb:vendor=csr --addr 1A:8D:8D:1B:F5:6B
+uv run pybluehost app sdp-browser --transport usb:vendor=csr --addr 1A8D8D1BF56B --uuid 0x1101 --btsnoop sdp.cfa
 ```
 
-`--transport` 接受 `virtual` / `usb` / `usb:vendor=intel` / `uart:/dev/ttyUSB0[@115200]`。
+`--transport` 接受 `virtual` / `usb` / `usb:vendor=intel` / `usb:vendor=csr` / `uart:/dev/ttyUSB0[@115200]`。连接真硬件且机器上有多块适配器时，建议使用 `usb:vendor=csr` 或 `usb:vendor=intel` 固定选择，避免自动检测选错控制器。
+
+连接目标地址用 `--addr`/`-a` 指定，支持 `A0:90:B5:10:40:82` 和 `A090B5104082` 两种输入格式。`gatt-browser` 会输出 services、characteristics、descriptors，并把 characteristic properties 解析成 `read` / `write` / `notify` 等可读字符串；`sdp-browser` 默认扫描常见 SDP UUID，也可以用 `--uuid 0x1101`、`--uuid 0x7033` 指定查询。
+
+调试时所有 app demo 都支持一致的 trace 参数：`--hci-log` 把 HCI 收发打印到终端，`--btsnoop <path>` 保存可用抓包工具打开的 btsnoop/cfa 文件。SPP 手机端测试可运行 `uv run pybluehost app spp-echo --transport usb:vendor=csr --hci-log`，然后从手机蓝牙串口终端连接 `PyBlueHost SPP Echo`，RFCOMM 数据会原样 echo。
 
 ### tools（离线工具）
 
