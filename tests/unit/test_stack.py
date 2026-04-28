@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import pytest
 
+from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.core.types import IOCapability
+from pybluehost.hci.constants import LEMetaSubEvent
+from pybluehost.hci.packets import HCIACLData, HCI_LE_Meta_Event
 from pybluehost.stack import Stack, StackConfig, StackMode
 
 
@@ -93,4 +96,50 @@ async def test_stack_gap_has_subsystems():
     assert stack.gap.classic_discovery is not None
     assert stack.gap.classic_ssp is not None
     assert stack.gap.whitelist is not None
+    await stack.close()
+
+
+async def test_stack_routes_hci_le_advertising_report_to_ble_scanner():
+    stack = await Stack.virtual()
+    results = []
+    stack.gap.ble_scanner.on_result(lambda r: results.append(r))
+    ad = AdvertisingData()
+    ad.set_complete_local_name("PBH")
+    raw_ad = ad.to_bytes()
+    event = HCI_LE_Meta_Event(
+        subevent_code=LEMetaSubEvent.LE_ADVERTISING_REPORT,
+        subevent_parameters=(
+            b"\x01"
+            b"\x00"
+            b"\x00"
+            b"\x11\x22\x33\x44\x55\x66"
+            + bytes([len(raw_ad)])
+            + raw_ad
+            + bytes([0xD6])
+        ),
+    )
+
+    raw_event = bytes([0x04, 0x3E, 1 + len(event.subevent_parameters), event.subevent_code])
+    raw_event += event.subevent_parameters
+
+    await stack.hci.on_transport_data(raw_event)
+
+    assert len(results) == 1
+    assert str(results[0].address) == "11:22:33:44:55:66"
+    await stack.close()
+
+
+async def test_stack_routes_acl_data_to_l2cap(monkeypatch):
+    stack = await Stack.virtual()
+    packets = []
+
+    async def on_acl_data(packet):
+        packets.append(packet)
+
+    monkeypatch.setattr(stack.l2cap, "on_acl_data", on_acl_data)
+    acl = HCIACLData(handle=0x000B, pb_flag=0x02, data=b"\x03\x00\x04\x00att")
+
+    await stack.hci.on_transport_data(acl.to_bytes())
+
+    assert packets == [acl]
     await stack.close()

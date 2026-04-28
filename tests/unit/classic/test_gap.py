@@ -29,8 +29,9 @@ from pybluehost.hci.constants import (
     HCI_WRITE_LOCAL_NAME,
     HCI_WRITE_SCAN_ENABLE,
     ErrorCode,
+    EventCode,
 )
-from pybluehost.hci.packets import HCI_Command_Complete_Event
+from pybluehost.hci.packets import HCI_Command_Complete_Event, HCIEvent
 
 
 class FakeHCI:
@@ -88,6 +89,30 @@ async def test_discovery_on_result_handler():
     await disc._on_inquiry_result(info)
     assert len(results) == 1
     assert results[0].rssi == -50
+
+
+async def test_discovery_parses_inquiry_result_event():
+    hci = FakeHCI()
+    disc = ClassicDiscovery(hci=hci)
+    results = []
+    disc.on_result(lambda r: results.append(r))
+    event = HCIEvent(
+        event_code=EventCode.INQUIRY_RESULT,
+        parameters=(
+            b"\x01"  # Num responses
+            b"\x11\x22\x33\x44\x55\x66"  # BD_ADDR
+            b"\x01"  # Page scan repetition mode
+            b"\x00"  # Reserved
+            b"\x04\x02\x0C"  # Class of device
+            b"\x00\x00"  # Clock offset
+        ),
+    )
+
+    await disc.on_hci_event(event)
+
+    assert len(results) == 1
+    assert str(results[0].address) == "11:22:33:44:55:66"
+    assert results[0].class_of_device == 0x0C0204
 
 
 # ---------------------------------------------------------------------------

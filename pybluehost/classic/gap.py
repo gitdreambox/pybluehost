@@ -9,6 +9,7 @@ from typing import Callable
 from pybluehost.core.address import BDAddress
 from pybluehost.core.gap_common import ClassOfDevice, DeviceInfo
 from pybluehost.hci.constants import (
+    EventCode,
     HCI_ACCEPT_CONNECTION_REQ,
     HCI_CREATE_CONNECTION,
     HCI_INQUIRY,
@@ -22,7 +23,7 @@ from pybluehost.hci.constants import (
     HCI_WRITE_LOCAL_NAME,
     HCI_WRITE_SCAN_ENABLE,
 )
-from pybluehost.hci.packets import HCICommand
+from pybluehost.hci.packets import HCICommand, HCIEvent
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +86,11 @@ class ClassicDiscovery:
     def on_result(self, handler: Callable[[DeviceInfo], object]) -> None:
         self._handlers.append(handler)
 
+    async def on_hci_event(self, event: HCIEvent) -> None:
+        if event.event_code != EventCode.INQUIRY_RESULT:
+            return
+        await self._on_inquiry_result_event(event.parameters)
+
     async def start(self, config: InquiryConfig = InquiryConfig()) -> None:
         """Start inquiry."""
         lap_bytes = config.lap.to_bytes(3, "little")
@@ -110,6 +116,24 @@ class ClassicDiscovery:
         """Called by HCI event router on inquiry result."""
         for handler in self._handlers:
             handler(info)
+
+    async def _on_inquiry_result_event(self, data: bytes) -> None:
+        if not data:
+            return
+        count = data[0]
+        offset = 1
+        for _ in range(count):
+            if offset + 13 > len(data):
+                return
+            address = data[offset : offset + 6]
+            offset += 6
+            offset += 2  # Page scan repetition mode + reserved
+            class_of_device = int.from_bytes(data[offset : offset + 3], "little")
+            offset += 3
+            offset += 2  # Clock offset
+            await self._on_inquiry_result(
+                DeviceInfo(address=BDAddress(address), class_of_device=class_of_device)
+            )
 
 
 # ---------------------------------------------------------------------------

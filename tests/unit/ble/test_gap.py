@@ -27,8 +27,9 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_ADVERTISING_PARAMS,
     HCI_LE_SET_EXTENDED_ADVERTISING_ENABLE,
     HCI_LE_SET_EXTENDED_ADVERTISING_PARAMS,
+    LEMetaSubEvent,
 )
-from pybluehost.hci.packets import HCI_Command_Complete_Event
+from pybluehost.hci.packets import HCI_Command_Complete_Event, HCI_LE_Meta_Event
 from pybluehost.hci.constants import ErrorCode
 
 
@@ -94,6 +95,36 @@ async def test_scanner_delivers_results():
     await scanner._on_advertising_report(report)
     assert len(results) == 1
     assert results[0].rssi == -70
+
+
+async def test_scanner_parses_legacy_le_advertising_report():
+    hci = FakeHCI()
+    scanner = BLEScanner(hci=hci)
+    results: list[ScanResult] = []
+    scanner.on_result(lambda r: results.append(r))
+
+    ad = AdvertisingData()
+    ad.set_complete_local_name("PBH")
+    raw_ad = ad.to_bytes()
+    event = HCI_LE_Meta_Event(
+        subevent_code=LEMetaSubEvent.LE_ADVERTISING_REPORT,
+        subevent_parameters=(
+            b"\x01"  # Num reports
+            b"\x00"  # ADV_IND
+            b"\x00"  # Public address
+            b"\x11\x22\x33\x44\x55\x66"
+            + bytes([len(raw_ad)])
+            + raw_ad
+            + bytes([0xD6])  # -42 dBm
+        ),
+    )
+
+    await scanner.on_hci_event(event)
+
+    assert len(results) == 1
+    assert str(results[0].address) == "11:22:33:44:55:66"
+    assert results[0].rssi == -42
+    assert results[0].local_name == "PBH"
 
 
 async def test_scanner_stop():
