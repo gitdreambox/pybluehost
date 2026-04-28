@@ -1,6 +1,8 @@
 """Tests for Classic GAP: Discovery, Discoverability, ConnectionManager, SSP."""
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from pybluehost.classic.gap import (
@@ -16,12 +18,16 @@ from pybluehost.classic.gap import (
 from pybluehost.core.address import BDAddress
 from pybluehost.core.gap_common import ClassOfDevice
 from pybluehost.hci.constants import (
+    EventCode,
     HCI_ACCEPT_CONNECTION_REQ,
+    HCI_AUTH_REQUESTED,
     HCI_CREATE_CONNECTION,
     HCI_INQUIRY,
     HCI_INQUIRY_CANCEL,
     HCI_IO_CAPABILITY_REQUEST_REPLY,
+    HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY,
     HCI_REMOTE_NAME_REQUEST,
+    HCI_SET_CONNECTION_ENCRYPTION,
     HCI_USER_CONFIRMATION_REQUEST_REPLY,
     HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
     HCI_WRITE_CLASS_OF_DEVICE,
@@ -29,7 +35,6 @@ from pybluehost.hci.constants import (
     HCI_WRITE_LOCAL_NAME,
     HCI_WRITE_SCAN_ENABLE,
     ErrorCode,
-    EventCode,
 )
 from pybluehost.hci.packets import HCI_Command_Complete_Event, HCIEvent
 
@@ -40,6 +45,21 @@ class FakeHCI:
 
     async def send_command(self, cmd: object) -> HCI_Command_Complete_Event:
         self.commands.append(cmd)
+        return HCI_Command_Complete_Event(
+            num_hci_command_packets=1,
+            command_opcode=cmd.opcode,
+            return_parameters=bytes([ErrorCode.SUCCESS]),
+        )
+
+
+class BlockingHCI(FakeHCI):
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def send_command(self, cmd: object) -> HCI_Command_Complete_Event:
+        self.commands.append(cmd)
+        await self.release.wait()
         return HCI_Command_Complete_Event(
             num_hci_command_packets=1,
             command_opcode=cmd.opcode,
@@ -204,6 +224,28 @@ async def test_classic_accept():
     assert HCI_ACCEPT_CONNECTION_REQ in opcodes
 
 
+async def test_classic_authenticate_sends_auth_requested():
+    hci = FakeHCI()
+    mgr = ClassicConnectionManager(hci=hci)
+
+    await mgr.authenticate(0x0048)
+
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_AUTH_REQUESTED
+    assert cmd.parameters == b"\x48\x00"
+
+
+async def test_classic_set_encryption_sends_set_connection_encryption():
+    hci = FakeHCI()
+    mgr = ClassicConnectionManager(hci=hci)
+
+    await mgr.set_encryption(0x0048, enabled=True)
+
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_SET_CONNECTION_ENCRYPTION
+    assert cmd.parameters == b"\x48\x00\x01"
+
+
 def test_classic_connection_dataclass():
     conn = ClassicConnection(
         handle=0x0041,
@@ -228,6 +270,91 @@ async def test_ssp_io_capability_reply():
     # Verify IO cap byte in params
     cmd = hci.commands[-1]
     assert cmd.parameters[6] == 0x01  # after 6-byte address
+    assert cmd.parameters[8] == 0x00  # no MITM requirement by default
+
+
+async def test_ssp_on_io_capability_request_replies():
+    hci = FakeHCI()
+    ssp = SSPManager(hci=hci)
+    ssp.set_io_capability(0x03)
+    event = HCIEvent(
+        event_code=EventCode.IO_CAPABILITY_REQUEST,
+        parameters=bytes.fromhex("6b f5 1b 8d 8d 1a"),
+    )
+
+    await ssp.on_hci_event(event)
+    await asyncio.sleep(0)
+
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_IO_CAPABILITY_REQUEST_REPLY
+    assert cmd.parameters[:6] == bytes.fromhex("6b f5 1b 8d 8d 1a")
+    assert cmd.parameters[6] == 0x03
+
+
+async def test_ssp_on_io_capability_request_does_not_wait_for_command_status():
+    hci = BlockingHCI()
+    ssp = SSPManager(hci=hci)
+    event = HCIEvent(
+        event_code=EventCode.IO_CAPABILITY_REQUEST,
+        parameters=bytes.fromhex("6b f5 1b 8d 8d 1a"),
+    )
+
+    await asyncio.wait_for(ssp.on_hci_event(event), timeout=0.05)
+    await asyncio.sleep(0)
+
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_IO_CAPABILITY_REQUEST_REPLY
+    hci.release.set()
+    await asyncio.sleep(0)
+
+
+async def test_ssp_on_user_confirmation_request_accepts_by_default():
+    hci = FakeHCI()
+    ssp = SSPManager(hci=hci)
+    event = HCIEvent(
+        event_code=EventCode.USER_CONFIRMATION_REQUEST,
+        parameters=bytes.fromhex("6b f5 1b 8d 8d 1a") + (963370).to_bytes(4, "little"),
+    )
+
+    await ssp.on_hci_event(event)
+    await asyncio.sleep(0)
+
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_USER_CONFIRMATION_REQUEST_REPLY
+    assert cmd.parameters == bytes.fromhex("6b f5 1b 8d 8d 1a")
+
+
+async def test_ssp_on_user_confirmation_request_can_deny():
+    hci = FakeHCI()
+    ssp = SSPManager(hci=hci)
+    ssp.on_user_confirmation(lambda _address, _numeric_value: False)
+    event = HCIEvent(
+        event_code=EventCode.USER_CONFIRMATION_REQUEST,
+        parameters=bytes.fromhex("6b f5 1b 8d 8d 1a") + (963370).to_bytes(4, "little"),
+    )
+
+    await ssp.on_hci_event(event)
+    await asyncio.sleep(0)
+
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY
+    assert cmd.parameters == bytes.fromhex("6b f5 1b 8d 8d 1a")
+
+
+async def test_ssp_on_link_key_request_replies_negative():
+    hci = FakeHCI()
+    ssp = SSPManager(hci=hci)
+    event = HCIEvent(
+        event_code=EventCode.LINK_KEY_REQUEST,
+        parameters=bytes.fromhex("6b f5 1b 8d 8d 1a"),
+    )
+
+    await ssp.on_hci_event(event)
+    await asyncio.sleep(0)
+
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY
+    assert cmd.parameters == bytes.fromhex("6b f5 1b 8d 8d 1a")
 
 
 async def test_ssp_confirm():

@@ -162,3 +162,13 @@ uv run pybluehost app spp-echo -t usb:vendor=csr
 - 只验证 CLI coroutine 能 start/stop 的测试，不足以证明 demo 可用。
 - 未完成的协议路径必须显式抛出 `NotImplementedError`，并在测试中写清楚缺失的是哪个下层能力。
 - 硬件验证必须使用确定性 transport，例如 `--transport usb:vendor=csr`。
+
+## 2026-04-28 CSR 硬件复测记录
+
+- 命令：`uv run pybluehost app sdp-browser -t usb:vendor=csr -a 1A:8D:8D:1B:F5:6B --hci-log`
+- 已修复并验证：BR/EDR Create Connection 地址线序正确；ACL 连接成功时会继续到 L2CAP/SDP，不再卡在地址错误。
+- 已修复并验证：L2CAP Connection Response `result=0x0001` 会作为 Pending 继续等待最终响应。
+- 已修复并验证：Classic SSP 事件会上报到 `SSPManager`，并异步回复 `Link Key Request`、`IO Capability Request`、`User Confirmation Request`，避免在 HCI event 回调内等待 command status 造成死锁。
+- 已修复并验证：`sdp-browser` 在打开 SDP 前会主动完成 Classic authentication 和 encryption；CLI 错误不再打印空 `Error:`，会显示 `RuntimeError` / `TimeoutError` 类型和原因。
+- 已修复并验证：本地 SDP server 默认监听 PSM `0x0001`，远端 inbound SDP 连接不再被拒绝；L2CAP responder 会发送本端 Configure Request。
+- 当前剩余硬件现象：目标设备对本机发出的 SDP `ServiceSearchAttributeRequest` 没有返回 response；HCI log 可见本机已经加密、outbound SDP channel 已打开、inbound SDP request 也能收到并响应。该现象需要继续用其他目标设备或抓包工具对比远端 SDP server 行为。

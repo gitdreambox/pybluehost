@@ -291,6 +291,8 @@ class L2CAPManager:
                     )
                 )
                 return
+            if result == 0x0001:
+                return
             if result != 0:
                 pending.future.set_exception(
                     RuntimeError(
@@ -364,6 +366,12 @@ class L2CAPManager:
             data=struct.pack("<HHHH", local_cid, source_cid, 0x0000, 0x0000),
         )
         await signaling.send(encode_signaling(response))
+        configure = SignalingPacket(
+            code=SignalingCode.CONFIGURE_REQUEST,
+            identifier=self._next_identifier(),
+            data=struct.pack("<HH", source_cid, 0x0000),
+        )
+        await signaling.send(encode_signaling(configure))
 
     async def _handle_classic_configure_request(
         self,

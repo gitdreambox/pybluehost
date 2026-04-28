@@ -34,6 +34,13 @@ def trace_kwargs_from_args(args: Any) -> dict[str, Any]:
     }
 
 
+def _format_cli_error(exc: BaseException) -> str:
+    detail = str(exc).strip()
+    if not detail:
+        return type(exc).__name__
+    return f"{type(exc).__name__}: {detail}"
+
+
 async def run_app_command(
     transport_arg: str,
     main_coro: Callable[[Stack, asyncio.Event], Awaitable[None]],
@@ -73,7 +80,7 @@ async def run_app_command(
             config.trace_sinks.append(BtsnoopSink(btsnoop))
         stack = await Stack._build(transport=transport, config=config)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Error: {_format_cli_error(e)}", file=sys.stderr)
         return 1
 
     try:
@@ -94,7 +101,7 @@ async def run_app_command(
         # Re-raise main exception, if any
         exc = main_task.exception()
         if exc is not None:
-            print(f"Error: {exc}", file=sys.stderr)
+            print(f"Error: {_format_cli_error(exc)}", file=sys.stderr)
             return 1
         return 0
     finally:

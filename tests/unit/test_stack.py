@@ -16,13 +16,15 @@ from pybluehost.ble.gatt import (
 from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.core.types import IOCapability
 from pybluehost.core.uuid import UUID16
-from pybluehost.hci.constants import ErrorCode, LEMetaSubEvent
+from pybluehost.hci.constants import ErrorCode, EventCode, LEMetaSubEvent
 from pybluehost.hci.packets import (
     HCIACLData,
     HCI_Connection_Complete_Event,
     HCI_Disconnection_Complete_Event,
+    HCIEvent,
     HCI_LE_Meta_Event,
 )
+from pybluehost.l2cap.constants import PSM_SDP
 from pybluehost.stack import Stack, StackConfig, StackMode
 
 
@@ -112,6 +114,14 @@ async def test_stack_gap_has_subsystems():
     assert stack.gap.classic_discovery is not None
     assert stack.gap.classic_ssp is not None
     assert stack.gap.whitelist is not None
+    await stack.close()
+
+
+async def test_stack_registers_default_classic_sdp_listener():
+    stack = await Stack.virtual()
+
+    assert PSM_SDP in stack.l2cap._classic_listeners
+
     await stack.close()
 
 
@@ -328,6 +338,43 @@ async def test_stack_connect_classic_reports_acl_connection_failure(monkeypatch)
     await stack.close()
 
 
+async def test_stack_authenticate_classic_waits_for_auth_complete(monkeypatch):
+    stack = await Stack.virtual()
+
+    async def authenticate(handle):
+        assert handle == 0x0048
+        await stack._on_hci_event(
+            HCIEvent(
+                event_code=EventCode.AUTH_COMPLETE,
+                parameters=bytes([ErrorCode.SUCCESS]) + struct.pack("<H", handle),
+            )
+        )
+
+    monkeypatch.setattr(stack.gap.classic_connections, "authenticate", authenticate)
+
+    await stack.authenticate_classic(0x0048)
+    await stack.close()
+
+
+async def test_stack_enable_classic_encryption_waits_for_encryption_change(monkeypatch):
+    stack = await Stack.virtual()
+
+    async def set_encryption(handle, enabled=True):
+        assert handle == 0x0048
+        assert enabled is True
+        await stack._on_hci_event(
+            HCIEvent(
+                event_code=EventCode.ENCRYPTION_CHANGE,
+                parameters=bytes([ErrorCode.SUCCESS]) + struct.pack("<H", handle) + b"\x01",
+            )
+        )
+
+    monkeypatch.setattr(stack.gap.classic_connections, "set_encryption", set_encryption)
+
+    await stack.enable_classic_encryption(0x0048)
+    await stack.close()
+
+
 async def test_stack_reports_disconnection_events():
     stack = await Stack.virtual()
     events = []
@@ -344,4 +391,26 @@ async def test_stack_reports_disconnection_events():
     assert events[-1].state == "disconnected"
     assert events[-1].handle == 0x0041
     assert "FAILED_TO_ESTABLISH_CONNECTION" in events[-1].reason
+    await stack.close()
+
+
+async def test_stack_routes_classic_ssp_events(monkeypatch):
+    from pybluehost.hci.constants import EventCode
+    from pybluehost.hci.packets import HCIEvent
+
+    stack = await Stack.virtual()
+    events = []
+
+    async def on_hci_event(event):
+        events.append(event)
+
+    monkeypatch.setattr(stack.gap.classic_ssp, "on_hci_event", on_hci_event)
+    event = HCIEvent(
+        event_code=EventCode.IO_CAPABILITY_REQUEST,
+        parameters=bytes.fromhex("6b f5 1b 8d 8d 1a"),
+    )
+
+    await stack._on_hci_event(event)
+
+    assert events == [event]
     await stack.close()

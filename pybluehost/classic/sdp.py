@@ -395,10 +395,20 @@ class SDPServer:
 class SDPClient:
     """SDP client for querying remote SDP servers."""
 
-    def __init__(self, l2cap: object | None = None) -> None:
+    def __init__(
+        self,
+        l2cap: object | None = None,
+        *,
+        request_timeout: float = 5.0,
+        retries: int = 1,
+        max_attribute_byte_count: int = 0x00FF,
+    ) -> None:
         self._l2cap = l2cap
         self._txn_id = 1
         self._pending: dict[int, asyncio.Future[bytes]] = {}
+        self._request_timeout = request_timeout
+        self._retries = retries
+        self._max_attribute_byte_count = max_attribute_byte_count
         if l2cap is not None and hasattr(l2cap, "set_events"):
             l2cap.set_events(SimpleChannelEvents(on_data=self._on_pdu))
 
@@ -434,13 +444,24 @@ class SDPClient:
     async def _request(self, pdu_id: _SDPPDU, params: bytes) -> bytes:
         if self._l2cap is None or not hasattr(self._l2cap, "send"):
             raise NotImplementedError("Requires L2CAP connection")
-        txn_id = self._next_txn_id()
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[bytes] = loop.create_future()
-        self._pending[txn_id] = future
-        pdu = bytes([pdu_id]) + struct.pack(">HH", txn_id, len(params)) + params
-        await self._l2cap.send(pdu)
-        return await asyncio.wait_for(future, timeout=5.0)
+        attempts = self._retries + 1
+        for attempt in range(1, attempts + 1):
+            txn_id = self._next_txn_id()
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[bytes] = loop.create_future()
+            self._pending[txn_id] = future
+            pdu = bytes([pdu_id]) + struct.pack(">HH", txn_id, len(params)) + params
+            await self._l2cap.send(pdu)
+            try:
+                return await asyncio.wait_for(future, timeout=self._request_timeout)
+            except TimeoutError as exc:
+                self._pending.pop(txn_id, None)
+                if attempt >= attempts:
+                    raise TimeoutError(
+                        f"SDP {pdu_id.name} timed out after {attempts} attempt(s)"
+                    ) from exc
+
+        raise RuntimeError("unreachable")
 
     async def search(self, target: object, uuid: int) -> list[int]:
         """Send ServiceSearchRequest; return list of service record handles."""
@@ -463,7 +484,8 @@ class SDPClient:
             DataElement.sequence([DataElement.uuid16(uuid)])
         )
         attr_id_list = encode_data_element(self._build_attr_id_list(attr_ids))
-        params = search_pattern + struct.pack(">H", 0xFFFF) + attr_id_list + b"\x00"
+        max_count = max(0x0007, min(self._max_attribute_byte_count, 0xFFFF))
+        params = search_pattern + struct.pack(">H", max_count) + attr_id_list + b"\x00"
         response = await self._request(_SDPPDU.SERVICE_SEARCH_ATTRIBUTE_REQUEST, params)
         if response[0] != _SDPPDU.SERVICE_SEARCH_ATTRIBUTE_RESPONSE:
             return []
