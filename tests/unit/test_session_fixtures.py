@@ -152,6 +152,21 @@ def test_cross_family_peer_exits_nonzero():
     assert "Peer transport must match primary family" in out or "unavailable" in out
 
 
+def test_cross_family_peer_exits_during_collection_without_peer_fixture():
+    body = """
+    def test_dummy():
+        assert True
+    """
+    r = _run_inline(
+        body,
+        "--transport=virtual",
+        "--transport-peer=usb",
+    )
+    out = r.stdout + r.stderr
+    assert r.returncode == 4
+    assert "Peer transport must match primary family" in out
+
+
 def test_primary_resolution_is_cached_per_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

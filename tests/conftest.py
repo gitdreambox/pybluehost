@@ -428,6 +428,7 @@ def pytest_collection_modifyitems(
 ) -> None:
     """Enforce real_hardware_only(transport=, vendor=) and virtual_only markers."""
     spec = _resolve_primary_spec(config)
+    _resolve_peer_spec(config, spec)
     fam = family_of(spec)
     current_vendor = vendor_of(spec)
 
