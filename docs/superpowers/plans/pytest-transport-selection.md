@@ -2471,7 +2471,7 @@ git commit -m "refactor(tests): test_intel_hw uses real_hardware_only(transport=
 **Files:**
 - Modify: `.github/workflows/test.yml`
 
-- [ ] **Step 21.1: Replace pytest invocations**
+- [x] **Step 21.1: Replace pytest invocations**
 
 Change the four `Run *` steps in `.github/workflows/test.yml` to use `--transport=virtual` and remove the `-m "not hardware"` filter:
 
@@ -2495,7 +2495,7 @@ Change the four `Run *` steps in `.github/workflows/test.yml` to use `--transpor
             --cov-fail-under=85
 ```
 
-- [ ] **Step 21.2: Validate locally with the same command**
+- [x] **Step 21.2: Validate locally with the same command**
 
 ```bash
 uv run pytest tests/ -v --tb=short \
@@ -2509,7 +2509,9 @@ Expected: all PASS, coverage ≥ 85%.
 
 If coverage drops below 85% because of newly-added hardware-only branches, add narrow `# pragma: no cover` to the import / open lines in `Stack.from_usb` / `Stack.from_uart` (NOT to logic — only to the unconditional construction lines that depend on hardware).
 
-- [ ] **Step 21.3: Commit**
+Actual: 826 passed, 14 skipped, coverage 85.03%.
+
+- [x] **Step 21.3: Commit**
 
 ```bash
 git add .github/workflows/test.yml
