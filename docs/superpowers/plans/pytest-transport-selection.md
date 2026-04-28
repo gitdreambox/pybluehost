@@ -2427,7 +2427,7 @@ git commit -m "refactor(tests): test_usb_smoke uses real_hardware_only(transport
 **Files:**
 - Modify: `tests/hardware/test_intel_hw.py`
 
-- [ ] **Step 20.1: Replace `pytestmark`**
+- [x] **Step 20.1: Replace `pytestmark`**
 
 In `tests/hardware/test_intel_hw.py`, replace the `pytestmark` block with the explicit-vendor marker:
 
@@ -2439,7 +2439,7 @@ Drop the previous `pytest.mark.skipif(_HW is None, ...)` line — when the user 
 
 The module-level `_detect_intel_device()` helper and the raw-USB fixtures (`hw_device`, `hw_chip`) remain unchanged — they are still needed for the raw HCI tests in this file (which bypass `Stack` and operate at endpoint level).
 
-- [ ] **Step 20.2: Run on virtual (must skip)**
+- [x] **Step 20.2: Run on virtual (must skip)**
 
 ```bash
 uv run pytest tests/hardware/test_intel_hw.py -v --transport=virtual
@@ -2447,7 +2447,7 @@ uv run pytest tests/hardware/test_intel_hw.py -v --transport=virtual
 
 Expected: all tests skipped with reason "requires real hardware".
 
-- [ ] **Step 20.3: Run on a non-Intel USB spec (must skip with vendor reason)**
+- [x] **Step 20.3: Run on a non-Intel USB spec (must skip with vendor reason)**
 
 ```bash
 uv run pytest tests/hardware/test_intel_hw.py -v --transport=usb:vendor=realtek 2>&1 | head -20
@@ -2455,7 +2455,9 @@ uv run pytest tests/hardware/test_intel_hw.py -v --transport=usb:vendor=realtek 
 
 Expected: either exit 4 (no Realtek device on host) or all tests skipped with reason "requires vendor in ('intel',), got 'realtek'". Either is correct; what must NOT happen is the tests running against the wrong adapter.
 
-- [ ] **Step 20.4: Commit**
+Actual: exit 4 on this host because no supported Realtek USB adapter was available.
+
+- [x] **Step 20.4: Commit**
 
 ```bash
 git add tests/hardware/test_intel_hw.py

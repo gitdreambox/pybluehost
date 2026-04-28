@@ -50,10 +50,7 @@ def _detect_intel_device():
 
 
 _HW = _detect_intel_device()
-pytestmark = pytest.mark.skipif(
-    _HW is None,
-    reason="No Intel Bluetooth USB device found (or pyusb/libusb unavailable)",
-)
+pytestmark = pytest.mark.real_hardware_only(transport="usb", vendor="intel")
 
 # Firmware directory
 _FW_DIR = Path(__file__).parent / "firmware" / "intel"
