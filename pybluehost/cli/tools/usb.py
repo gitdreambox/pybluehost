@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import ctypes.util
 import sys
 import time
@@ -436,6 +437,7 @@ def _color(text: str, kind: str, enabled: bool) -> str:
         "bus": "33",
         "class": "35",
         "serial": "34",
+        "warn": "33",
     }
     return f"\x1b[{colors.get(kind, '37')}m{text}\x1b[0m"
 
@@ -479,7 +481,7 @@ def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
         if dll:
             print(f"[OK] libusb backend: available ({dll})")
         else:
-            print("[WARN] libusb DLL path: libusb-1.0.dll not found by path lookup")
+            print(f"{_warn_prefix()} libusb DLL path: libusb-1.0.dll not found by path lookup")
             print("       Continuing with pyusb backend discovery.")
     else:
         print("[OK] libusb backend: pyusb backend resolved")
@@ -658,15 +660,16 @@ def _try_intel_reset(dev: Any, ep_intr: Any) -> bool:
     if _parse_command_complete_opcode(event) == 0xFC01:
         print("[OK] Intel Reset command complete")
         return _complete_intel_reset_recovery(dev)
-    print("[WARN] Intel Reset event format: unexpected event")
+    print(f"{_warn_prefix()} Intel Reset event format: unexpected event")
     return _complete_intel_reset_recovery(dev)
 
 
 def _is_usb_disconnect(exc: Exception) -> bool:
     errno = getattr(exc, "errno", None)
-    if errno == 19:
+    if errno in (19, 32):
         return True
-    return "no such device" in str(exc).lower()
+    text = str(exc).lower()
+    return "no such device" in text or "pipe error" in text
 
 
 def _complete_intel_reset_recovery(original_dev: Any) -> bool:
@@ -699,7 +702,7 @@ def _complete_intel_reset_recovery(original_dev: Any) -> bool:
     _flush_interrupt_endpoint(ep_intr)
     if not _send_standard_reset_after_intel_reboot(rebooted, ep_intr, context):
         return False
-    return _read_and_print_intel_version(rebooted, ep_intr, context)
+    return _read_and_print_intel_version(rebooted, ep_intr, context, rebooted)
 
 
 def _wait_for_reenumerated_intel_device(original_dev: Any) -> Any | None:
@@ -788,14 +791,14 @@ def _send_standard_reset_after_intel_reboot(
         print("[OK] Post-Intel HCI Reset status: 0x00")
     else:
         print(
-            f"[WARN] Post-Intel HCI Reset status: 0x{status:02X}; "
+            f"{_warn_prefix()} Post-Intel HCI Reset status: 0x{status:02X}; "
             "continuing with Intel Read Version"
         )
     return True
 
 
 def _read_and_print_intel_version(
-    dev: Any, ep_intr: Any, context: dict[str, Any]
+    dev: Any, ep_intr: Any, context: dict[str, Any], firmware_dev: Any
 ) -> bool:
     intel_read_version = bytes.fromhex("05 fc 01 ff")
     try:
@@ -824,6 +827,14 @@ def _read_and_print_intel_version(
     context["intel_image_type"] = version.get("image_type")
     print(f"       Intel Version: {_format_intel_version_fields(version)}")
     _print_intel_firmware_load_hint(context)
+    if _intel_firmware_load_is_required(context):
+        if not _confirm_intel_firmware_load():
+            print("[INFO] Intel firmware load skipped")
+            return True
+        loaded = _load_intel_firmware_after_confirmation(firmware_dev)
+        if loaded:
+            print("[OK] Intel firmware load completed")
+        return loaded
     return True
 
 
@@ -870,6 +881,27 @@ def _format_intel_version_fields(version: dict[str, Any]) -> str:
 
 
 def _print_intel_firmware_load_hint(context: dict[str, Any]) -> None:
+    reasons = _intel_firmware_load_reasons(context)
+    if not reasons:
+        return
+    print(f"{_warn_prefix()} Intel firmware load required:")
+    for reason in reasons:
+        print(f"       - {reason}")
+    print("       Confirm before starting Intel firmware load.")
+
+
+def _confirm_intel_firmware_load() -> bool:
+    prompt = "Load Intel firmware now? [y/N] "
+    print(prompt, end="")
+    try:
+        answer = input().strip().lower()
+    except EOFError:
+        print()
+        return False
+    return answer in {"y", "yes"}
+
+
+def _intel_firmware_load_reasons(context: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     status = context.get("post_intel_reset_status")
     if isinstance(status, int) and status != 0:
@@ -881,12 +913,43 @@ def _print_intel_firmware_load_hint(context: dict[str, Any]) -> None:
         reasons.append(
             "Intel Read Version image_type=BOOTLOADER indicates firmware load is needed"
         )
-    if not reasons:
-        return
-    print("[WARN] Intel firmware load required:")
-    for reason in reasons:
-        print(f"       - {reason}")
-    print("       Confirm before starting Intel firmware load.")
+    return reasons
+
+
+def _intel_firmware_load_is_required(context: dict[str, Any]) -> bool:
+    return bool(_intel_firmware_load_reasons(context))
+
+
+def _warn_prefix() -> str:
+    return _color("[WARN]", "warn", True)
+
+
+def _load_intel_firmware_after_confirmation(dev: Any) -> bool:
+    from pybluehost.transport.firmware import FirmwarePolicy
+    from pybluehost.transport.usb import USBTransport
+
+    bus = int(getattr(dev, "bus", 0) or 0)
+    address = int(getattr(dev, "address", 0) or 0)
+    print("[INFO] Loading Intel firmware after interactive confirmation...")
+    try:
+        transport = USBTransport.auto_detect(
+            firmware_policy=FirmwarePolicy.AUTO_DOWNLOAD,
+            vendor="intel",
+            bus=bus,
+            address=address,
+        )
+        asyncio.run(_open_and_close_transport(transport))
+    except Exception as e:
+        print(f"[FAIL] Intel firmware load failed: {type(e).__name__}: {e}")
+        return False
+    return True
+
+
+async def _open_and_close_transport(transport: Any) -> None:
+    try:
+        await transport.open()
+    finally:
+        await transport.close()
 
 
 def _find_interrupt_in_endpoint(intf: Any) -> Any | None:
