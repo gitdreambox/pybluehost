@@ -339,3 +339,37 @@ def test_cmd_diagnose_treats_intel_reset_disconnect_as_success(
     assert "device disconnected/re-enumerating" in out
     assert "[OK] Intel reboot complete" in out
     assert "Intel Version:" in out
+
+
+@patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
+@patch("pybluehost.cli.tools.usb.usb")
+def test_cmd_diagnose_warns_firmware_load_needed_for_bootloader(
+    mock_usb, mock_libusb, capsys
+):
+    dev = _mock_usb_device(0x8087, 0x0036)
+    rebooted_dev = _mock_usb_device(0x8087, 0x0036, addr=2)
+    config = MagicMock()
+    config.__getitem__.return_value = MagicMock()
+    dev.get_active_configuration.return_value = config
+    rebooted_dev.get_active_configuration.return_value = config
+    endpoint = MagicMock()
+    endpoint.read.side_effect = [
+        Exception("flush done"),
+        Exception("standard reset timeout"),
+        Exception("No such device"),
+        Exception("flush done"),
+        bytes.fromhex("0e 04 01 03 0c 01"),
+        bytes.fromhex("0e 08 01 05 fc 00 1c 01 01"),
+    ]
+    mock_usb.core.find.side_effect = [[dev], rebooted_dev]
+    mock_usb.util.find_descriptor.return_value = endpoint
+    mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
+    mock_usb.util.endpoint_type.return_value = mock_usb.util.ENDPOINT_TYPE_INTR
+
+    result = _cmd_usb_diagnose(MagicMock())
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "Post-Intel HCI Reset status: 0x01 indicates firmware load is needed" in out
+    assert "Intel Read Version image_type=BOOTLOADER indicates firmware load is needed" in out
+    assert "Confirm before starting Intel firmware load" in out

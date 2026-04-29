@@ -670,6 +670,7 @@ def _is_usb_disconnect(exc: Exception) -> bool:
 
 
 def _complete_intel_reset_recovery(original_dev: Any) -> bool:
+    context: dict[str, Any] = {}
     rebooted = _wait_for_reenumerated_intel_device(original_dev)
     if rebooted is None:
         print("[FAIL] Intel reboot complete: device did not re-enumerate")
@@ -696,9 +697,9 @@ def _complete_intel_reset_recovery(original_dev: Any) -> bool:
         return False
 
     _flush_interrupt_endpoint(ep_intr)
-    if not _send_standard_reset_after_intel_reboot(rebooted, ep_intr):
+    if not _send_standard_reset_after_intel_reboot(rebooted, ep_intr, context):
         return False
-    return _read_and_print_intel_version(rebooted, ep_intr)
+    return _read_and_print_intel_version(rebooted, ep_intr, context)
 
 
 def _wait_for_reenumerated_intel_device(original_dev: Any) -> Any | None:
@@ -761,7 +762,9 @@ def _flush_interrupt_endpoint(ep_intr: Any) -> None:
             break
 
 
-def _send_standard_reset_after_intel_reboot(dev: Any, ep_intr: Any) -> bool:
+def _send_standard_reset_after_intel_reboot(
+    dev: Any, ep_intr: Any, context: dict[str, Any]
+) -> bool:
     try:
         dev.ctrl_transfer(0x20, 0x00, 0x0000, 0x0000, bytes.fromhex("03 0c 00"))
         print("[OK] Post-Intel HCI Reset command sent")
@@ -780,6 +783,7 @@ def _send_standard_reset_after_intel_reboot(dev: Any, ep_intr: Any) -> bool:
     if status is None:
         print("[FAIL] Post-Intel HCI Reset status: unexpected event format")
         return False
+    context["post_intel_reset_status"] = status
     if status == 0:
         print("[OK] Post-Intel HCI Reset status: 0x00")
     else:
@@ -790,7 +794,9 @@ def _send_standard_reset_after_intel_reboot(dev: Any, ep_intr: Any) -> bool:
     return True
 
 
-def _read_and_print_intel_version(dev: Any, ep_intr: Any) -> bool:
+def _read_and_print_intel_version(
+    dev: Any, ep_intr: Any, context: dict[str, Any]
+) -> bool:
     intel_read_version = bytes.fromhex("05 fc 01 ff")
     try:
         dev.ctrl_transfer(0x20, 0x00, 0x0000, 0x0000, intel_read_version)
@@ -814,24 +820,27 @@ def _read_and_print_intel_version(dev: Any, ep_intr: Any) -> bool:
         print(f"[FAIL] Intel Read Version status: 0x{status:02X}")
         return False
     print(f"[OK] Intel Read Version status: 0x{status:02X}")
-    print(f"       Intel Version: {_format_intel_version(event[6:])}")
+    version = _parse_intel_version(event[6:])
+    context["intel_image_type"] = version.get("image_type")
+    print(f"       Intel Version: {_format_intel_version_fields(version)}")
+    _print_intel_firmware_load_hint(context)
     return True
 
 
-def _format_intel_version(payload: bytes) -> str:
+def _parse_intel_version(payload: bytes) -> dict[str, Any]:
     from pybluehost.transport.usb import IntelUSBTransport
 
+    version: dict[str, Any] = {"raw": payload}
     tlv = IntelUSBTransport._parse_tlv(payload)
     if tlv:
-        fields: list[str] = []
         image = tlv.get(IntelUSBTransport._TLV_IMAGE_TYPE)
         if image:
             labels = {0x01: "BOOTLOADER", 0x03: "OPERATIONAL"}
-            fields.append(f"image_type={labels.get(image[0], f'0x{image[0]:02X}')}")
+            version["image_type"] = labels.get(image[0], f"0x{image[0]:02X}")
         sbe = tlv.get(IntelUSBTransport._TLV_SBE_TYPE)
         if sbe:
             labels = {0x00: "RSA", 0x01: "ECDSA"}
-            fields.append(f"sbe_type={labels.get(sbe[0], f'0x{sbe[0]:02X}')}")
+            version["sbe_type"] = labels.get(sbe[0], f"0x{sbe[0]:02X}")
         for name, code in (
             ("cnvi_top", IntelUSBTransport._TLV_CNVI_TOP),
             ("cnvr_top", IntelUSBTransport._TLV_CNVR_TOP),
@@ -839,15 +848,45 @@ def _format_intel_version(payload: bytes) -> str:
         ):
             raw = tlv.get(code)
             if raw and len(raw) >= 4:
-                fields.append(f"{name}=0x{int.from_bytes(raw[:4], 'little'):08X}")
+                version[name] = f"0x{int.from_bytes(raw[:4], 'little'):08X}"
         bdaddr = tlv.get(IntelUSBTransport._TLV_OTP_BDADDR)
         if bdaddr and len(bdaddr) == 6:
-            fields.append("bd_addr=" + ":".join(f"{b:02X}" for b in reversed(bdaddr)))
-        return ", ".join(fields) if fields else "TLV present"
+            version["bd_addr"] = ":".join(f"{b:02X}" for b in reversed(bdaddr))
+        return version
+    return version
 
-    if len(payload) >= 4:
-        return "legacy/raw=" + payload.hex(" ")
+
+def _format_intel_version_fields(version: dict[str, Any]) -> str:
+    fields: list[str] = []
+    for name in ("image_type", "sbe_type", "cnvi_top", "cnvr_top", "cnvi_bt", "bd_addr"):
+        if name in version:
+            fields.append(f"{name}={version[name]}")
+    if fields:
+        return ", ".join(fields)
+    raw = version.get("raw", b"")
+    if raw:
+        return "legacy/raw=" + raw.hex(" ")
     return "no version payload"
+
+
+def _print_intel_firmware_load_hint(context: dict[str, Any]) -> None:
+    reasons: list[str] = []
+    status = context.get("post_intel_reset_status")
+    if isinstance(status, int) and status != 0:
+        reasons.append(
+            f"Post-Intel HCI Reset status: 0x{status:02X} indicates firmware load is needed"
+        )
+    image_type = context.get("intel_image_type")
+    if image_type == "BOOTLOADER":
+        reasons.append(
+            "Intel Read Version image_type=BOOTLOADER indicates firmware load is needed"
+        )
+    if not reasons:
+        return
+    print("[WARN] Intel firmware load required:")
+    for reason in reasons:
+        print(f"       - {reason}")
+    print("       Confirm before starting Intel firmware load.")
 
 
 def _find_interrupt_in_endpoint(intf: Any) -> Any | None:
