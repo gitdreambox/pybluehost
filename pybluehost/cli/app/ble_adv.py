@@ -1,14 +1,17 @@
 # pybluehost/cli/app/ble_adv.py
-"""'app ble-adv' — start BLE advertising until Ctrl+C."""
+"""'app ble-adv' - start BLE advertising until Ctrl+C."""
 from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 
 from pybluehost.ble.gap import AdvertisingConfig
-from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
+from pybluehost.core.gap_common import AdvertisingData
 from pybluehost.stack import Stack
+
+logger = logging.getLogger(__name__)
 
 
 def register_ble_adv_command(subparsers: argparse._SubParsersAction) -> None:
@@ -32,7 +35,7 @@ async def _ble_adv_main(stack: Stack, stop: asyncio.Event, *, name: str) -> None
     ad_data = AdvertisingData()
     ad_data.set_complete_local_name(name)
     await stack.gap.ble_advertiser.start(config, ad_data=ad_data)
-    print(f"Advertising as {name!r} — Ctrl+C to stop")
+    logger.info("Advertising as %r - Ctrl+C to stop", name)
     try:
         await stop.wait()
     finally:

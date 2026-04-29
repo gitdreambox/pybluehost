@@ -1,11 +1,13 @@
-"""'tools rpa' — IRK and Resolvable Private Address utilities."""
+"""'tools rpa' - IRK and Resolvable Private Address utilities."""
 from __future__ import annotations
 
 import argparse
+import logging
 import os
-import sys
 
 from pybluehost.ble.smp import SMPCrypto
+
+logger = logging.getLogger(__name__)
 
 
 def register_rpa_commands(subparsers: argparse._SubParsersAction) -> None:
@@ -33,12 +35,12 @@ def _parse_irk(s: str) -> bytes:
 
 
 def _format_addr(addr_bytes: bytes) -> str:
-    """addr_bytes: 6 bytes, MSB-first → XX:XX:XX:XX:XX:XX"""
+    """Format six MSB-first address bytes as XX:XX:XX:XX:XX:XX."""
     return ":".join(f"{b:02X}" for b in addr_bytes)
 
 
 def _cmd_gen_irk(args: argparse.Namespace) -> int:
-    print(os.urandom(16).hex())
+    logger.info(os.urandom(16).hex())
     return 0
 
 
@@ -46,18 +48,18 @@ def _cmd_gen_rpa(args: argparse.Namespace) -> int:
     try:
         irk = _parse_irk(args.irk)
     except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error("Error: %s", e)
         return 1
     # prand: 24 bits, with top two bits = 0b01 (resolvable type)
     prand_int = int.from_bytes(os.urandom(3), "big")
-    prand_int = (prand_int & 0x3FFFFF) | 0x400000  # top 2 bits = 01
+    prand_int = (prand_int & 0x3FFFFF) | 0x400000
     prand = prand_int.to_bytes(3, "big")
     hash_bytes = SMPCrypto.ah(irk, prand)
-    addr_bytes = prand + hash_bytes  # 6 bytes total, MSB → LSB
-    print(f"IRK:    {irk.hex()}")
-    print(f"prand:  {prand.hex()}")
-    print(f"hash:   {hash_bytes.hex()}")
-    print(f"RPA:    {_format_addr(addr_bytes)}/random")
+    addr_bytes = prand + hash_bytes
+    logger.info("IRK:    %s", irk.hex())
+    logger.info("prand:  %s", prand.hex())
+    logger.info("hash:   %s", hash_bytes.hex())
+    logger.info("RPA:    %s/random", _format_addr(addr_bytes))
     return 0
 
 
@@ -65,23 +67,23 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     try:
         irk = _parse_irk(args.irk)
     except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error("Error: %s", e)
         return 1
     addr_str = args.addr.strip()
     parts = addr_str.split(":")
     if len(parts) != 6:
-        print(f"Error: invalid BD_ADDR: {addr_str!r}", file=sys.stderr)
+        logger.error("Error: invalid BD_ADDR: %r", addr_str)
         return 1
     try:
-        addr_bytes = bytes(int(p, 16) for p in parts)  # MSB → LSB
+        addr_bytes = bytes(int(p, 16) for p in parts)
     except ValueError:
-        print(f"Error: invalid BD_ADDR: {addr_str!r}", file=sys.stderr)
+        logger.error("Error: invalid BD_ADDR: %r", addr_str)
         return 1
     prand = addr_bytes[0:3]
     hash_observed = addr_bytes[3:6]
     hash_expected = SMPCrypto.ah(irk, prand)
     if hash_observed == hash_expected:
-        print("match")
+        logger.info("match")
         return 0
-    print("no match")
+    logger.info("no match")
     return 1

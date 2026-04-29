@@ -12,12 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from pybluehost.transport.firmware import FirmwarePolicy
-from pybluehost.transport.usb import (
-    DriverType,
-    FailureType,
-    USBDiagnosticReport,
-    USBDeviceDiagnostics,
-)
 
 try:
     import usb.core
@@ -26,6 +20,7 @@ except ImportError:
     usb = None  # type: ignore[assignment]
 
 
+logger = logging.getLogger(__name__)
 _FIRMWARE_LOAD_LOGGER = "pybluehost.transport.usb"
 _DEFAULT_FIRMWARE_LOAD_LOG = Path("pybluehost-usb-firmware-load.log")
 
@@ -63,7 +58,7 @@ def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
         type=Path,
         default=_DEFAULT_FIRMWARE_LOAD_LOG,
         help=(
-            "Write firmware-load progress logs to this file "
+            "Also write firmware-load progress logs to this file "
             f"(default: {_DEFAULT_FIRMWARE_LOAD_LOG})"
         ),
     )
@@ -137,24 +132,24 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
             intel_tlv=args.intel_tlv,
         )
     except RuntimeError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error("Error: %s", e)
         return 1
 
     if not devices:
-        print("No USB Bluetooth devices found.")
+        logger.info("No USB Bluetooth devices found.")
         return 0
 
     color_choice = getattr(args, "color", None)
     if not isinstance(color_choice, bool):
         color_choice = None
     use_color = _should_use_color(color_choice)
-    print(f"Found {len(devices)} USB Bluetooth device(s):\n")
+    logger.info("Found %d USB Bluetooth device(s):\n", len(devices))
 
     for dev in devices:
         usb_id = dev.get("id") or dev["vid_pid"].upper()
-        print(f"ID {_color(usb_id, 'id', use_color)}")
+        logger.info("ID %s", _color(usb_id, "id", use_color))
         if dev.get("vendor") or dev.get("chip_name"):
-            _print_probe_field(
+            _log_probe_field(
                 "Name",
                 f"{dev.get('vendor', 'unknown')} {dev.get('chip_name', 'Unknown')}",
                 "name",
@@ -162,14 +157,14 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
             )
         names = dev.get("transport_names") or dev.get("bumble_transport_names") or []
         if names:
-            _print_probe_field("Bumble Transport Names", " or ".join(names), "name", use_color)
-        _print_probe_field(
+            _log_probe_field("Bumble Transport Names", " or ".join(names), "name", use_color)
+        _log_probe_field(
             "Bus/Device",
             f"{int(dev.get('bus') or 0):03d}/{int(dev.get('address') or 0):03d}",
             "number",
             use_color,
         )
-        _print_probe_field(
+        _log_probe_field(
             "Class",
             dev.get("class_name") or dev.get("device_class_name") or dev["device_class"],
             "class",
@@ -181,35 +176,37 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
             sub_proto = f"{subclass} / {protocol}"
         else:
             sub_proto = dev.get("subclass_protocol", "0/0")
-        _print_probe_field("Subclass/Protocol", sub_proto, "class", use_color)
+        _log_probe_field("Subclass/Protocol", sub_proto, "class", use_color)
         if dev.get("serial"):
-            _print_probe_field("Serial", dev["serial"], "name", use_color)
+            _log_probe_field("Serial", dev["serial"], "name", use_color)
         if dev.get("manufacturer"):
-            _print_probe_field("Manufacturer", dev["manufacturer"], "name", use_color)
+            _log_probe_field("Manufacturer", dev["manufacturer"], "name", use_color)
         if dev.get("product"):
-            _print_probe_field("Product", dev["product"], "name", use_color)
+            _log_probe_field("Product", dev["product"], "name", use_color)
 
         if args.verbose and dev.get("endpoints"):
-            print("  Endpoints:")
+            logger.info("  Endpoints:")
             for ep in dev["endpoints"]:
-                print(f"    EP {ep['address']}  {ep['type']} {ep['direction']}")
+                logger.info("    EP %s  %s %s", ep["address"], ep["type"], ep["direction"])
 
         if args.intel_tlv and dev.get("image_type") is not None:
-            print(
-                f"      Mode: {dev['image_type_str']}   "
-                f"SBE: {dev['sbe_type_str']}   "
-                f"FW: {dev['fw_name']}"
+            logger.info(
+                "      Mode: %s   SBE: %s   FW: %s",
+                dev["image_type_str"],
+                dev["sbe_type_str"],
+                dev["fw_name"],
             )
             if dev.get("bd_addr"):
-                print(f"      BD_ADDR: {dev['bd_addr']}")
+                logger.info("      BD_ADDR: %s", dev["bd_addr"])
             if args.verbose:
-                print(
-                    f"      TLV: CNVI_TOP={dev['cnvi_top']} "
-                    f"CNVR_TOP={dev['cnvr_top']} "
-                    f"CNVI_BT={dev['cnvi_bt']}"
+                logger.info(
+                    "      TLV: CNVI_TOP=%s CNVR_TOP=%s CNVI_BT=%s",
+                    dev["cnvi_top"],
+                    dev["cnvr_top"],
+                    dev["cnvi_bt"],
                 )
 
-        print()
+        logger.info("")
 
     return 0
 
@@ -217,39 +214,38 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
 def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
     """Handle 'usb diagnose' command with step-by-step USB/HCI checks."""
     if usb is None:
-        print(
+        logger.error(
             "Error: pyusb not installed. Run: pip install pyusb\n"
-            "On Windows, also install: pip install libusb-package",
-            file=sys.stderr,
+            "On Windows, also install: pip install libusb-package"
         )
         return 1
 
     from pybluehost.transport.usb import USBTransport
 
     exit_code = 0
-    print("USB Bluetooth diagnostics")
+    logger.info("USB Bluetooth diagnostics")
     dll = _libusb_library_path()
     if sys.platform == "win32":
         if dll:
-            print(f"[OK] libusb backend: available ({dll})")
+            logger.info("[OK] libusb backend: available (%s)", dll)
         else:
-            print(f"{_warn_prefix()} libusb DLL path: libusb-1.0.dll not found by path lookup")
-            print("       Continuing with pyusb backend discovery.")
+            logger.warning("%s libusb DLL path: libusb-1.0.dll not found by path lookup", _warn_prefix())
+            logger.info("       Continuing with pyusb backend discovery.")
     else:
-        print("[OK] libusb backend: pyusb backend resolved")
+        logger.info("[OK] libusb backend: pyusb backend resolved")
 
     try:
         diagnoses = USBTransport.diagnose_all_devices()
     except Exception as e:
-        print(f"[FAIL] enumerate USB devices: {type(e).__name__}: {e}")
+        logger.error("[FAIL] enumerate USB devices: %s: %s", type(e).__name__, e)
         return 1
 
     if not diagnoses:
-        print("[FAIL] enumerate Bluetooth USB: no Bluetooth USB devices found")
+        logger.info("[FAIL] enumerate Bluetooth USB: no Bluetooth USB devices found")
         return 1
 
-    print(f"[OK] enumerate Bluetooth USB: found {len(diagnoses)} device(s)")
-    print()
+    logger.info("[OK] enumerate Bluetooth USB: found %d device(s)", len(diagnoses))
+    logger.info("")
 
     for idx, diagnosis in enumerate(diagnoses, 1):
         dev = diagnosis.device
@@ -257,15 +253,16 @@ def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
         name = chip.name if chip else "Unknown BT Device"
         vid_pid = f"{dev.idVendor:04x}:{dev.idProduct:04x}"
 
-        print(f"[{idx}] {vid_pid}  {name}")
-        print(
-            f"    location: bus={getattr(dev, 'bus', None)} "
-            f"address={getattr(dev, 'address', None)} "
-            f"class={_format_device_class(dev)}"
+        logger.info("[%d] %s  %s", idx, vid_pid, name)
+        logger.info(
+            "    location: bus=%s address=%s class=%s",
+            getattr(dev, "bus", None),
+            getattr(dev, "address", None),
+            _format_device_class(dev),
         )
 
         for check in diagnosis.checks:
-            print(_format_check(check))
+            logger.info(_format_check(check))
         if not diagnosis.ok:
             exit_code = 1
         if _diagnosis_needs_firmware_load(diagnosis):
@@ -277,7 +274,7 @@ def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
                 )
                 exit_code = 0 if load_ok else 1
 
-        print()
+        logger.info("")
 
     return exit_code
 
@@ -327,8 +324,8 @@ def _color(text: str, role: str, enabled: bool) -> str:
     return f"{color}{text}\033[0m"
 
 
-def _print_probe_field(label: str, value: str, role: str, use_color: bool) -> None:
-    print(f"  {label + ':':<24}{_color(value, role, use_color)}")
+def _log_probe_field(label: str, value: str, role: str, use_color: bool) -> None:
+    logger.info("  %-24s%s", label + ":", _color(value, role, use_color))
 
 
 def _warn_prefix() -> str:
@@ -366,9 +363,9 @@ def _confirm_firmware_load(diagnosis: Any) -> bool:
     vendor = chip.vendor if chip else "USB"
     answer = input(f"Load {vendor.capitalize()} firmware now? [y/N] ")
     if answer.strip().lower() not in {"y", "yes"}:
-        print("[INFO] Firmware load skipped by user")
+        logger.info("[INFO] Firmware load skipped by user")
         return False
-    print(f"[INFO] Loading {vendor.capitalize()} firmware after interactive confirmation...")
+    logger.info("[INFO] Loading %s firmware after interactive confirmation...", vendor.capitalize())
     return True
 
 
@@ -382,42 +379,32 @@ def _firmware_log_path_from_args(args: argparse.Namespace) -> Path:
 
 
 @contextmanager
-def _firmware_load_logging(log_file: str | Path | None) -> Any:
-    logger = logging.getLogger(_FIRMWARE_LOAD_LOGGER)
-    old_level = logger.level
-    old_propagate = logger.propagate
-    handlers: list[logging.Handler] = []
-
-    formatter = logging.Formatter("%(message)s")
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
-    handlers.append(stream_handler)
+def _firmware_load_file_logging(log_file: str | Path | None) -> Any:
+    transport_logger = logging.getLogger(_FIRMWARE_LOAD_LOGGER)
+    old_level = transport_logger.level
+    handler: logging.Handler | None = None
 
     if log_file is not None:
         try:
             path = Path(log_file)
             if path.parent != Path("."):
                 path.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.FileHandler(path, mode="a", encoding="utf-8")
-            file_handler.setFormatter(formatter)
-            handlers.append(file_handler)
-            print(f"[INFO] Firmware load log: {path}")
+            handler = logging.FileHandler(path, mode="a", encoding="utf-8")
+            handler.setLevel(logging.DEBUG)
+            handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+            transport_logger.addHandler(handler)
+            logger.info("[INFO] Firmware load log: %s", path)
         except OSError as e:
-            print(f"{_warn_prefix()} Firmware load log unavailable: {type(e).__name__}: {e}")
+            logger.warning("%s Firmware load log unavailable: %s: %s", _warn_prefix(), type(e).__name__, e)
 
-    for handler in handlers:
-        logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-
+    transport_logger.setLevel(logging.INFO)
     try:
         yield
     finally:
-        for handler in handlers:
-            logger.removeHandler(handler)
+        if handler is not None:
+            transport_logger.removeHandler(handler)
             handler.close()
-        logger.setLevel(old_level)
-        logger.propagate = old_propagate
+        transport_logger.setLevel(old_level)
 
 
 def _load_firmware_for_diagnosis(
@@ -429,7 +416,6 @@ def _load_firmware_for_diagnosis(
 
     chip = diagnosis.chip_info
     dev = diagnosis.device
-    transport = None
     try:
         transport = USBTransport.auto_detect(
             firmware_policy=policy,
@@ -442,13 +428,13 @@ def _load_firmware_for_diagnosis(
             await transport.open()
             await transport.close()
 
-        with _firmware_load_logging(log_file):
+        with _firmware_load_file_logging(log_file):
             asyncio.run(run_load())
-        print("[OK] Firmware load completed")
+        logger.info("[OK] Firmware load completed")
         return True
     except Exception as e:
-        print(f"[FAIL] Firmware load failed: {type(e).__name__}: {e}")
-        print()
-        print("请运行以下命令查看详细诊断和解决方案:")
-        print("  pybluehost tools usb diagnose")
+        logger.error("[FAIL] Firmware load failed: %s: %s", type(e).__name__, e)
+        logger.info("")
+        logger.info("请运行以下命令查看详细诊断和解决方案:")
+        logger.info("  pybluehost tools usb diagnose")
         return False

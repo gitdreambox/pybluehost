@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import random
 
 from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.cli.app._ble_peripheral import start_connectable_advertising, stop_advertising
 from pybluehost.profiles.ble import HeartRateServer
 from pybluehost.stack import Stack
+
+logger = logging.getLogger(__name__)
 
 
 def register_hr_monitor_command(subparsers: argparse._SubParsersAction) -> None:
@@ -28,7 +31,11 @@ async def _hr_monitor_main(stack: Stack, stop: asyncio.Event, *, interval: float
         service_uuids=[0x180D],
         local_name="PyBlueHost HR",
     )
-    print(f"HRS up at {stack.local_address}; advertising and pushing random bpm every {interval}s")
+    logger.info(
+        "HRS up at %s; advertising and pushing random bpm every %ss",
+        stack.local_address,
+        interval,
+    )
 
     try:
         while not stop.is_set():

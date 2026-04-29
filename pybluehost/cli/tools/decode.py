@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
-import sys
+import logging
 
 from pybluehost.hci.packets import decode_hci_packet
+
+logger = logging.getLogger(__name__)
 
 
 def register_decode_command(subparsers: argparse._SubParsersAction) -> None:
@@ -16,25 +18,25 @@ def register_decode_command(subparsers: argparse._SubParsersAction) -> None:
 def _cmd_decode(args: argparse.Namespace) -> int:
     s = args.hex.strip().replace(" ", "").replace(":", "")
     if not s:
-        print("Error: empty hex string", file=sys.stderr)
+        logger.error("Error: empty hex string")
         return 1
     try:
         data = bytes.fromhex(s)
     except ValueError as e:
-        print(f"Error: invalid hex: {e}", file=sys.stderr)
+        logger.error("Error: invalid hex: %s", e)
         return 1
     try:
         pkt = decode_hci_packet(data)
     except Exception as e:
-        print(f"Error: decode failed: {e}", file=sys.stderr)
+        logger.error("Error: decode failed: %s", e)
         return 1
-    print(type(pkt).__name__)
+    logger.info(type(pkt).__name__)
     for field in pkt.__dataclass_fields__ if hasattr(pkt, "__dataclass_fields__") else []:
         val = getattr(pkt, field)
         if isinstance(val, int):
-            print(f"  {field:20s} 0x{val:X}")
+            logger.info("  %-20s 0x%X", field, val)
         elif isinstance(val, bytes):
-            print(f"  {field:20s} {val.hex()}")
+            logger.info("  %-20s %s", field, val.hex())
         else:
-            print(f"  {field:20s} {val!r}")
+            logger.info("  %-20s %r", field, val)
     return 0

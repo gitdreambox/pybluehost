@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 
 from pybluehost.classic.spp import SPPConnection, SPPService
 from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.stack import Stack
+
+logger = logging.getLogger(__name__)
 
 
 def register_spp_echo_command(subparsers: argparse._SubParsersAction) -> None:
@@ -35,7 +38,7 @@ async def _spp_echo_main(stack: Stack, stop: asyncio.Event) -> None:
 
     service.on_connection(_echo_handler)
     await service.register(channel=1, name=service_name)
-    print(f"SPP echo server listening on RFCOMM channel 1; local={stack.local_address}")
+    logger.info("SPP echo server listening on RFCOMM channel 1; local=%s", stack.local_address)
     try:
         await stop.wait()
     finally:

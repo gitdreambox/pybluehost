@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
+import logging
 
 from pybluehost.classic.sdp import DataElement, DataElementType, SDPClient
 from pybluehost.cli._target import TARGET_HELP, parse_target_arg
 from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.l2cap.constants import PSM_SDP
 from pybluehost.stack import Stack
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SCAN_UUIDS = (
     0x1002,  # Public Browse Group
@@ -104,7 +106,7 @@ def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None
 
 async def _sdp_browser_main(args: argparse.Namespace) -> int:
     if not args.target:
-        print("Error: --target is required", file=sys.stderr)
+        logger.error("Error: --target is required")
         return 2
 
     addr, _atype = parse_target_arg(args.target)
@@ -129,13 +131,13 @@ async def _sdp_browser_run(
     max_attribute_bytes: int,
 ) -> None:
     del stop
-    print(f"Connecting to {addr}")
+    logger.info("Connecting to %s", addr)
     handle = await stack.connect_classic(addr)
-    print(f"Connected ACL handle=0x{handle:04X}")
+    logger.info("Connected ACL handle=0x%04X", handle)
     await stack.authenticate_classic(handle)
-    print(f"Authenticated ACL handle=0x{handle:04X}")
+    logger.info("Authenticated ACL handle=0x%04X", handle)
     await stack.enable_classic_encryption(handle)
-    print(f"Encrypted ACL handle=0x{handle:04X}")
+    logger.info("Encrypted ACL handle=0x%04X", handle)
     channel = await stack.l2cap.connect_classic_channel(handle=handle, psm=PSM_SDP)
     client = SDPClient(
         channel,
@@ -145,12 +147,12 @@ async def _sdp_browser_run(
     )
     records = await _query_sdp_records(client, service_uuid)
     if not records:
-        print("No SDP records found")
+        logger.info("No SDP records found")
         return
     for index, record in enumerate(records, start=1):
-        print(f"Record {index}:")
+        logger.info("Record %d:", index)
         for attr_id, value in sorted(record.items()):
-            print(f"  {_format_sdp_attr_id(attr_id)}: {_format_sdp_value(value)}")
+            logger.info("  %s: %s", _format_sdp_attr_id(attr_id), _format_sdp_value(value))
 
 
 async def _query_sdp_records(

@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 
 from pybluehost.classic.gap import InquiryConfig
 from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.stack import Stack
+
+logger = logging.getLogger(__name__)
 
 
 def register_classic_inquiry_command(subparsers: argparse._SubParsersAction) -> None:
@@ -26,7 +29,7 @@ async def _classic_inquiry_main(stack: Stack, stop: asyncio.Event) -> None:
         if addr_s not in seen:
             name = getattr(info, "name", None) or "<unknown>"
             cod = getattr(info, "class_of_device", 0)
-            print(f"{addr_s}  CoD=0x{cod:06X}  {name}")
+            logger.info("%s  CoD=0x%06X  %s", addr_s, cod, name)
             seen.add(addr_s)
 
     stack.gap.classic_discovery.on_result(on_result)
@@ -36,7 +39,7 @@ async def _classic_inquiry_main(stack: Stack, stop: asyncio.Event) -> None:
         try:
             await stack.gap.classic_discovery.start(config)
         except Exception as e:
-            print(f"Inquiry error: {e}")
+            logger.error("Inquiry error: %s", e)
             break
         # Wait either inquiry duration or stop, whichever first
         try:

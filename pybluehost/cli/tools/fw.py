@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 from pybluehost.transport.firmware import FirmwareManager, FirmwarePolicy
 
 _SUPPORTED_VENDORS = ("intel", "realtek")
+logger = logging.getLogger(__name__)
 
 
 def fw_list(fw_dir: Path | None = None) -> list[dict]:
@@ -83,16 +85,16 @@ def _download_firmware_files(vendor: str, fw_dir: Path) -> list[Path]:
             "rtl8761b_config.bin",
         ]
     else:
-        print(f"Unknown vendor: {vendor}")
+        logger.error("Unknown vendor: %s", vendor)
         return downloaded
 
     for filename in files:
         try:
             path = FirmwareDownloader.download(filename, vendor, fw_dir)
             downloaded.append(path)
-            print(f"  ok {filename}")
+            logger.info("  ok %s", filename)
         except Exception as e:
-            print(f"  fail {filename}: {e}")
+            logger.error("  fail %s: %s", filename, e)
 
     return downloaded
 
@@ -182,33 +184,33 @@ def register_fw_commands(subparsers: argparse._SubParsersAction) -> None:
 def _cmd_fw_list(args: argparse.Namespace) -> int:
     files = fw_list(fw_dir=args.dir)
     if not files:
-        print("No firmware files found.")
+        logger.info("No firmware files found.")
         return 0
     for f in files:
-        print(f"  {f['name']:40s} {f['size']:>10d} bytes  {f['path']}")
+        logger.info("  %-40s %10d bytes  %s", f["name"], f["size"], f["path"])
     return 0
 
 
 def _cmd_fw_download(args: argparse.Namespace) -> int:
     downloaded = fw_download(vendor=args.vendor, fw_dir=args.dir)
     if downloaded:
-        print(f"Downloaded {len(downloaded)} file(s).")
+        logger.info("Downloaded %d file(s).", len(downloaded))
     return 0
 
 
 def _cmd_fw_info(args: argparse.Namespace) -> int:
     try:
         info = fw_info(args.path)
-        print(f"Name: {info['name']}")
-        print(f"Size: {info['size']} bytes")
-        print(f"Path: {info['path']}")
+        logger.info("Name: %s", info["name"])
+        logger.info("Size: %d bytes", info["size"])
+        logger.info("Path: %s", info["path"])
         return 0
     except FileNotFoundError as e:
-        print(str(e))
+        logger.error(str(e))
         return 1
 
 
 def _cmd_fw_clean(args: argparse.Namespace) -> int:
     removed = fw_clean(fw_dir=args.dir)
-    print(f"Removed {removed} file(s).")
+    logger.info("Removed %d file(s).", removed)
     return 0

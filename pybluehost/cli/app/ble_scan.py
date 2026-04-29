@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 
 from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.stack import Stack
+
+logger = logging.getLogger(__name__)
 
 
 def register_ble_scan_command(subparsers: argparse._SubParsersAction) -> None:
@@ -30,12 +33,12 @@ async def _ble_scan_main(stack: Stack, stop: asyncio.Event) -> None:
         rssi = result.rssi
         if addr_s not in seen or abs(seen[addr_s] - rssi) > 5:
             name = getattr(result, "local_name", None) or "<no name>"
-            print(f"{addr_s}  rssi={rssi:>4}  {name}", flush=True)
+            logger.info("%s  rssi=%4s  %s", addr_s, rssi, name)
             seen[addr_s] = rssi
 
     stack.gap.ble_scanner.on_result(on_result)
     await stack.gap.ble_scanner.start()
-    print("Scanning BLE advertisements... Ctrl+C to stop", flush=True)
+    logger.info("Scanning BLE advertisements... Ctrl+C to stop")
     try:
         await stop.wait()
     finally:

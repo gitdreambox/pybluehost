@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import logging
 import signal
-import sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -14,12 +14,14 @@ from pybluehost.cli._transport import parse_transport_arg
 from pybluehost.core.trace import BtsnoopSink, CallbackSink, Direction, TraceEvent
 from pybluehost.stack import Stack, StackConfig
 
+logger = logging.getLogger(__name__)
+
 
 async def _print_hci_trace(event: TraceEvent) -> None:
     if event.source_layer != "hci" or not event.raw_bytes:
         return
     label = "TX" if event.direction == Direction.DOWN else "RX"
-    print(f"[HCI {label}] {event.raw_bytes.hex(' ')}", file=sys.stderr, flush=True)
+    logger.warning("[HCI %s] %s", label, event.raw_bytes.hex(" "))
 
 
 def add_trace_arguments(parser: argparse.ArgumentParser) -> None:
@@ -80,7 +82,7 @@ async def run_app_command(
             config.trace_sinks.append(BtsnoopSink(btsnoop))
         stack = await Stack._build(transport=transport, config=config)
     except Exception as e:
-        print(f"Error: {_format_cli_error(e)}", file=sys.stderr)
+        logger.error("Error: %s", _format_cli_error(e))
         return 1
 
     try:
@@ -101,7 +103,7 @@ async def run_app_command(
         # Re-raise main exception, if any
         exc = main_task.exception()
         if exc is not None:
-            print(f"Error: {_format_cli_error(exc)}", file=sys.stderr)
+            logger.error("Error: %s", _format_cli_error(exc))
             return 1
         return 0
     finally:

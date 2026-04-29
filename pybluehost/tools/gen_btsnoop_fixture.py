@@ -1,6 +1,11 @@
 """Generate minimal btsnoop fixture files for testing."""
+import logging
 import struct
 from pathlib import Path
+
+from pybluehost.cli._logging import configure_cli_logging
+
+logger = logging.getLogger(__name__)
 
 BTSNOOP_MAGIC = b"btsnoop\x00"
 BTSNOOP_VERSION = 1
@@ -34,6 +39,7 @@ def write_btsnoop(path: str, packets: list[tuple[bytes, int]]) -> None:
 
 
 if __name__ == "__main__":
+    configure_cli_logging()
     outdir = Path(__file__).parent.parent.parent / "tests" / "data"
     outdir.mkdir(parents=True, exist_ok=True)
     packets = [
@@ -44,4 +50,4 @@ if __name__ == "__main__":
     ]
     out = outdir / "hci_reset.btsnoop"
     write_btsnoop(str(out), packets)
-    print(f"Generated {out}")
+    logger.info("Generated %s", out)

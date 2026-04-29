@@ -5,12 +5,24 @@ from __future__ import annotations
 import argparse
 import sys
 
+from pybluehost.cli._logging import DEFAULT_LOG_FILE, DEFAULT_LOG_LEVEL, configure_cli_logging
+
 
 def main(argv: list[str] | None = None) -> int:
     """Main CLI entry point for pybluehost."""
     parser = argparse.ArgumentParser(
         prog="pybluehost",
         description="PyBlueHost — Python Bluetooth Host Stack CLI",
+    )
+    parser.add_argument(
+        "--log-file",
+        default=DEFAULT_LOG_FILE,
+        help=f"Write PyBlueHost logs to this file (default: {DEFAULT_LOG_FILE})",
+    )
+    parser.add_argument(
+        "--log-level",
+        default=DEFAULT_LOG_LEVEL,
+        help=f"PyBlueHost log level (default: {DEFAULT_LOG_LEVEL})",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -30,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 2
 
+    configure_cli_logging(log_file=args.log_file, level=args.log_level)
     return args.func(args)
 
 
