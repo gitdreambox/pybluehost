@@ -50,14 +50,17 @@ class TestDiagnose:
 
 
 class TestCmdUSBDiagnose:
+    def _patch_libusb(self):
+        return patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
+
     def test_no_devices(self, capsys):
-        with patch("pybluehost.cli.tools.usb.usb") as mock_usb:
+        with self._patch_libusb(), patch("pybluehost.cli.tools.usb.usb") as mock_usb:
             mock_usb.core.find.return_value = []
             args = MagicMock()
             ret = _cmd_usb_diagnose(args)
-        assert ret == 0
+        assert ret == 1
         captured = capsys.readouterr()
-        assert "No USB Bluetooth devices found" in captured.out
+        assert "no Bluetooth USB devices found" in captured.out
 
     def test_device_accessible(self, capsys):
         dev = MagicMock()
@@ -66,16 +69,23 @@ class TestCmdUSBDiagnose:
         dev.bDeviceClass = 0xE0
         dev.bDeviceSubClass = 0x01
         dev.bDeviceProtocol = 0x01
-        dev.get_active_configuration.return_value = MagicMock()
+        endpoint = MagicMock()
+        endpoint.read.return_value = bytes.fromhex("0e 04 01 03 0c 00")
+        config = MagicMock()
+        config.__getitem__.return_value = MagicMock()
+        dev.get_active_configuration.return_value = config
 
-        with patch("pybluehost.cli.tools.usb.usb") as mock_usb:
+        with self._patch_libusb(), patch("pybluehost.cli.tools.usb.usb") as mock_usb:
             mock_usb.core.find.return_value = [dev]
+            mock_usb.util.find_descriptor.return_value = endpoint
+            mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
+            mock_usb.util.endpoint_type.return_value = mock_usb.util.ENDPOINT_TYPE_INTR
             args = MagicMock()
             ret = _cmd_usb_diagnose(args)
         assert ret == 0
         captured = capsys.readouterr()
         assert "0a12:0001" in captured.out
-        assert "OK" in captured.out
+        assert "HCI Reset status: 0x00" in captured.out
 
     def test_device_bthusb_driver(self, capsys):
         """Device bound to Windows BT driver raises NotImplementedError (errno=-12)."""
@@ -88,12 +98,12 @@ class TestCmdUSBDiagnose:
         dev.bDeviceProtocol = 0x01
         dev.get_active_configuration.side_effect = NotImplementedError("LIBUSB_ERROR_NOT_SUPPORTED")
 
-        with patch("pybluehost.cli.tools.usb.usb") as mock_usb:
+        with self._patch_libusb(), patch("pybluehost.cli.tools.usb.usb") as mock_usb:
             mock_usb.core.find.return_value = [dev]
             mock_usb.core.USBError = usb.core.USBError
             args = MagicMock()
             ret = _cmd_usb_diagnose(args)
-        assert ret == 0
+        assert ret == 1
         captured = capsys.readouterr()
         assert "0a12:0001" in captured.out
         assert "DRIVER_CONFLICT" in captured.out
@@ -111,12 +121,12 @@ class TestCmdUSBDiagnose:
         err = usb.core.USBError("Access denied", errno=13)
         dev.get_active_configuration.side_effect = err
 
-        with patch("pybluehost.cli.tools.usb.usb") as mock_usb:
+        with self._patch_libusb(), patch("pybluehost.cli.tools.usb.usb") as mock_usb:
             mock_usb.core.find.return_value = [dev]
             mock_usb.core.USBError = usb.core.USBError
             args = MagicMock()
             ret = _cmd_usb_diagnose(args)
-        assert ret == 0
+        assert ret == 1
         captured = capsys.readouterr()
         assert "0a12:0001" in captured.out
         assert "DRIVER_CONFLICT" in captured.out

@@ -312,7 +312,9 @@ uv run pybluehost tools fw list
 uv run pybluehost tools fw download <chip>
 
 # USB 诊断
-uv run pybluehost tools usb scan
+uv run pybluehost tools usb probe
+uv run pybluehost tools usb probe --verbose
+uv run pybluehost tools usb diagnose
 ```
 
 ---

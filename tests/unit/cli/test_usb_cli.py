@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 
-from pybluehost.cli.tools.usb import probe_usb_devices, _cmd_usb_probe
+from pybluehost.cli.tools.usb import probe_usb_devices, _cmd_usb_probe, _cmd_usb_diagnose
 
 
 def _mock_usb_device(vid, pid, bus=1, addr=1, dev_class=0xE0, sub=0x01, proto=0x01):
@@ -16,6 +16,21 @@ def _mock_usb_device(vid, pid, bus=1, addr=1, dev_class=0xE0, sub=0x01, proto=0x
     dev.bDeviceClass = dev_class
     dev.bDeviceSubClass = sub
     dev.bDeviceProtocol = proto
+    return dev
+
+
+def _mock_interface_class_usb_device(vid=0x1234, pid=0x5678):
+    """Create a device whose Bluetooth class is declared on interface 0."""
+    dev = _mock_usb_device(vid, pid, dev_class=0x00, sub=0x00, proto=0x00)
+    interface = MagicMock()
+    interface.bInterfaceClass = 0xE0
+    interface.bInterfaceSubClass = 0x01
+    interface.bInterfaceProtocol = 0x01
+    config = MagicMock()
+    config.__iter__.return_value = [interface]
+    config.__getitem__.return_value = interface
+    dev.__iter__.return_value = [config]
+    dev.get_active_configuration.return_value = config
     return dev
 
 
@@ -46,6 +61,16 @@ def test_probe_unknown_bt_class_device(mock_usb):
     mock_usb.core.find.return_value = [
         _mock_usb_device(0x9999, 0x0001, dev_class=0xE0, sub=0x01, proto=0x01)
     ]
+    devices = probe_usb_devices()
+    assert len(devices) == 1
+    assert devices[0]["vendor"] == "unknown"
+    assert devices[0]["chip_name"] == "Unknown BT Device"
+
+
+@patch("pybluehost.cli.tools.usb.usb")
+def test_probe_unknown_bt_interface_class_device(mock_usb):
+    """Unknown VID/PID with Bluetooth interface class is included."""
+    mock_usb.core.find.return_value = [_mock_interface_class_usb_device()]
     devices = probe_usb_devices()
     assert len(devices) == 1
     assert devices[0]["vendor"] == "unknown"
@@ -133,3 +158,46 @@ def test_cmd_probe_returns_1_on_error(mock_probe, capsys):
     assert result == 1
     err = capsys.readouterr().err
     assert "pyusb not installed" in err
+
+
+@patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
+@patch("pybluehost.cli.tools.usb.usb")
+def test_cmd_diagnose_reports_hci_reset_success(mock_usb, mock_libusb, capsys):
+    dev = _mock_interface_class_usb_device()
+    endpoint = MagicMock()
+    endpoint.read.return_value = bytes.fromhex("0e 04 01 03 0c 00")
+    mock_usb.core.find.return_value = [dev]
+    mock_usb.util.find_descriptor.return_value = endpoint
+    mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
+    mock_usb.util.endpoint_type.return_value = mock_usb.util.ENDPOINT_TYPE_INTR
+
+    result = _cmd_usb_diagnose(MagicMock())
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "[OK] libusb backend" in out
+    assert "[OK] enumerate Bluetooth USB" in out
+    assert "[OK] USB access" in out
+    assert "[OK] WinUSB/libusb driver access" in out
+    assert "[OK] HCI Reset command sent" in out
+    assert "[OK] HCI Reset event received" in out
+    assert "[OK] HCI Reset status: 0x00" in out
+
+
+@patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
+@patch("pybluehost.cli.tools.usb.usb")
+def test_cmd_diagnose_reports_hci_reset_status_failure(mock_usb, mock_libusb, capsys):
+    dev = _mock_interface_class_usb_device()
+    endpoint = MagicMock()
+    endpoint.read.return_value = bytes.fromhex("0e 04 01 03 0c 0c")
+    mock_usb.core.find.return_value = [dev]
+    mock_usb.util.find_descriptor.return_value = endpoint
+    mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
+    mock_usb.util.endpoint_type.return_value = mock_usb.util.ENDPOINT_TYPE_INTR
+
+    result = _cmd_usb_diagnose(MagicMock())
+
+    assert result == 1
+    out = capsys.readouterr().out
+    assert "[FAIL] HCI Reset status: 0x0C" in out
+    assert "firmware load" in out
