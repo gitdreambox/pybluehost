@@ -592,16 +592,16 @@ def _diagnose_device(dev: Any) -> bool:
         print(f"[OK] HCI Reset event received: {event.hex(' ')}")
     except Exception as e:
         print(f"[FAIL] HCI Reset event received: {type(e).__name__}: {e}")
-        return False
+        return _try_intel_reset_if_applicable(dev, ep_intr)
 
     status = _parse_hci_reset_status(event)
     if status is None:
         print("[FAIL] HCI Reset event status: unexpected event format")
-        return False
+        return _try_intel_reset_if_applicable(dev, ep_intr)
     if status != 0:
         print(f"[FAIL] HCI Reset status: 0x{status:02X}")
         print("       Controller rejected HCI Reset; firmware load may be required.")
-        ok = False
+        ok = _try_intel_reset_if_applicable(dev, ep_intr)
     else:
         print("[OK] HCI Reset status: 0x00")
 
@@ -614,6 +614,58 @@ def _diagnose_device(dev: Any) -> bool:
     except Exception:
         pass
     return ok
+
+
+def _is_intel_device(dev: Any) -> bool:
+    chip = _known_chip_for(dev)
+    if chip is not None and chip.vendor == "intel":
+        return True
+    try:
+        return int(dev.idVendor) == 0x8087
+    except Exception:
+        return False
+
+
+def _try_intel_reset_if_applicable(dev: Any, ep_intr: Any) -> bool:
+    if not _is_intel_device(dev):
+        return False
+    print("[INFO] Intel device detected; trying HCI_INTEL_RESET_COMMAND")
+    return _try_intel_reset(dev, ep_intr)
+
+
+def _try_intel_reset(dev: Any, ep_intr: Any) -> bool:
+    # Bumble HCI_Intel_Reset_Command(reset_type=1, patch_enable=1,
+    # ddc_reload=1, boot_option=0, boot_address=0)
+    intel_reset_command = bytes.fromhex("01 fc 08 01 01 01 00 00 00 00 00")
+    try:
+        dev.ctrl_transfer(0x20, 0x00, 0x0000, 0x0000, intel_reset_command)
+        print("[OK] Intel Reset command sent")
+    except Exception as e:
+        print(f"[FAIL] Intel Reset command sent: {type(e).__name__}: {e}")
+        return False
+
+    try:
+        event = bytes(ep_intr.read(255, timeout=3000))
+        print(f"[OK] Intel Reset event received: {event.hex(' ')}")
+    except Exception as e:
+        if _is_usb_disconnect(e):
+            print("[OK] Intel Reset triggered: device disconnected/re-enumerating")
+            return True
+        print(f"[FAIL] Intel Reset event received: {type(e).__name__}: {e}")
+        return False
+
+    if _parse_command_complete_opcode(event) == 0xFC01:
+        print("[OK] Intel Reset command complete")
+        return True
+    print("[WARN] Intel Reset event format: unexpected event")
+    return True
+
+
+def _is_usb_disconnect(exc: Exception) -> bool:
+    errno = getattr(exc, "errno", None)
+    if errno == 19:
+        return True
+    return "no such device" in str(exc).lower()
 
 
 def _find_interrupt_in_endpoint(intf: Any) -> Any | None:
@@ -632,6 +684,12 @@ def _find_interrupt_in_endpoint(intf: Any) -> Any | None:
 def _parse_hci_reset_status(event: bytes) -> int | None:
     if len(event) >= 6 and event[0] == 0x0E and event[3:5] == bytes.fromhex("03 0c"):
         return event[5]
+    return None
+
+
+def _parse_command_complete_opcode(event: bytes) -> int | None:
+    if len(event) >= 5 and event[0] == 0x0E:
+        return int.from_bytes(event[3:5], "little")
     return None
 
 

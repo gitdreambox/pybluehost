@@ -257,3 +257,66 @@ def test_cmd_diagnose_reports_hci_reset_status_failure(mock_usb, mock_libusb, ca
     out = capsys.readouterr().out
     assert "[FAIL] HCI Reset status: 0x0C" in out
     assert "firmware load" in out
+
+
+@patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
+@patch("pybluehost.cli.tools.usb.usb")
+def test_cmd_diagnose_tries_intel_reset_when_hci_reset_event_times_out(
+    mock_usb, mock_libusb, capsys
+):
+    dev = _mock_usb_device(0x8087, 0x0036)
+    config = MagicMock()
+    config.__getitem__.return_value = MagicMock()
+    dev.get_active_configuration.return_value = config
+    endpoint = MagicMock()
+    endpoint.read.side_effect = [
+        Exception("flush done"),
+        Exception("standard reset timeout"),
+        bytes.fromhex("0e 04 01 01 fc 00"),
+    ]
+    mock_usb.core.find.return_value = [dev]
+    mock_usb.util.find_descriptor.return_value = endpoint
+    mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
+    mock_usb.util.endpoint_type.return_value = mock_usb.util.ENDPOINT_TYPE_INTR
+
+    result = _cmd_usb_diagnose(MagicMock())
+
+    assert result == 0
+    standard_reset = bytes.fromhex("03 0c 00")
+    intel_reset = bytes.fromhex("01 fc 08 01 01 01 00 00 00 00 00")
+    sent_commands = [call.args[4] for call in dev.ctrl_transfer.call_args_list]
+    assert sent_commands == [standard_reset, intel_reset]
+    out = capsys.readouterr().out
+    assert "[FAIL] HCI Reset event received" in out
+    assert "[OK] Intel Reset command sent" in out
+    assert "[OK] Intel Reset event received" in out
+
+
+@patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
+@patch("pybluehost.cli.tools.usb.usb")
+def test_cmd_diagnose_treats_intel_reset_disconnect_as_success(
+    mock_usb, mock_libusb, capsys
+):
+    dev = _mock_usb_device(0x8087, 0x0036)
+    config = MagicMock()
+    config.__getitem__.return_value = MagicMock()
+    dev.get_active_configuration.return_value = config
+    disconnect = Exception("No such device")
+    disconnect.errno = 19
+    endpoint = MagicMock()
+    endpoint.read.side_effect = [
+        Exception("flush done"),
+        Exception("standard reset timeout"),
+        disconnect,
+    ]
+    mock_usb.core.find.return_value = [dev]
+    mock_usb.util.find_descriptor.return_value = endpoint
+    mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
+    mock_usb.util.endpoint_type.return_value = mock_usb.util.ENDPOINT_TYPE_INTR
+
+    result = _cmd_usb_diagnose(MagicMock())
+
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "[OK] Intel Reset command sent" in out
+    assert "device disconnected/re-enumerating" in out
