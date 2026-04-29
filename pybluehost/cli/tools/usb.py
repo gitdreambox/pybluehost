@@ -30,6 +30,14 @@ def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
         "-i", "--intel-tlv", action="store_true",
         help="Read Intel TLV version data (sends HCI command to device)",
     )
+    color_group = probe_parser.add_mutually_exclusive_group()
+    color_group.add_argument(
+        "--color", dest="color", action="store_true", help="Force colored output"
+    )
+    color_group.add_argument(
+        "--no-color", dest="color", action="store_false", help="Disable colored output"
+    )
+    probe_parser.set_defaults(color=None)
     probe_parser.set_defaults(func=_cmd_usb_probe)
 
     # usb diagnose
@@ -89,6 +97,61 @@ def _is_bluetooth_usb_device(dev: Any) -> bool:
     return False
 
 
+def _descriptor_string(dev: Any, attr: str) -> str | None:
+    try:
+        value = getattr(dev, attr)
+    except Exception:
+        return None
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _usb_id(dev: Any, upper: bool = True) -> str:
+    text = f"{int(dev.idVendor):04X}:{int(dev.idProduct):04X}"
+    return text if upper else text.lower()
+
+
+def _transport_names(
+    dev: Any, serial: str | None, disambiguate_address: bool = False
+) -> list[str]:
+    usb_id = _usb_id(dev)
+    names = [f"usb:{usb_id}"]
+    if serial:
+        names.append(f"usb:{usb_id}/{serial}")
+    elif disambiguate_address and getattr(dev, "address", None) is not None:
+        names[0] = f"{names[0]}#{int(dev.address)}"
+    return names
+
+
+def _class_name(class_code: int) -> str:
+    names = {
+        0x00: "Device",
+        0x02: "Communications",
+        0x03: "HID",
+        0x08: "Mass Storage",
+        0x09: "Hub",
+        0x0A: "CDC Data",
+        0x0E: "Video",
+        0xE0: "Wireless Controller",
+        0xEF: "Miscellaneous",
+        0xFF: "Vendor Specific",
+    }
+    return names.get(class_code, f"0x{class_code:02X}")
+
+
+def _subclass_name(class_code: int, subclass: int) -> str:
+    if class_code == 0xE0 and subclass == 0x01:
+        return "RF Controller"
+    return str(subclass)
+
+
+def _protocol_name(class_code: int, subclass: int, protocol: int) -> str:
+    if class_code == 0xE0 and subclass == 0x01 and protocol == 0x01:
+        return "Bluetooth Programming Interface"
+    return str(protocol)
+
+
 def probe_usb_devices(
     verbose: bool = False, intel_tlv: bool = False
 ) -> list[dict[str, Any]]:
@@ -114,28 +177,49 @@ def probe_usb_devices(
 
     backend = USBTransport._get_usb_backend()
     all_devices = list(usb.core.find(find_all=True, backend=backend))
+    bt_devices = [dev for dev in all_devices if _is_bluetooth_usb_device(dev)]
+    id_counts: dict[str, int] = {}
+    for dev in bt_devices:
+        serial = _descriptor_string(dev, "serial_number")
+        if serial:
+            continue
+        usb_id = _usb_id(dev)
+        id_counts[usb_id] = id_counts.get(usb_id, 0) + 1
 
     results: list[dict[str, Any]] = []
     index = 0
 
-    for dev in all_devices:
+    for dev in bt_devices:
         chip = _known_chip_for(dev)
-        if not _is_bluetooth_usb_device(dev):
-            continue
+        class_code, subclass, protocol = _class_tuple(dev, "bDevice")
+        serial = _descriptor_string(dev, "serial_number")
+        manufacturer = _descriptor_string(dev, "manufacturer")
+        product = _descriptor_string(dev, "product")
+        transport_names = _transport_names(
+            dev,
+            serial,
+            disambiguate_address=id_counts.get(_usb_id(dev), 0) > 1,
+        )
 
         index += 1
         info: dict[str, Any] = {
             "index": index,
             "vid": dev.idVendor,
             "pid": dev.idProduct,
-            "vid_pid": f"{dev.idVendor:04x}:{dev.idProduct:04x}",
+            "vid_pid": _usb_id(dev, upper=False),
+            "id": _usb_id(dev),
             "vendor": chip.vendor if chip else "unknown",
             "chip_name": chip.name if chip else "Unknown BT Device",
             "bus": getattr(dev, "bus", None),
             "address": getattr(dev, "address", None),
-            "device_class": f"{getattr(dev, 'bDeviceClass', 0):02x}:"
-                           f"{getattr(dev, 'bDeviceSubClass', 0):02x}:"
-                           f"{getattr(dev, 'bDeviceProtocol', 0):02x}",
+            "device_class": f"{class_code:02x}:{subclass:02x}:{protocol:02x}",
+            "class_name": _class_name(class_code),
+            "subclass_name": _subclass_name(class_code, subclass),
+            "protocol_name": _protocol_name(class_code, subclass, protocol),
+            "transport_names": transport_names,
+            "serial": serial,
+            "manufacturer": manufacturer,
+            "product": product,
         }
 
         # Endpoint info
@@ -278,28 +362,53 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
         print("No USB Bluetooth devices found.")
         return 0
 
+    use_color = _should_use_color(getattr(args, "color", None))
     print(f"Found {len(devices)} USB Bluetooth device(s):\n")
 
     for dev in devices:
-        print(f"  [{dev['index']}] {dev['vid_pid']}  {dev['vendor']} {dev['chip_name']}")
-        print(f"      Bus {dev['bus']:03d} Address {dev['address']:03d}  Class {dev['device_class']}")
+        print(f"ID {_color(dev.get('id', dev['vid_pid']).upper(), 'id', use_color)}")
+        _print_probe_field(
+            "Bumble Transport Names",
+            " or ".join(dev.get("transport_names", [])),
+            "name",
+            use_color,
+        )
+        _print_probe_field(
+            "Bus/Device",
+            _format_bus_device(dev.get("bus"), dev.get("address")),
+            "bus",
+            use_color,
+        )
+        _print_probe_field("Class", dev.get("class_name", dev["device_class"]), "class", use_color)
+        _print_probe_field(
+            "Subclass/Protocol",
+            _format_subclass_protocol(dev),
+            "class",
+            use_color,
+        )
+        if dev.get("serial"):
+            _print_probe_field("Serial", dev["serial"], "serial", use_color)
+        if dev.get("manufacturer"):
+            _print_probe_field("Manufacturer", dev["manufacturer"], "name", use_color)
+        if dev.get("product"):
+            _print_probe_field("Product", dev["product"], "name", use_color)
 
         if args.verbose and dev.get("endpoints"):
-            print("      Endpoints:")
+            print("  Endpoints:")
             for ep in dev["endpoints"]:
-                print(f"        EP {ep['address']}  {ep['type']} {ep['direction']}")
+                print(f"    EP {ep['address']}  {ep['type']} {ep['direction']}")
 
         if args.intel_tlv and dev.get("image_type") is not None:
             print(
-                f"      Mode: {dev['image_type_str']}   "
+                f"  Mode: {dev['image_type_str']}   "
                 f"SBE: {dev['sbe_type_str']}   "
                 f"FW: {dev['fw_name']}"
             )
             if dev.get("bd_addr"):
-                print(f"      BD_ADDR: {dev['bd_addr']}")
+                print(f"  BD_ADDR: {dev['bd_addr']}")
             if args.verbose:
                 print(
-                    f"      TLV: CNVI_TOP={dev['cnvi_top']} "
+                    f"  TLV: CNVI_TOP={dev['cnvi_top']} "
                     f"CNVR_TOP={dev['cnvr_top']} "
                     f"CNVI_BT={dev['cnvi_bt']}"
                 )
@@ -307,6 +416,46 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
         print()
 
     return 0
+
+
+def _should_use_color(color_arg: bool | None) -> bool:
+    if color_arg is True:
+        return True
+    if color_arg is False:
+        return False
+    return sys.stdout.isatty()
+
+
+def _color(text: str, kind: str, enabled: bool) -> str:
+    if not enabled:
+        return text
+    colors = {
+        "id": "36",
+        "name": "32",
+        "bus": "33",
+        "class": "35",
+        "serial": "34",
+    }
+    return f"\x1b[{colors.get(kind, '37')}m{text}\x1b[0m"
+
+
+def _print_probe_field(label: str, value: str, color_kind: str, use_color: bool) -> None:
+    print(f"  {label + ':':<24}{_color(value, color_kind, use_color)}")
+
+
+def _format_bus_device(bus: Any, address: Any) -> str:
+    try:
+        return f"{int(bus):03d}/{int(address):03d}"
+    except Exception:
+        return f"{bus}/{address}"
+
+
+def _format_subclass_protocol(dev: dict[str, Any]) -> str:
+    subclass = str(dev.get("subclass_name", ""))
+    protocol = str(dev.get("protocol_name", ""))
+    if subclass.isdigit() and protocol.isdigit():
+        return f"{subclass}/{protocol}"
+    return f"{subclass} / {protocol}"
 
 
 def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
