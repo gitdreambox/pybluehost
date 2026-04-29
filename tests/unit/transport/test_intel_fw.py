@@ -52,6 +52,12 @@ _LEGACY_BOOTLOADER = bytes([
     0x01, 0x00,
 ])
 
+_HCI_RESET_OK = bytes([
+    0x0E, 0x04, 0x01,
+    0x03, 0x0C,
+    0x00,
+])
+
 
 def _make_response_sequence(*responses):
     """Create an async mock that returns responses in order, cycling the last."""
@@ -83,8 +89,8 @@ async def test_intel_send_vendor_cmd_builds_correct_opcode():
 
 
 @pytest.mark.asyncio
-async def test_intel_initialize_calls_read_version_first():
-    """_initialize() sends HCI_Intel_Read_Version (0xFC05) as first command."""
+async def test_intel_initialize_resets_before_read_version():
+    """_initialize() sends HCI Reset before HCI_Intel_Read_Version."""
     transport = _make_intel_transport()
     sent_opcodes = []
 
@@ -92,16 +98,16 @@ async def test_intel_initialize_calls_read_version_first():
         sent_opcodes.append(data[0:2])
     transport._control_out = capture
 
-    # V2 → rejected, then V1 → operational (no FW load)
+    # Reset OK, V2 → rejected, then V1 → operational (no FW load)
     transport._wait_for_event = _make_response_sequence(
-        _V2_REJECT, _LEGACY_OPERATIONAL
+        _HCI_RESET_OK, _V2_REJECT, _LEGACY_OPERATIONAL
     )
 
     await transport._initialize()
-    # Both V2 and V1 use opcode FC05
-    assert len(sent_opcodes) >= 2
-    assert sent_opcodes[0] == b"\x05\xfc"
+    assert len(sent_opcodes) >= 3
+    assert sent_opcodes[0] == b"\x03\x0c"
     assert sent_opcodes[1] == b"\x05\xfc"
+    assert sent_opcodes[2] == b"\x05\xfc"
 
 
 @pytest.mark.asyncio
@@ -110,14 +116,14 @@ async def test_intel_initialize_skips_fw_load_if_operational():
     transport = _make_intel_transport()
     transport._control_out = AsyncMock()
 
-    # V2 → rejected, V1 → operational
+    # Reset OK, V2 → rejected, V1 → operational
     transport._wait_for_event = _make_response_sequence(
-        _V2_REJECT, _LEGACY_OPERATIONAL
+        _HCI_RESET_OK, _V2_REJECT, _LEGACY_OPERATIONAL
     )
 
     await transport._initialize()
-    # V2 call + V1 call = 2 control_out calls total
-    assert transport._control_out.call_count == 2
+    # HCI Reset + V2 call + V1 call = 3 control_out calls total
+    assert transport._control_out.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -135,9 +141,9 @@ async def test_intel_initialize_loads_fw_when_bootloader(tmp_path):
         call_count[0] += 1
     transport._control_out = mock_control
 
-    # V2 → rejected, V1 → bootloader, then all subsequent → operational
+    # Reset OK, V2 → rejected, V1 → bootloader, then all subsequent → operational
     transport._wait_for_event = _make_response_sequence(
-        _V2_REJECT, _LEGACY_BOOTLOADER, _LEGACY_OPERATIONAL
+        _HCI_RESET_OK, _V2_REJECT, _LEGACY_BOOTLOADER, _LEGACY_OPERATIONAL
     )
 
     with patch.object(

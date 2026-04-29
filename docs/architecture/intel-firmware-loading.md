@@ -308,7 +308,7 @@ while offset + frag_size + 3 <= len(fw_data):
 | Secure Send (CSS/PKI/Sig/Payload) | **Bulk IN** (非标准！) |
 | Vendor Events (0x06, 0x02) | **Interrupt IN** 或 **Bulk IN** |
 
-### 解决方案
+### 初版解决方案
 
 `_wait_for_event()` 实现三级 fallback：
 
@@ -329,7 +329,35 @@ async def _wait_for_event(self, timeout=5.0):
     raise TimeoutError(...)
 ```
 
-> **性能影响**：如果所有响应都走 Bulk IN，每个 chunk 只浪费 50ms（Interrupt IN 快速超时），~3900 个 chunk 额外 ~195 秒。实测全量加载 **3 分 35 秒**。
+> **历史问题**：这个实现可以跑通，但性能很差。如果所有 Secure Send 响应都走 Bulk IN，每个 chunk 仍先浪费 50ms 等 Interrupt IN，约 3900 个 chunk 会额外消耗约 195 秒。早期端到端实测全量加载约 **3 分 35 秒**。
+
+### 2026-04-29 超时复盘与流水优化
+
+后续在 `pybluehost tools usb diagnose` 中再次测试 Intel BE200 bootloader 时，发现固件加载在 **120s 超时**，日志卡在 payload offset 约 `565956`，还没有把 `ibt-0291-0291.sfi` 发送完成。对比 Bumble：
+
+```powershell
+H:\github\bluetooth\bumble\tools> python .\intel_util.py load usb:1
+```
+
+Bumble 在约 4 秒内完成发送，关键日志显示：
+
+```text
+max_in_flight_firmware_load_commands update: 31
+```
+
+结论：
+
+1. Intel bootloader 支持多个 Secure Send 命令并发在途，不需要每个 payload chunk 都同步等待 Command Complete。
+2. PyBlueHost 早期实现按 `send chunk -> wait event -> send next chunk` 串行发送，而且每包还有 Interrupt/Bulk fallback 成本，因此 120s 超时并不是 USB 吞吐问题，而是发送状态机过于保守。
+3. 正确策略是按控制器返回的 `max_in_flight_firmware_load_commands` 维护发送窗口，优先从 Bulk IN 回收 Secure Send Command Complete，窗口有空位继续发送 payload。
+
+优化后的行为：
+
+- CSS / PKI / Signature 仍保持严格顺序发送并检查状态。
+- Payload 阶段进入 pipeline：最多保持 `max_in_flight` 个 Secure Send 在途。
+- 每收到一个 Command Complete 就释放一个窗口槽位，继续发送后续 chunk。
+- 发送进度日志包含 payload offset、已发送字节、chunk 数、in-flight 数，能看出卡在“下载发送”“secure_send 响应等待”还是“vendor event 等待”。
+- 在 BE200 bootloader 上，PyBlueHost 固件加载从 120s 超时优化到约 **10.8s** 完成，包括 firmware load complete event、Intel Reset、boot complete event。
 
 ---
 
@@ -389,7 +417,7 @@ params = struct.pack("<BBBBI",
 | 5 | `test_hci_intel_read_version_v2` | <1s | Read Version V2 返回有效 TLV |
 | 6 | `test_tlv_parsing_bootloader_detection` | <1s | 解析 22+ TLV 条目, 正确检测 image_type |
 | 7 | `test_firmware_name_computation` | <1s | 计算 `ibt-0291-0291.sfi` 且文件存在 |
-| 8 | **`test_intel_firmware_loading`** | **215s** | **完整固件加载端到端验证** |
+| 8 | **`test_intel_firmware_loading`** | **历史串行实现 215s / pipeline 优化后约 10.8s** | **完整固件加载端到端验证** |
 
 ### 固件加载日志
 
@@ -411,6 +439,29 @@ Intel: reset command sent (boot_address=0x00100800)
 Intel: waiting for boot complete event...
 Intel: boot complete — device is now operational
 ```
+
+### 2026-04-29 诊断命令验证记录
+
+验证步骤：
+
+```powershell
+# 先用 Bumble 将 BE200 切回 bootloader，制造需要固件下载的状态
+H:\github\bluetooth\bumble\tools> python .\intel_util.py bootloader usb:1
+
+# 再用 PyBlueHost diagnose 触发交互式固件加载
+PS H:\WUQI\code\pybluehost> "y" | uv run --frozen pybluehost tools usb diagnose
+```
+
+验证结果：
+
+- `Post-Intel HCI Reset status: 0x01`：标准 HCI Reset 失败，说明控制器仍处于 Intel bootloader / 需固件状态。
+- `Intel Read Version event` 可读出 TLV，确认 `image_type=0x01`，需要加载 `ibt-0291-0291.sfi`。
+- 用户确认后执行 `FirmwarePolicy.AUTO_DOWNLOAD` 路径。
+- pipeline payload 全量发送完成，随后收到 firmware load complete vendor event。
+- 发送 Intel Reset 后收到 boot complete vendor event。
+- 最终输出 `[OK] Intel firmware load completed`，进程退出码为 0。
+
+这次验证同时确认：固件加载逻辑需要有分步骤日志，至少区分 USB access、版本读取、CSS/PKI/Signature、payload pipeline、firmware load complete event、Intel Reset、boot complete event。否则一旦超时，无法判断卡在“还没发完”“发完但没收到 Command Complete”“等 vendor event”还是“reset 后重枚举失败”。
 
 ---
 
@@ -448,9 +499,27 @@ Intel: boot complete — device is now operational
 
 ### 陷阱 6：Payload 需要 4 字节对齐
 
-**现象**: 随机分割 252 字节可能导致 bootloader 拒绝数据  
-**原因**: 固件 payload 是 HCI 命令序列，需要按命令边界 + 4 字节对齐分割  
+**现象**: 随机分割 252 字节可能导致 bootloader 拒绝数据<br>
+**原因**: 固件 payload 是 HCI 命令序列，需要按命令边界 + 4 字节对齐分割<br>
 **修复**: 累积 HCI 命令直到总长度是 4 的倍数再发送
+
+### 陷阱 7：串行 Secure Send 会导致 120s 超时
+
+**现象**: `pybluehost tools usb diagnose` 执行固件加载，120s 超时，payload 只发送到中段 offset（例如约 `565956`）<br>
+**原因**: 早期实现每个 Secure Send chunk 都同步等待响应，且每次等待先走 Interrupt fallback。Intel bootloader 实际支持多个固件下载命令并发在途，Bumble 会根据 `max_in_flight_firmware_load_commands` 维护窗口<br>
+**修复**: payload 阶段使用 pipeline 发送，按控制器返回的最大 in-flight 数限制窗口，收到 Command Complete 后释放窗口槽位继续发送
+
+### 陷阱 8：没有分步骤日志时无法定位卡点
+
+**现象**: 固件加载长时间无输出，用户只能看到“超时”或“失败”<br>
+**原因**: 下载、Secure Send 响应等待、firmware load complete vendor event、Intel Reset、boot complete vendor event 都在同一个大步骤里<br>
+**修复**: 为每个阶段打印开始、进度、成功、失败和超时点。payload 阶段至少记录 offset、已发送字节、chunk 数、in-flight 数和最后一次响应状态
+
+### 陷阱 9：Access denied 与固件协议失败要分开看
+
+**现象**: 用户确认加载后立即失败：`USBAccessDeniedError: Access denied`<br>
+**原因**: 这是 USB 访问/驱动占用问题，不是 `.sfi` 文件、Secure Send 或 Intel vendor event 的协议问题<br>
+**修复**: diagnose 先检查 libusb DLL、USB 枚举、WinUSB 驱动、设备可访问性，再进入 HCI Reset / Intel Read Version / firmware load。出现 Access denied 时应提示用户重新运行 `pybluehost tools usb diagnose` 查看驱动和访问权限，而不是继续推断固件内容错误
 
 ---
 

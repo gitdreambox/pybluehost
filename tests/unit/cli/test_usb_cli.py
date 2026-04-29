@@ -16,6 +16,9 @@ def _mock_usb_device(vid, pid, bus=1, addr=1, dev_class=0xE0, sub=0x01, proto=0x
     dev.bDeviceClass = dev_class
     dev.bDeviceSubClass = sub
     dev.bDeviceProtocol = proto
+    dev.serial_number = None
+    dev.manufacturer = None
+    dev.product = None
     return dev
 
 
@@ -36,7 +39,7 @@ def _mock_interface_class_usb_device(vid=0x1234, pid=0x5678):
 
 # --- probe_usb_devices ---
 
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_probe_finds_known_intel_chip(mock_usb):
     mock_usb.core.find.return_value = [_mock_usb_device(0x8087, 0x0036)]
     devices = probe_usb_devices()
@@ -44,9 +47,10 @@ def test_probe_finds_known_intel_chip(mock_usb):
     assert devices[0]["vendor"] == "intel"
     assert devices[0]["chip_name"] == "BE200"
     assert devices[0]["vid_pid"] == "8087:0036"
+    assert devices[0]["bumble_transport_names"] == ["usb:8087:0036"]
 
 
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_probe_finds_known_realtek_chip(mock_usb):
     mock_usb.core.find.return_value = [_mock_usb_device(0x0BDA, 0x8771)]
     devices = probe_usb_devices()
@@ -55,7 +59,7 @@ def test_probe_finds_known_realtek_chip(mock_usb):
     assert devices[0]["chip_name"] == "RTL8761B"
 
 
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_probe_unknown_bt_class_device(mock_usb):
     """Unknown VID/PID but Bluetooth device class → included as Unknown."""
     mock_usb.core.find.return_value = [
@@ -67,7 +71,7 @@ def test_probe_unknown_bt_class_device(mock_usb):
     assert devices[0]["chip_name"] == "Unknown BT Device"
 
 
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_probe_unknown_bt_interface_class_device(mock_usb):
     """Unknown VID/PID with Bluetooth interface class is included."""
     mock_usb.core.find.return_value = [_mock_interface_class_usb_device()]
@@ -77,7 +81,7 @@ def test_probe_unknown_bt_interface_class_device(mock_usb):
     assert devices[0]["chip_name"] == "Unknown BT Device"
 
 
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_probe_skips_non_bt_device(mock_usb):
     """Non-BT USB device (e.g. mass storage) is skipped."""
     mock_usb.core.find.return_value = [
@@ -87,14 +91,14 @@ def test_probe_skips_non_bt_device(mock_usb):
     assert len(devices) == 0
 
 
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_probe_no_devices(mock_usb):
     mock_usb.core.find.return_value = []
     devices = probe_usb_devices()
     assert devices == []
 
 
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_probe_multiple_devices(mock_usb):
     mock_usb.core.find.return_value = [
         _mock_usb_device(0x8087, 0x0036),
@@ -106,8 +110,27 @@ def test_probe_multiple_devices(mock_usb):
     assert devices[1]["index"] == 2
 
 
+@patch("pybluehost.transport.usb.usb")
+def test_probe_includes_descriptor_strings_and_bumble_serial_name(mock_usb):
+    dev = _mock_usb_device(0x0E8D, 0x0808, bus=1, addr=9)
+    dev.serial_number = "0000000000000000"
+    dev.manufacturer = "MediaTek Inc"
+    dev.product = "Airoha Dongle Enterprise"
+    mock_usb.core.find.return_value = [dev]
+
+    devices = probe_usb_devices()
+
+    assert devices[0]["serial"] == "0000000000000000"
+    assert devices[0]["manufacturer"] == "MediaTek Inc"
+    assert devices[0]["product"] == "Airoha Dongle Enterprise"
+    assert devices[0]["bumble_transport_names"] == [
+        "usb:0E8D:0808",
+        "usb:0E8D:0808/0000000000000000",
+    ]
+
+
 def test_probe_pyusb_not_installed():
-    with patch("pybluehost.cli.tools.usb.usb", None):
+    with patch("pybluehost.transport.usb.usb", None):
         with pytest.raises(RuntimeError, match="pyusb not installed"):
             probe_usb_devices()
 
@@ -125,6 +148,9 @@ def test_cmd_probe_returns_0_with_devices(mock_probe, capsys):
             "bus": 1,
             "address": 23,
             "device_class": "e0:01:01",
+            "device_class_name": "Wireless Controller (e0:01:01)",
+            "subclass_protocol": "1/1",
+            "bumble_transport_names": ["usb:8087:0036"],
         }
     ]
     args = MagicMock()
@@ -134,7 +160,9 @@ def test_cmd_probe_returns_0_with_devices(mock_probe, capsys):
     assert result == 0
     out = capsys.readouterr().out
     assert "BE200" in out
-    assert "8087:0036" in out
+    assert "ID 8087:0036" in out
+    assert "Bumble Transport Names:" in out
+    assert "usb:8087:0036" in out
 
 
 @patch("pybluehost.cli.tools.usb.probe_usb_devices")
@@ -161,7 +189,7 @@ def test_cmd_probe_returns_1_on_error(mock_probe, capsys):
 
 
 @patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_cmd_diagnose_reports_hci_reset_success(mock_usb, mock_libusb, capsys):
     dev = _mock_interface_class_usb_device()
     endpoint = MagicMock()
@@ -185,7 +213,7 @@ def test_cmd_diagnose_reports_hci_reset_success(mock_usb, mock_libusb, capsys):
 
 
 @patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
-@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.usb")
 def test_cmd_diagnose_reports_hci_reset_status_failure(mock_usb, mock_libusb, capsys):
     dev = _mock_interface_class_usb_device()
     endpoint = MagicMock()

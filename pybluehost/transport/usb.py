@@ -6,10 +6,12 @@ import asyncio
 import logging
 import struct
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pybluehost.core.errors import USBAccessDeniedError
 from pybluehost.transport.base import Transport, TransportInfo
 from pybluehost.transport.firmware import FirmwareManager, FirmwarePolicy
 
@@ -56,12 +58,468 @@ class DeviceCandidate:
         return self.chip_info.name
 
 
+class FailureType(Enum):
+    DRIVER_CONFLICT = auto()
+    NO_DEVICE = auto()
+    FIRMWARE_STATE_BAD = auto()
+    PERMISSION_DENIED = auto()
+    UNKNOWN = auto()
+
+
+class DriverType(Enum):
+    WINUSB = "winusb"
+    BTHUSB = "bthusb"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class USBDiagnosticReport:
+    failure_type: FailureType
+    driver_type: DriverType | None
+    device_name: str
+    steps: list[str]
+    manual_url: str | None
+
+
+@dataclass(frozen=True)
+class USBDeviceCheck:
+    level: str
+    name: str
+    message: str
+
+    @property
+    def ok(self) -> bool:
+        return self.level == "ok"
+
+
+@dataclass(frozen=True)
+class USBDeviceDiagnosis:
+    device: Any
+    chip_info: ChipInfo | None
+    checks: list[USBDeviceCheck]
+
+    @property
+    def ok(self) -> bool:
+        return all(check.level != "fail" for check in self.checks)
+
+
+class USBDeviceDiagnostics:
+    @classmethod
+    def diagnose(cls, device: Any, errno: int, platform: str) -> USBDiagnosticReport:
+        driver = cls._detect_driver(device, errno, platform)
+        name = cls._device_name(device)
+
+        if errno in (13, -12):
+            if platform == "win32":
+                if driver == DriverType.WINUSB:
+                    return USBDiagnosticReport(
+                        failure_type=FailureType.DRIVER_CONFLICT,
+                        driver_type=driver,
+                        device_name=name,
+                        steps=[
+                            "检查是否有其他程序占用了该 USB 设备",
+                            "尝试停止 Windows Bluetooth 支持服务 (bthserv)",
+                            "重新运行程序",
+                        ],
+                        manual_url=None,
+                    )
+                if driver == DriverType.BTHUSB:
+                    return USBDiagnosticReport(
+                        failure_type=FailureType.DRIVER_CONFLICT,
+                        driver_type=driver,
+                        device_name=name,
+                        steps=[
+                            f"检测到 {name} 由 Windows 蓝牙驱动 (bthusb.sys) 控制。",
+                            "pyusb / libusb 无法访问该设备，需要替换为 WinUSB 驱动。",
+                            "",
+                            "方法 A: 使用 Zadig (https://zadig.akeo.ie/)",
+                            "  1. 运行 Zadig",
+                            '  2. 菜单 Options → List All Devices',
+                            f'  3. 选择 "{name}"',
+                            '  4. 点击 "Replace Driver" (选择 WinUSB)',
+                            "  5. 重新运行程序",
+                            "",
+                            "方法 B: 设备管理器手动替换",
+                            "  1. 打开设备管理器",
+                            f'  2. 找到 "{name}" 设备',
+                            "  3. 右键 → 更新驱动程序 → 浏览我的计算机 → 让我从列表中选择",
+                            '  4. 选择 "WinUSB" 驱动',
+                            "  5. 重新运行程序",
+                            "",
+                            "注意: 替换驱动后 Windows 内置蓝牙功能将不可用。",
+                            "      恢复方法: 设备管理器中卸载设备，然后扫描硬件改动。",
+                        ],
+                        manual_url="https://zadig.akeo.ie/",
+                    )
+                return USBDiagnosticReport(
+                    failure_type=FailureType.DRIVER_CONFLICT,
+                    driver_type=driver,
+                    device_name=name,
+                    steps=[
+                        f"无法访问 {name}。可能原因：",
+                        "  1) 设备被其他程序占用",
+                        "  2) 设备未绑定 WinUSB 驱动",
+                        "",
+                        "排查步骤：",
+                        "  1. 检查是否有其他程序占用了该 USB 设备",
+                        "  2. 尝试停止 Windows Bluetooth 支持服务 (bthserv)",
+                        "  3. 重新运行程序",
+                        "",
+                        "如果以上无效，请替换为 WinUSB 驱动：",
+                        "",
+                        "方法 A: 使用 Zadig (https://zadig.akeo.ie/)",
+                        "  1. 运行 Zadig",
+                        '  2. 菜单 Options → List All Devices',
+                        f'  3. 选择 "{name}"',
+                        '  4. 点击 "Replace Driver" (选择 WinUSB)',
+                        "  5. 重新运行程序",
+                    ],
+                    manual_url="https://zadig.akeo.ie/",
+                )
+            try:
+                vid = int(device.idVendor)
+                pid = int(device.idProduct)
+                udev_line = (
+                    f'  echo \'SUBSYSTEM=="usb", ATTR{{idVendor}}=="{vid:04x}", '
+                    f'ATTR{{idProduct}}=="{pid:04x}", MODE="0666"\' | sudo tee '
+                    f"/etc/udev/rules.d/50-bluetooth.rules"
+                )
+            except Exception:
+                udev_line = "  # 无法生成 udev 规则（缺少 idVendor/idProduct）"
+            return USBDiagnosticReport(
+                failure_type=FailureType.PERMISSION_DENIED,
+                driver_type=driver,
+                device_name=name,
+                steps=[
+                    "尝试使用 sudo 运行程序",
+                    "或者添加 udev 规则允许当前用户访问该 USB 设备",
+                    udev_line,
+                    "  sudo udevadm control --reload-rules && sudo udevadm trigger",
+                ],
+                manual_url=None,
+            )
+
+        if errno == 2:
+            return USBDiagnosticReport(
+                failure_type=FailureType.NO_DEVICE,
+                driver_type=None,
+                device_name=name,
+                steps=[
+                    "检查 USB 设备是否已插入",
+                    "尝试更换 USB 端口",
+                    "检查设备管理器中是否识别到该设备",
+                ],
+                manual_url=None,
+            )
+
+        return USBDiagnosticReport(
+            failure_type=FailureType.UNKNOWN,
+            driver_type=driver,
+            device_name=name,
+            steps=[
+                f"USB 错误 (errno={errno})，请查看详细日志",
+                "尝试重新插拔设备",
+                "检查驱动是否正确安装",
+            ],
+            manual_url=None,
+        )
+
+    @classmethod
+    def _detect_driver(cls, device: Any, errno: int, platform: str) -> DriverType:
+        if platform != "win32":
+            return DriverType.UNKNOWN
+        try:
+            vid = int(device.idVendor)
+            if vid == 0x8087:
+                return DriverType.BTHUSB
+        except Exception:
+            pass
+        if errno == -12:
+            return DriverType.BTHUSB
+        return DriverType.UNKNOWN
+
+    @classmethod
+    def _device_name(cls, device: Any) -> str:
+        try:
+            product = device.product
+            if product:
+                return str(product)
+        except Exception:
+            pass
+        try:
+            manufacturer = device.manufacturer
+            if manufacturer:
+                return str(manufacturer)
+        except Exception:
+            pass
+        try:
+            return f"USB Device {device.idVendor:04x}:{device.idProduct:04x}"
+        except Exception:
+            return "Unknown USB Device"
+
+
 class NoBluetoothDeviceError(RuntimeError):
     """No supported Bluetooth USB device was found."""
 
 
 class WinUSBDriverError(RuntimeError):
     """Device is not bound to WinUSB driver (Windows)."""
+
+
+def known_chip_for(dev: Any) -> ChipInfo | None:
+    return next(
+        (c for c in KNOWN_CHIPS if c.vid == dev.idVendor and c.pid == dev.idProduct),
+        None,
+    )
+
+
+def usb_class_tuple(obj: Any, prefix: str) -> tuple[int, int, int]:
+    return (
+        int(getattr(obj, f"{prefix}Class", 0) or 0),
+        int(getattr(obj, f"{prefix}SubClass", 0) or 0),
+        int(getattr(obj, f"{prefix}Protocol", 0) or 0),
+    )
+
+
+def is_bluetooth_usb_class(values: tuple[int, int, int]) -> bool:
+    return values == (0xE0, 0x01, 0x01)
+
+
+def iter_usb_interfaces(dev: Any) -> list[Any]:
+    interfaces: list[Any] = []
+    try:
+        for cfg in dev:
+            for intf in cfg:
+                interfaces.append(intf)
+    except Exception:
+        pass
+    try:
+        cfg = dev.get_active_configuration()
+        interfaces.append(cfg[(0, 0)])
+    except Exception:
+        pass
+    return interfaces
+
+
+def is_bluetooth_usb_device(dev: Any) -> bool:
+    if known_chip_for(dev) is not None:
+        return True
+    if is_bluetooth_usb_class(usb_class_tuple(dev, "bDevice")):
+        return True
+    for intf in iter_usb_interfaces(dev):
+        if is_bluetooth_usb_class(usb_class_tuple(intf, "bInterface")):
+            return True
+    return False
+
+
+def format_usb_class(values: tuple[int, int, int]) -> str:
+    cls, sub, proto = values
+    class_names = {
+        0x00: "Device",
+        0x09: "Hub",
+        0xE0: "Wireless Controller",
+    }
+    return f"{class_names.get(cls, 'Unknown')} ({cls:02x}:{sub:02x}:{proto:02x})"
+
+
+def _descriptor_string(dev: Any, attr: str) -> str | None:
+    try:
+        value = getattr(dev, attr)
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    return None
+
+
+def get_usb_endpoints(dev: Any) -> list[dict[str, str]]:
+    """Extract endpoint info from USB HCI interface 0."""
+    endpoints = []
+    if usb is None:
+        return endpoints
+    try:
+        try:
+            dev.set_configuration()
+        except Exception:
+            pass
+        cfg = dev.get_active_configuration()
+        intf = cfg[(0, 0)]
+        for ep in intf:
+            direction = (
+                "IN"
+                if usb.util.endpoint_direction(ep.bEndpointAddress) == usb.util.ENDPOINT_IN
+                else "OUT"
+            )
+            ep_type_val = usb.util.endpoint_type(ep.bmAttributes)
+            type_names = {0: "Control", 1: "Isochronous", 2: "Bulk", 3: "Interrupt"}
+            endpoints.append(
+                {
+                    "address": f"0x{ep.bEndpointAddress:02x}",
+                    "type": type_names.get(ep_type_val, "Unknown"),
+                    "direction": direction,
+                }
+            )
+    except Exception:
+        pass
+    return endpoints
+
+
+def _bumble_transport_names(dev: Any, occurrence: int | None = None) -> list[str]:
+    vid_pid = f"{int(dev.idVendor):04X}:{int(dev.idProduct):04X}"
+    base = f"usb:{vid_pid}"
+    serial = _descriptor_string(dev, "serial_number")
+    if serial:
+        return [base, f"{base}/{serial}"]
+    if occurrence and occurrence > 1:
+        return [f"{base}#{occurrence}"]
+    return [base]
+
+
+def parse_hci_reset_status(event: bytes) -> int | None:
+    if len(event) >= 6 and event[0] == 0x0E and event[3:5] == bytes.fromhex("03 0c"):
+        return event[5]
+    return None
+
+
+def _find_interrupt_in_endpoint(intf: Any) -> Any | None:
+    if usb is None:
+        return None
+    try:
+        return usb.util.find_descriptor(
+            intf,
+            custom_match=lambda e: (
+                usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN
+                and usb.util.endpoint_type(e.bmAttributes) == usb.util.ENDPOINT_TYPE_INTR
+            ),
+        )
+    except Exception:
+        return None
+
+
+def _diagnostic_report_checks(report: USBDiagnosticReport) -> list[USBDeviceCheck]:
+    checks = [
+        USBDeviceCheck("info", "access error diagnosis", report.failure_type.name),
+    ]
+    if report.driver_type:
+        checks.append(USBDeviceCheck("info", "driver", report.driver_type.value))
+    for step in report.steps:
+        if step:
+            checks.append(USBDeviceCheck("info", "next step", step))
+    if report.manual_url:
+        checks.append(USBDeviceCheck("info", "reference", report.manual_url))
+    return checks
+
+
+def _flush_interrupt_endpoint(ep_intr: Any) -> None:
+    for _ in range(8):
+        try:
+            ep_intr.read(255, timeout=50)
+        except Exception:
+            break
+
+
+def _send_hci_command_direct(dev: Any, ep_intr: Any, opcode: int, params: bytes = b"") -> bytes:
+    command = opcode.to_bytes(2, "little") + len(params).to_bytes(1, "little") + params
+    dev.ctrl_transfer(0x20, 0x00, 0x0000, 0x0000, command)
+    return bytes(ep_intr.read(255, timeout=3000))
+
+
+def _diagnose_intel_version_direct(dev: Any, ep_intr: Any) -> list[USBDeviceCheck]:
+    checks: list[USBDeviceCheck] = []
+    try:
+        event = _send_hci_command_direct(dev, ep_intr, (0x3F << 10) | 0x05, b"\xff")
+    except Exception as e:
+        return [
+            USBDeviceCheck(
+                "warn",
+                "Intel Read Version V2",
+                f"{type(e).__name__}: {e}",
+            )
+        ]
+
+    if len(event) < 6 or event[0] != 0x0E or event[3:5] != bytes.fromhex("05 fc"):
+        return [
+            USBDeviceCheck(
+                "warn",
+                "Intel Read Version V2",
+                f"unexpected event: {event.hex(' ')}",
+            )
+        ]
+
+    status = event[5]
+    if status != 0:
+        return [
+            USBDeviceCheck(
+                "warn",
+                "Intel Read Version V2 status",
+                f"0x{status:02X}; firmware load may be required",
+            )
+        ]
+
+    tlv = IntelUSBTransport._parse_tlv(event[6:])
+    if tlv:
+        image_type = tlv.get(IntelUSBTransport._TLV_IMAGE_TYPE, b"\xff")[0]
+        image_labels = {0x01: "BOOTLOADER", 0x03: "OPERATIONAL"}
+        sbe_type_raw = tlv.get(IntelUSBTransport._TLV_SBE_TYPE)
+        cnvi_top = int.from_bytes(
+            tlv.get(IntelUSBTransport._TLV_CNVI_TOP, b"\0\0\0\0")[:4], "little"
+        )
+        cnvr_top = int.from_bytes(
+            tlv.get(IntelUSBTransport._TLV_CNVR_TOP, b"\0\0\0\0")[:4], "little"
+        )
+        parts = [
+            f"image={image_labels.get(image_type, f'0x{image_type:02X}')}",
+            f"fw={IntelUSBTransport._compute_fw_name(cnvi_top, cnvr_top)}.sfi",
+        ]
+        if sbe_type_raw:
+            parts.insert(1, f"sbe=0x{sbe_type_raw[0]:02X}")
+        checks.append(
+            USBDeviceCheck(
+                "ok",
+                "Intel Read Version V2",
+                " ".join(parts),
+            )
+        )
+    else:
+        checks.append(USBDeviceCheck("ok", "Intel Read Version V2", event.hex(" ")))
+    return checks
+
+
+def _diagnose_realtek_version_direct(dev: Any, ep_intr: Any) -> list[USBDeviceCheck]:
+    try:
+        event = _send_hci_command_direct(dev, ep_intr, (0x3F << 10) | 0x6D)
+    except Exception as e:
+        return [
+            USBDeviceCheck(
+                "warn",
+                "Realtek Read ROM Version",
+                f"{type(e).__name__}: {e}",
+            )
+        ]
+    if len(event) >= 7 and event[0] == 0x0E and event[3:5] == bytes.fromhex("6d fc"):
+        status = event[5]
+        if status == 0:
+            return [
+                USBDeviceCheck(
+                    "ok",
+                    "Realtek ROM Version",
+                    f"0x{event[6]:02X}",
+                )
+            ]
+        return [
+            USBDeviceCheck(
+                "warn",
+                "Realtek Read ROM Version status",
+                f"0x{status:02X}",
+            )
+        ]
+    return [
+        USBDeviceCheck(
+            "warn",
+            "Realtek Read ROM Version",
+            f"unexpected event: {event.hex(' ')}",
+        )
+    ]
 
 
 class USBTransport(Transport):
@@ -196,6 +654,279 @@ class USBTransport(Transport):
                     break
         return result
 
+    @classmethod
+    def probe_devices(
+        cls, verbose: bool = False, intel_tlv: bool = False
+    ) -> list[dict[str, Any]]:
+        """Enumerate Bluetooth USB devices, including unknown Bluetooth-class devices."""
+        if usb is None:
+            raise RuntimeError(
+                "pyusb not installed. Run: pip install pyusb\n"
+                "On Windows, also install: pip install libusb-package"
+            )
+
+        backend = cls._get_usb_backend()
+        all_devices = list(usb.core.find(find_all=True, backend=backend))
+        results: list[dict[str, Any]] = []
+        vid_pid_counts: dict[tuple[int, int], int] = {}
+
+        for dev in all_devices:
+            chip = known_chip_for(dev)
+            if not is_bluetooth_usb_device(dev):
+                continue
+
+            vid_pid_key = (int(dev.idVendor), int(dev.idProduct))
+            vid_pid_counts[vid_pid_key] = vid_pid_counts.get(vid_pid_key, 0) + 1
+
+            info: dict[str, Any] = {
+                "index": len(results) + 1,
+                "vid": dev.idVendor,
+                "pid": dev.idProduct,
+                "vid_pid": f"{dev.idVendor:04x}:{dev.idProduct:04x}",
+                "vendor": chip.vendor if chip else "unknown",
+                "chip_name": chip.name if chip else "Unknown BT Device",
+                "bus": getattr(dev, "bus", None),
+                "address": getattr(dev, "address", None),
+                "device_class": f"{getattr(dev, 'bDeviceClass', 0):02x}:"
+                               f"{getattr(dev, 'bDeviceSubClass', 0):02x}:"
+                               f"{getattr(dev, 'bDeviceProtocol', 0):02x}",
+                "device_class_name": format_usb_class(usb_class_tuple(dev, "bDevice")),
+                "subclass_protocol": (
+                    f"{int(getattr(dev, 'bDeviceSubClass', 0) or 0)}/"
+                    f"{int(getattr(dev, 'bDeviceProtocol', 0) or 0)}"
+                ),
+                "bumble_transport_names": _bumble_transport_names(
+                    dev, vid_pid_counts[vid_pid_key]
+                ),
+            }
+            serial = _descriptor_string(dev, "serial_number")
+            manufacturer = _descriptor_string(dev, "manufacturer")
+            product = _descriptor_string(dev, "product")
+            if serial:
+                info["serial"] = serial
+            if manufacturer:
+                info["manufacturer"] = manufacturer
+            if product:
+                info["product"] = product
+
+            if verbose:
+                info["endpoints"] = get_usb_endpoints(dev)
+
+            if intel_tlv and chip and chip.vendor == "intel":
+                tlv_info = cls._probe_intel_tlv(dev)
+                if tlv_info:
+                    info.update(tlv_info)
+
+            results.append(info)
+
+        return results
+
+    @classmethod
+    def diagnose_all_devices(cls) -> list[USBDeviceDiagnosis]:
+        """Run transport-layer USB/HCI diagnostics for every Bluetooth USB device."""
+        if usb is None:
+            raise RuntimeError(
+                "pyusb not installed. Run: pip install pyusb\n"
+                "On Windows, also install: pip install libusb-package"
+            )
+
+        backend = cls._get_usb_backend()
+        all_devices = list(usb.core.find(find_all=True, backend=backend))
+        return [
+            cls.diagnose_device(dev)
+            for dev in all_devices
+            if is_bluetooth_usb_device(dev)
+        ]
+
+    @classmethod
+    def diagnose_device(cls, dev: Any) -> USBDeviceDiagnosis:
+        """Check USB access, endpoint presence, HCI Reset send and reset event status."""
+        checks: list[USBDeviceCheck] = []
+        chip = known_chip_for(dev)
+
+        try:
+            try:
+                dev.set_configuration()
+            except Exception:
+                pass
+            cfg = dev.get_active_configuration()
+            checks.append(USBDeviceCheck("ok", "USB access", "configuration readable"))
+            checks.append(
+                USBDeviceCheck("ok", "WinUSB/libusb driver access", "interface is accessible")
+            )
+        except usb.core.USBError as e:
+            errno = getattr(e, "errno", None)
+            checks.append(
+                USBDeviceCheck(
+                    "fail",
+                    "USB access",
+                    f"{type(e).__name__}: {e} (errno={errno})",
+                )
+            )
+            report = USBDeviceDiagnostics.diagnose(dev, errno or 0, sys.platform)
+            checks.extend(_diagnostic_report_checks(report))
+            return USBDeviceDiagnosis(dev, chip, checks)
+        except NotImplementedError as e:
+            checks.append(
+                USBDeviceCheck(
+                    "fail",
+                    "WinUSB/libusb driver access",
+                    f"{type(e).__name__}: {e}",
+                )
+            )
+            report = USBDeviceDiagnostics.diagnose(dev, -12, sys.platform)
+            checks.extend(_diagnostic_report_checks(report))
+            return USBDeviceDiagnosis(dev, chip, checks)
+        except Exception as e:
+            checks.append(USBDeviceCheck("fail", "USB access", f"{type(e).__name__}: {e}"))
+            return USBDeviceDiagnosis(dev, chip, checks)
+
+        try:
+            intf = cfg[(0, 0)]
+        except Exception as e:
+            checks.append(USBDeviceCheck("fail", "USB interface 0", f"{type(e).__name__}: {e}"))
+            return USBDeviceDiagnosis(dev, chip, checks)
+
+        ep_intr = _find_interrupt_in_endpoint(intf)
+        if ep_intr is None:
+            checks.append(USBDeviceCheck("fail", "Interrupt IN endpoint", "not found"))
+            return USBDeviceDiagnosis(dev, chip, checks)
+        checks.append(USBDeviceCheck("ok", "Interrupt IN endpoint", "found"))
+
+        try:
+            for _ in range(8):
+                try:
+                    ep_intr.read(255, timeout=50)
+                except Exception:
+                    break
+            dev.ctrl_transfer(0x20, 0x00, 0x0000, 0x0000, bytes.fromhex("03 0c 00"))
+            checks.append(USBDeviceCheck("ok", "HCI Reset command sent", "success"))
+        except Exception as e:
+            checks.append(
+                USBDeviceCheck("fail", "HCI Reset command sent", f"{type(e).__name__}: {e}")
+            )
+            return USBDeviceDiagnosis(dev, chip, checks)
+
+        try:
+            event = bytes(ep_intr.read(255, timeout=3000))
+            checks.append(
+                USBDeviceCheck("ok", "HCI Reset event received", event.hex(" "))
+            )
+        except Exception as e:
+            checks.append(
+                USBDeviceCheck("fail", "HCI Reset event received", f"{type(e).__name__}: {e}")
+            )
+            return USBDeviceDiagnosis(dev, chip, checks)
+
+        status = parse_hci_reset_status(event)
+        if status is None:
+            checks.append(
+                USBDeviceCheck("fail", "HCI Reset event status", "unexpected event format")
+            )
+        elif status != 0:
+            checks.append(
+                USBDeviceCheck(
+                    "fail",
+                    "HCI Reset status",
+                    f"0x{status:02X}; Controller rejected HCI Reset; firmware load may be required.",
+                )
+            )
+        else:
+            checks.append(USBDeviceCheck("ok", "HCI Reset status", "0x00"))
+
+        if chip and chip.vendor == "intel":
+            checks.extend(_diagnose_intel_version_direct(dev, ep_intr))
+        elif chip and chip.vendor == "realtek":
+            checks.extend(_diagnose_realtek_version_direct(dev, ep_intr))
+
+        try:
+            usb.util.release_interface(dev, 0)
+        except Exception:
+            pass
+        try:
+            usb.util.dispose_resources(dev)
+        except Exception:
+            pass
+        return USBDeviceDiagnosis(dev, chip, checks)
+
+    @staticmethod
+    def _probe_intel_tlv(dev: Any) -> dict[str, Any] | None:
+        """Send Intel Read Version V2 and parse TLV response for probe output."""
+        if usb is None:
+            return None
+        try:
+            try:
+                dev.set_configuration()
+            except Exception:
+                pass
+            cfg = dev.get_active_configuration()
+            intf = cfg[(0, 0)]
+
+            ep_intr = _find_interrupt_in_endpoint(intf)
+            if ep_intr is None:
+                return None
+
+            for _ in range(8):
+                try:
+                    ep_intr.read(255, timeout=50)
+                except Exception:
+                    break
+
+            opcode = ((0x3F << 10) | 0x05).to_bytes(2, "little")
+            dev.ctrl_transfer(0x20, 0x00, 0x0000, 0x0000, opcode + b"\x01\xff")
+            resp = bytes(ep_intr.read(255, timeout=3000))
+
+            if len(resp) < 7 or resp[0] != 0x0E or resp[5] != 0x00:
+                return None
+
+            tlv = IntelUSBTransport._parse_tlv(resp[6:])
+            if not tlv:
+                return None
+
+            image_type = tlv.get(IntelUSBTransport._TLV_IMAGE_TYPE, b"\xff")[0]
+            sbe_raw = tlv.get(IntelUSBTransport._TLV_SBE_TYPE)
+            cnvi_top_raw = tlv.get(IntelUSBTransport._TLV_CNVI_TOP, b"\0\0\0\0")
+            cnvr_top_raw = tlv.get(IntelUSBTransport._TLV_CNVR_TOP, b"\0\0\0\0")
+            cnvi_bt_raw = tlv.get(IntelUSBTransport._TLV_CNVI_BT, b"\0\0\0\0")
+            bdaddr_raw = tlv.get(IntelUSBTransport._TLV_OTP_BDADDR, b"")
+
+            cnvi_top = int.from_bytes(cnvi_top_raw[:4], "little")
+            cnvr_top = int.from_bytes(cnvr_top_raw[:4], "little")
+            cnvi_bt = int.from_bytes(cnvi_bt_raw[:4], "little")
+            image_labels = {0x01: "BOOTLOADER", 0x03: "OPERATIONAL"}
+            sbe_labels = {0x00: "RSA", 0x01: "ECDSA"}
+            fw_name = IntelUSBTransport._compute_fw_name(cnvi_top, cnvr_top)
+            bdaddr_str = (
+                ":".join(f"{b:02X}" for b in reversed(bdaddr_raw))
+                if len(bdaddr_raw) == 6
+                else None
+            )
+
+            result: dict[str, Any] = {
+                "image_type": image_type,
+                "image_type_str": image_labels.get(image_type, f"0x{image_type:02X}"),
+                "sbe_type": sbe_raw[0] if sbe_raw else None,
+                "sbe_type_str": (
+                    sbe_labels.get(sbe_raw[0], f"0x{sbe_raw[0]:02X}")
+                    if sbe_raw
+                    else "N/A"
+                ),
+                "fw_name": f"{fw_name}.sfi",
+                "cnvi_top": f"0x{cnvi_top:08X}",
+                "cnvr_top": f"0x{cnvr_top:08X}",
+                "cnvi_bt": f"0x{cnvi_bt:08X}",
+            }
+            if bdaddr_str:
+                result["bd_addr"] = bdaddr_str
+            return result
+        except Exception:
+            return None
+        finally:
+            try:
+                usb.util.release_interface(dev, 0)
+            except Exception:
+                pass
+
     async def open(self) -> None:
         """Open USB transport: claim interface, locate endpoints, initialize."""
         if sys.platform == "win32":
@@ -211,14 +942,11 @@ class USBTransport(Transport):
         try:
             cfg = self._device.get_active_configuration()
         except (usb.core.USBError, NotImplementedError) as e:
-            from pybluehost.cli.tools.usb import USBDeviceDiagnostics
-            from pybluehost.core.errors import USBAccessDeniedError
-            import dataclasses
             errno = getattr(e, "errno", None)
             if errno is None and isinstance(e, NotImplementedError):
                 errno = -12  # LIBUSB_ERROR_NOT_SUPPORTED on Windows
             report = USBDeviceDiagnostics.diagnose(self._device, errno, sys.platform)
-            raise USBAccessDeniedError(dataclasses.asdict(report)) from e
+            raise USBAccessDeniedError(asdict(report)) from e
 
         intf = cfg[(0, 0)]  # Interface 0, alternate setting 0
 
@@ -325,6 +1053,27 @@ class USBTransport(Transport):
 
     async def _initialize(self) -> None:
         """Override in subclasses for firmware loading. Default: no-op."""
+
+    async def _send_hci_command(self, opcode: int, params: bytes = b"") -> bytes:
+        """Send a standard HCI command and wait for its Command Complete event."""
+        command = opcode.to_bytes(2, "little") + len(params).to_bytes(1, "little") + params
+        await self._control_out(command)
+        return await self._wait_for_event()
+
+    async def _send_hci_reset(self) -> bytes:
+        """Send HCI_Reset and return the raw Command Complete event."""
+        return await self._send_hci_command((0x03 << 10) | 0x03)
+
+    @staticmethod
+    def _command_complete_status(event: bytes, opcode: int) -> int | None:
+        expected = opcode.to_bytes(2, "little")
+        if len(event) >= 6 and event[0] == 0x0E and event[3:5] == expected:
+            return event[5]
+        return None
+
+    async def _wait_for_event(self, timeout: float = 5.0) -> bytes:
+        """Wait for HCI event via interrupt IN endpoint."""
+        return await self.read_interrupt(size=255, timeout=timeout)
 
     async def _read_interrupt_loop(self) -> None:
         """Background task: read HCI events from Interrupt IN and push to sink."""
@@ -491,6 +1240,17 @@ class IntelUSBTransport(USBTransport):
         returns TLV data, routes to the new-gen path. Otherwise falls back to
         the legacy fixed-format protocol.
         """
+        reset_status = await self._try_initial_hci_reset()
+        if reset_status == 0x00:
+            logger.info("Intel: initial HCI Reset status=0x00")
+        elif reset_status is not None:
+            logger.warning(
+                "Intel: initial HCI Reset status=0x%02X; firmware recovery may be required",
+                reset_status,
+            )
+        else:
+            logger.warning("Intel: initial HCI Reset failed or returned no status")
+
         # Try V2 Read Version (new-gen: 0xFC05 with param 0xFF)
         try:
             v2_data = await self._send_intel_vendor_cmd(
@@ -516,6 +1276,14 @@ class IntelUSBTransport(USBTransport):
                 hw_variant, fw_variant,
             )
             await self._initialize_legacy(hw_variant, fw_variant, version_data)
+
+    async def _try_initial_hci_reset(self) -> int | None:
+        try:
+            event = await self._send_hci_reset()
+        except Exception as e:
+            logger.warning("Intel: initial HCI Reset command failed: %s: %s", type(e).__name__, e)
+            return None
+        return self._command_complete_status(event, (0x03 << 10) | 0x03)
 
     # ── New-gen initialization (BE200, AX210, AX211, etc.) ──────────────
 
@@ -938,9 +1706,21 @@ class RealtekUSBTransport(USBTransport):
 
     async def _initialize(self) -> None:
         """Realtek 5-step firmware loading sequence."""
+        reset_status = await self._try_initial_hci_reset()
+        if reset_status == 0x00:
+            logger.info("Realtek: initial HCI Reset status=0x00")
+        elif reset_status is not None:
+            logger.warning(
+                "Realtek: initial HCI Reset status=0x%02X; firmware recovery may be required",
+                reset_status,
+            )
+        else:
+            logger.warning("Realtek: initial HCI Reset failed or returned no status")
+
         # Step 1: Read ROM Version
         rom_data = await self._send_realtek_vendor_cmd(self._RTK_READ_ROM_VERSION)
         rom_version = self._parse_rom_version(rom_data)
+        logger.info("Realtek: ROM version=0x%02X", rom_version)
 
         # Step 2: Check if firmware download is needed
         if not self._needs_firmware_download(rom_version):
@@ -960,10 +1740,15 @@ class RealtekUSBTransport(USBTransport):
             )
 
         # Step 5: HCI Reset to activate firmware
-        reset_opcode = (0x03 << 10) | 0x03  # OGF=0x03, OCF=0x03 (HCI_Reset)
-        reset_cmd = reset_opcode.to_bytes(2, "little") + b"\x00"
-        await self._control_out(reset_cmd)
-        await self._wait_for_event()
+        await self._send_hci_reset()
+
+    async def _try_initial_hci_reset(self) -> int | None:
+        try:
+            event = await self._send_hci_reset()
+        except Exception as e:
+            logger.warning("Realtek: initial HCI Reset command failed: %s: %s", type(e).__name__, e)
+            return None
+        return self._command_complete_status(event, (0x03 << 10) | 0x03)
 
     async def _send_realtek_vendor_cmd(
         self, ocf: int, params: bytes = b""

@@ -1,11 +1,11 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from pybluehost.cli.tools.usb import (
+from pybluehost.cli.tools.usb import _cmd_usb_diagnose
+from pybluehost.transport.usb import (
     USBDeviceDiagnostics,
     FailureType,
     DriverType,
-    _cmd_usb_diagnose,
 )
 
 
@@ -54,7 +54,7 @@ class TestCmdUSBDiagnose:
         return patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
 
     def test_no_devices(self, capsys):
-        with self._patch_libusb(), patch("pybluehost.cli.tools.usb.usb") as mock_usb:
+        with self._patch_libusb(), patch("pybluehost.transport.usb.usb") as mock_usb:
             mock_usb.core.find.return_value = []
             args = MagicMock()
             ret = _cmd_usb_diagnose(args)
@@ -75,7 +75,7 @@ class TestCmdUSBDiagnose:
         config.__getitem__.return_value = MagicMock()
         dev.get_active_configuration.return_value = config
 
-        with self._patch_libusb(), patch("pybluehost.cli.tools.usb.usb") as mock_usb:
+        with self._patch_libusb(), patch("pybluehost.transport.usb.usb") as mock_usb:
             mock_usb.core.find.return_value = [dev]
             mock_usb.util.find_descriptor.return_value = endpoint
             mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
@@ -98,7 +98,7 @@ class TestCmdUSBDiagnose:
         dev.bDeviceProtocol = 0x01
         dev.get_active_configuration.side_effect = NotImplementedError("LIBUSB_ERROR_NOT_SUPPORTED")
 
-        with self._patch_libusb(), patch("pybluehost.cli.tools.usb.usb") as mock_usb:
+        with self._patch_libusb(), patch("pybluehost.transport.usb.usb") as mock_usb:
             mock_usb.core.find.return_value = [dev]
             mock_usb.core.USBError = usb.core.USBError
             args = MagicMock()
@@ -121,7 +121,7 @@ class TestCmdUSBDiagnose:
         err = usb.core.USBError("Access denied", errno=13)
         dev.get_active_configuration.side_effect = err
 
-        with self._patch_libusb(), patch("pybluehost.cli.tools.usb.usb") as mock_usb:
+        with self._patch_libusb(), patch("pybluehost.transport.usb.usb") as mock_usb:
             mock_usb.core.find.return_value = [dev]
             mock_usb.core.USBError = usb.core.USBError
             args = MagicMock()

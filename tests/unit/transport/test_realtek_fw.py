@@ -7,6 +7,11 @@ from pathlib import Path
 from pybluehost.transport.usb import RealtekUSBTransport, ChipInfo
 from pybluehost.transport.firmware import FirmwarePolicy
 
+_HCI_RESET_OK = bytes([
+    0x0e, 0x04, 0x01,
+    0x03, 0x0c, 0x00,
+])
+
 
 def _make_realtek_transport(tmp_path=None):
     """Helper: create a RealtekUSBTransport with mocked USB device."""
@@ -40,8 +45,8 @@ async def test_realtek_send_vendor_cmd_builds_correct_opcode():
 
 
 @pytest.mark.asyncio
-async def test_realtek_initialize_calls_read_rom_version_first():
-    """_initialize() sends HCI_Realtek_Read_ROM_Version (0xFC6D) first."""
+async def test_realtek_initialize_resets_before_read_rom_version():
+    """_initialize() sends HCI Reset before HCI_Realtek_Read_ROM_Version."""
     transport = _make_realtek_transport()
     sent_opcodes = []
 
@@ -57,14 +62,15 @@ async def test_realtek_initialize_calls_read_rom_version_first():
         0x00,                # Status: success
         0x01,                # ROM version
     ])
-    transport._wait_for_event = AsyncMock(return_value=rom_version_response)
+    transport._wait_for_event = AsyncMock(side_effect=[_HCI_RESET_OK, rom_version_response])
 
     # FW already loaded scenario — skip download
     transport._needs_firmware_download = MagicMock(return_value=False)
 
     await transport._initialize()
-    assert len(sent_opcodes) >= 1
-    assert sent_opcodes[0] == b"\x6d\xfc"
+    assert len(sent_opcodes) >= 2
+    assert sent_opcodes[0] == b"\x03\x0c"
+    assert sent_opcodes[1] == b"\x6d\xfc"
 
 
 @pytest.mark.asyncio
@@ -96,7 +102,7 @@ async def test_realtek_initialize_downloads_fw_when_needed(tmp_path):
         0x03, 0x0c, 0x00,  # Reset complete
     ])
 
-    responses = [rom_version_resp, reset_resp]
+    responses = [reset_resp, rom_version_resp, reset_resp]
     call_idx = [0]
 
     async def mock_wait(*args, **kwargs):
@@ -112,8 +118,8 @@ async def test_realtek_initialize_downloads_fw_when_needed(tmp_path):
     ):
         await transport._initialize()
 
-    # Should have sent: Read ROM Version + download chunks + Reset
-    assert call_count[0] >= 2
+    # Should have sent: initial Reset + Read ROM Version + download chunks + final Reset
+    assert call_count[0] >= 3
 
 
 @pytest.mark.asyncio

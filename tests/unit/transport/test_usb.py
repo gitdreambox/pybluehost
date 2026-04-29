@@ -1,6 +1,7 @@
 """Tests for USB transport: ChipInfo, KNOWN_CHIPS, USBTransport, auto_detect, endpoint routing."""
 
 import pytest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from pybluehost.transport.usb import (
@@ -18,6 +19,11 @@ from pybluehost.transport.firmware import FirmwarePolicy
 
 def test_known_chips_not_empty():
     assert len(KNOWN_CHIPS) >= 10
+
+
+def test_usb_transport_does_not_depend_on_cli_tools():
+    source = Path("pybluehost/transport/usb.py").read_text(encoding="utf-8")
+    assert "pybluehost.cli" not in source
 
 
 def test_known_chips_intel_ax210():
