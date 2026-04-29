@@ -448,3 +448,28 @@ def test_cmd_diagnose_prompts_and_starts_firmware_load(
     out = capsys.readouterr().out
     assert "Load Intel firmware now? [y/N]" in out
     assert "[OK] Intel firmware load completed" in out
+
+
+@patch("pybluehost.cli.tools.usb.asyncio.run")
+@patch("pybluehost.cli.tools.usb.usb")
+@patch("pybluehost.transport.usb.USBTransport.auto_detect")
+def test_load_intel_firmware_releases_diagnostic_handle_before_auto_detect(
+    mock_auto_detect, mock_usb, mock_asyncio_run
+):
+    dev = _mock_usb_device(0x8087, 0x0036, bus=1, addr=30)
+    transport = MagicMock()
+    mock_auto_detect.return_value = transport
+
+    from pybluehost.cli.tools.usb import _load_intel_firmware_after_confirmation
+
+    result = _load_intel_firmware_after_confirmation(dev)
+
+    assert result is True
+    mock_usb.util.release_interface.assert_called_once_with(dev, 0)
+    mock_usb.util.dispose_resources.assert_called_once_with(dev)
+    mock_auto_detect.assert_called_once()
+    assert mock_auto_detect.call_args.kwargs["vendor"] == "intel"
+    assert mock_auto_detect.call_args.kwargs["bus"] == 1
+    assert mock_auto_detect.call_args.kwargs["address"] == 30
+    mock_asyncio_run.assert_called_once()
+    mock_asyncio_run.call_args.args[0].close()

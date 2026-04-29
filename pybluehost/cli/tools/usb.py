@@ -932,6 +932,7 @@ def _load_intel_firmware_after_confirmation(dev: Any) -> bool:
     address = int(getattr(dev, "address", 0) or 0)
     print("[INFO] Loading Intel firmware after interactive confirmation...")
     try:
+        _release_usb_device(dev)
         transport = USBTransport.auto_detect(
             firmware_policy=FirmwarePolicy.AUTO_DOWNLOAD,
             vendor="intel",
@@ -943,6 +944,17 @@ def _load_intel_firmware_after_confirmation(dev: Any) -> bool:
         print(f"[FAIL] Intel firmware load failed: {type(e).__name__}: {e}")
         return False
     return True
+
+
+def _release_usb_device(dev: Any) -> None:
+    try:
+        usb.util.release_interface(dev, 0)
+    except Exception:
+        pass
+    try:
+        usb.util.dispose_resources(dev)
+    except Exception:
+        pass
 
 
 async def _open_and_close_transport(transport: Any) -> None:
