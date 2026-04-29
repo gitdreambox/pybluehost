@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from pybluehost.cli._logging import DEFAULT_LOG_FILE, DEFAULT_LOG_LEVEL, configure_cli_logging
+from pybluehost.logging_config import DEFAULT_LOG_FILE, DEFAULT_LOG_LEVEL, configure_logging
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 2
 
-    configure_cli_logging(log_file=args.log_file, level=args.log_level)
+    configure_logging(log_file=args.log_file, level=args.log_level)
     return args.func(args)
 
 

@@ -3,7 +3,7 @@ import logging
 import struct
 from pathlib import Path
 
-from pybluehost.cli._logging import configure_cli_logging
+from pybluehost.logging_config import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def write_btsnoop(path: str, packets: list[tuple[bytes, int]]) -> None:
 
 
 if __name__ == "__main__":
-    configure_cli_logging()
+    configure_logging()
     outdir = Path(__file__).parent.parent.parent / "tests" / "data"
     outdir.mkdir(parents=True, exist_ok=True)
     packets = [

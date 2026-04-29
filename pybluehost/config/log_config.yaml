@@ -1,0 +1,45 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  simple:
+    format: "%(message)s"
+  verbose:
+    format: "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+filters:
+  max_info:
+    "()": pybluehost.logging_config.MaxLevelFilter
+    max_level: INFO
+
+handlers:
+  stdout:
+    "()": pybluehost.logging_config.DynamicStreamHandler
+    stream_name: stdout
+    level: DEBUG
+    formatter: simple
+    filters:
+      - max_info
+
+  stderr:
+    "()": pybluehost.logging_config.DynamicStreamHandler
+    stream_name: stderr
+    level: WARNING
+    formatter: simple
+
+  file:
+    class: logging.FileHandler
+    level: DEBUG
+    formatter: verbose
+    filename: ext://__main__.log_name
+    encoding: utf-8
+    delay: true
+
+loggers:
+  pybluehost:
+    level: INFO
+    handlers:
+      - stdout
+      - stderr
+      - file
+    propagate: false

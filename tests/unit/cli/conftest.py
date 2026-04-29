@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import pytest
 
-from pybluehost.cli._logging import configure_cli_logging, reset_cli_logging
+from pybluehost.logging_config import configure_logging, reset_logging
 
 
 @pytest.fixture(autouse=True)
 def cli_logging(tmp_path_factory):
     log_dir = tmp_path_factory.mktemp("cli-logs")
-    configure_cli_logging(log_file=log_dir / "pybluehost.log", force=True)
+    configure_logging(log_file=log_dir / "pybluehost.log")
     yield
-    reset_cli_logging()
+    reset_logging()
