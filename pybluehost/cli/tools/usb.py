@@ -54,8 +54,9 @@ def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
         "diagnose", help="Diagnose USB Bluetooth device accessibility issues"
     )
     diag_parser.add_argument(
-        "--log-file",
+        "--firmware-log-file",
         type=Path,
+        dest="firmware_log_file",
         default=_DEFAULT_FIRMWARE_LOAD_LOG,
         help=(
             "Also write firmware-load progress logs to this file "
@@ -370,7 +371,7 @@ def _confirm_firmware_load(diagnosis: Any) -> bool:
 
 
 def _firmware_log_path_from_args(args: argparse.Namespace) -> Path:
-    log_file = getattr(args, "log_file", _DEFAULT_FIRMWARE_LOAD_LOG)
+    log_file = getattr(args, "firmware_log_file", _DEFAULT_FIRMWARE_LOAD_LOG)
     if isinstance(log_file, Path):
         return log_file
     if isinstance(log_file, str):

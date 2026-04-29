@@ -328,3 +328,23 @@ def test_load_firmware_for_diagnosis_logs_progress_to_terminal_and_file(tmp_path
     assert "Intel: payload progress: 123/456 bytes" in out
     assert "[OK] Firmware load completed" in out
     assert "Intel: payload progress: 123/456 bytes" in log_file.read_text(encoding="utf-8")
+
+
+def test_usb_diagnose_firmware_log_file_does_not_override_global_log_file():
+    import argparse
+    from pybluehost.cli import main
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="cmd")
+    from pybluehost.cli.tools.usb import register_usb_commands
+
+    register_usb_commands(subparsers)
+    args = parser.parse_args(["usb", "diagnose"])
+
+    assert not hasattr(args, "log_file")
+    assert hasattr(args, "firmware_log_file")
+
+    # Top-level CLI owns --log-file; the usb subcommand must not shadow it.
+    with pytest.raises(SystemExit) as exc:
+        main(["tools", "usb", "diagnose", "--log-file", "wrong.log"])
+    assert exc.value.code != 0
