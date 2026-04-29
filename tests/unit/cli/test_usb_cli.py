@@ -265,16 +265,21 @@ def test_cmd_diagnose_tries_intel_reset_when_hci_reset_event_times_out(
     mock_usb, mock_libusb, capsys
 ):
     dev = _mock_usb_device(0x8087, 0x0036)
+    rebooted_dev = _mock_usb_device(0x8087, 0x0036, addr=2)
     config = MagicMock()
     config.__getitem__.return_value = MagicMock()
     dev.get_active_configuration.return_value = config
+    rebooted_dev.get_active_configuration.return_value = config
     endpoint = MagicMock()
     endpoint.read.side_effect = [
         Exception("flush done"),
         Exception("standard reset timeout"),
         bytes.fromhex("0e 04 01 01 fc 00"),
+        Exception("flush done"),
+        bytes.fromhex("0e 04 01 03 0c 00"),
+        bytes.fromhex("0e 08 01 05 fc 00 1c 01 03"),
     ]
-    mock_usb.core.find.return_value = [dev]
+    mock_usb.core.find.side_effect = [[dev], rebooted_dev]
     mock_usb.util.find_descriptor.return_value = endpoint
     mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
     mock_usb.util.endpoint_type.return_value = mock_usb.util.ENDPOINT_TYPE_INTR
@@ -284,12 +289,19 @@ def test_cmd_diagnose_tries_intel_reset_when_hci_reset_event_times_out(
     assert result == 0
     standard_reset = bytes.fromhex("03 0c 00")
     intel_reset = bytes.fromhex("01 fc 08 01 01 01 00 00 00 00 00")
+    intel_read_version = bytes.fromhex("05 fc 01 ff")
     sent_commands = [call.args[4] for call in dev.ctrl_transfer.call_args_list]
+    rebooted_commands = [call.args[4] for call in rebooted_dev.ctrl_transfer.call_args_list]
     assert sent_commands == [standard_reset, intel_reset]
+    assert rebooted_commands == [standard_reset, intel_read_version]
     out = capsys.readouterr().out
     assert "[FAIL] HCI Reset event received" in out
     assert "[OK] Intel Reset command sent" in out
     assert "[OK] Intel Reset event received" in out
+    assert "[OK] Intel reboot complete" in out
+    assert "[OK] Post-Intel HCI Reset status: 0x00" in out
+    assert "Intel Version:" in out
+    assert "image_type=OPERATIONAL" in out
 
 
 @patch("pybluehost.cli.tools.usb._libusb_library_path", return_value="libusb-1.0.dll")
@@ -298,9 +310,11 @@ def test_cmd_diagnose_treats_intel_reset_disconnect_as_success(
     mock_usb, mock_libusb, capsys
 ):
     dev = _mock_usb_device(0x8087, 0x0036)
+    rebooted_dev = _mock_usb_device(0x8087, 0x0036, addr=2)
     config = MagicMock()
     config.__getitem__.return_value = MagicMock()
     dev.get_active_configuration.return_value = config
+    rebooted_dev.get_active_configuration.return_value = config
     disconnect = Exception("No such device")
     disconnect.errno = 19
     endpoint = MagicMock()
@@ -308,8 +322,11 @@ def test_cmd_diagnose_treats_intel_reset_disconnect_as_success(
         Exception("flush done"),
         Exception("standard reset timeout"),
         disconnect,
+        Exception("flush done"),
+        bytes.fromhex("0e 04 01 03 0c 00"),
+        bytes.fromhex("0e 08 01 05 fc 00 1c 01 03"),
     ]
-    mock_usb.core.find.return_value = [dev]
+    mock_usb.core.find.side_effect = [[dev], rebooted_dev]
     mock_usb.util.find_descriptor.return_value = endpoint
     mock_usb.util.endpoint_direction.return_value = mock_usb.util.ENDPOINT_IN
     mock_usb.util.endpoint_type.return_value = mock_usb.util.ENDPOINT_TYPE_INTR
@@ -320,3 +337,5 @@ def test_cmd_diagnose_treats_intel_reset_disconnect_as_success(
     out = capsys.readouterr().out
     assert "[OK] Intel Reset command sent" in out
     assert "device disconnected/re-enumerating" in out
+    assert "[OK] Intel reboot complete" in out
+    assert "Intel Version:" in out

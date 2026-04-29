@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ctypes.util
 import sys
+import time
 from typing import Any
 
 try:
@@ -650,15 +651,15 @@ def _try_intel_reset(dev: Any, ep_intr: Any) -> bool:
     except Exception as e:
         if _is_usb_disconnect(e):
             print("[OK] Intel Reset triggered: device disconnected/re-enumerating")
-            return True
+            return _complete_intel_reset_recovery(dev)
         print(f"[FAIL] Intel Reset event received: {type(e).__name__}: {e}")
         return False
 
     if _parse_command_complete_opcode(event) == 0xFC01:
         print("[OK] Intel Reset command complete")
-        return True
+        return _complete_intel_reset_recovery(dev)
     print("[WARN] Intel Reset event format: unexpected event")
-    return True
+    return _complete_intel_reset_recovery(dev)
 
 
 def _is_usb_disconnect(exc: Exception) -> bool:
@@ -666,6 +667,187 @@ def _is_usb_disconnect(exc: Exception) -> bool:
     if errno == 19:
         return True
     return "no such device" in str(exc).lower()
+
+
+def _complete_intel_reset_recovery(original_dev: Any) -> bool:
+    rebooted = _wait_for_reenumerated_intel_device(original_dev)
+    if rebooted is None:
+        print("[FAIL] Intel reboot complete: device did not re-enumerate")
+        return False
+    print(
+        "[OK] Intel reboot complete: "
+        f"bus={getattr(rebooted, 'bus', None)} address={getattr(rebooted, 'address', None)}"
+    )
+
+    try:
+        try:
+            rebooted.set_configuration()
+        except Exception:
+            pass
+        cfg = rebooted.get_active_configuration()
+        intf = cfg[(0, 0)]
+    except Exception as e:
+        print(f"[FAIL] Intel reboot access: {type(e).__name__}: {e}")
+        return False
+
+    ep_intr = _find_interrupt_in_endpoint(intf)
+    if ep_intr is None:
+        print("[FAIL] Intel reboot Interrupt IN endpoint: not found")
+        return False
+
+    _flush_interrupt_endpoint(ep_intr)
+    if not _send_standard_reset_after_intel_reboot(rebooted, ep_intr):
+        return False
+    return _read_and_print_intel_version(rebooted, ep_intr)
+
+
+def _wait_for_reenumerated_intel_device(original_dev: Any) -> Any | None:
+    from pybluehost.transport.usb import USBTransport
+
+    vid = int(getattr(original_dev, "idVendor", 0) or 0)
+    pid = int(getattr(original_dev, "idProduct", 0) or 0)
+    backend = USBTransport._get_usb_backend()
+    for attempt in range(20):
+        if attempt:
+            time.sleep(0.25)
+        try:
+            found = usb.core.find(find_all=True, backend=backend)
+        except Exception:
+            continue
+        devices = _coerce_found_devices(found)
+        for dev in devices:
+            try:
+                if (
+                    int(dev.idVendor) == vid
+                    and int(dev.idProduct) == pid
+                    and _usb_device_is_accessible(dev)
+                ):
+                    return dev
+            except Exception:
+                continue
+    return None
+
+
+def _usb_device_is_accessible(dev: Any) -> bool:
+    try:
+        try:
+            dev.set_configuration()
+        except Exception:
+            pass
+        dev.get_active_configuration()
+        return True
+    except Exception:
+        return False
+
+
+def _coerce_found_devices(found: Any) -> list[Any]:
+    if found is None:
+        return []
+    if isinstance(found, list):
+        return found
+    if hasattr(found, "idVendor") and hasattr(found, "idProduct"):
+        return [found]
+    try:
+        return list(found)
+    except TypeError:
+        return [found]
+
+
+def _flush_interrupt_endpoint(ep_intr: Any) -> None:
+    for _ in range(8):
+        try:
+            ep_intr.read(255, timeout=50)
+        except Exception:
+            break
+
+
+def _send_standard_reset_after_intel_reboot(dev: Any, ep_intr: Any) -> bool:
+    try:
+        dev.ctrl_transfer(0x20, 0x00, 0x0000, 0x0000, bytes.fromhex("03 0c 00"))
+        print("[OK] Post-Intel HCI Reset command sent")
+    except Exception as e:
+        print(f"[FAIL] Post-Intel HCI Reset command sent: {type(e).__name__}: {e}")
+        return False
+
+    try:
+        event = bytes(ep_intr.read(255, timeout=3000))
+        print(f"[OK] Post-Intel HCI Reset event received: {event.hex(' ')}")
+    except Exception as e:
+        print(f"[FAIL] Post-Intel HCI Reset event received: {type(e).__name__}: {e}")
+        return False
+
+    status = _parse_hci_reset_status(event)
+    if status is None:
+        print("[FAIL] Post-Intel HCI Reset status: unexpected event format")
+        return False
+    if status == 0:
+        print("[OK] Post-Intel HCI Reset status: 0x00")
+    else:
+        print(
+            f"[WARN] Post-Intel HCI Reset status: 0x{status:02X}; "
+            "continuing with Intel Read Version"
+        )
+    return True
+
+
+def _read_and_print_intel_version(dev: Any, ep_intr: Any) -> bool:
+    intel_read_version = bytes.fromhex("05 fc 01 ff")
+    try:
+        dev.ctrl_transfer(0x20, 0x00, 0x0000, 0x0000, intel_read_version)
+        print("[OK] Intel Read Version command sent")
+    except Exception as e:
+        print(f"[FAIL] Intel Read Version command sent: {type(e).__name__}: {e}")
+        return False
+
+    try:
+        event = bytes(ep_intr.read(255, timeout=3000))
+        print(f"[OK] Intel Read Version event received: {event.hex(' ')}")
+    except Exception as e:
+        print(f"[FAIL] Intel Read Version event received: {type(e).__name__}: {e}")
+        return False
+
+    if _parse_command_complete_opcode(event) != 0xFC05 or len(event) < 6:
+        print("[FAIL] Intel Read Version event: unexpected event format")
+        return False
+    status = event[5]
+    if status != 0:
+        print(f"[FAIL] Intel Read Version status: 0x{status:02X}")
+        return False
+    print(f"[OK] Intel Read Version status: 0x{status:02X}")
+    print(f"       Intel Version: {_format_intel_version(event[6:])}")
+    return True
+
+
+def _format_intel_version(payload: bytes) -> str:
+    from pybluehost.transport.usb import IntelUSBTransport
+
+    tlv = IntelUSBTransport._parse_tlv(payload)
+    if tlv:
+        fields: list[str] = []
+        image = tlv.get(IntelUSBTransport._TLV_IMAGE_TYPE)
+        if image:
+            labels = {0x01: "BOOTLOADER", 0x03: "OPERATIONAL"}
+            fields.append(f"image_type={labels.get(image[0], f'0x{image[0]:02X}')}")
+        sbe = tlv.get(IntelUSBTransport._TLV_SBE_TYPE)
+        if sbe:
+            labels = {0x00: "RSA", 0x01: "ECDSA"}
+            fields.append(f"sbe_type={labels.get(sbe[0], f'0x{sbe[0]:02X}')}")
+        for name, code in (
+            ("cnvi_top", IntelUSBTransport._TLV_CNVI_TOP),
+            ("cnvr_top", IntelUSBTransport._TLV_CNVR_TOP),
+            ("cnvi_bt", IntelUSBTransport._TLV_CNVI_BT),
+        ):
+            raw = tlv.get(code)
+            if raw and len(raw) >= 4:
+                fields.append(f"{name}=0x{int.from_bytes(raw[:4], 'little'):08X}")
+        bdaddr = tlv.get(IntelUSBTransport._TLV_OTP_BDADDR)
+        if bdaddr and len(bdaddr) == 6:
+            fields.append("bd_addr=" + ":".join(f"{b:02X}" for b in reversed(bdaddr)))
+        return ", ".join(fields) if fields else "TLV present"
+
+    if len(payload) >= 4:
+        return "legacy/raw=" + payload.hex(" ")
+    return "no version payload"
 
 
 def _find_interrupt_in_endpoint(intf: Any) -> Any | None:
