@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import struct
 import sys
@@ -683,6 +684,7 @@ class USBTransport(Transport):
                 "vid": dev.idVendor,
                 "pid": dev.idProduct,
                 "vid_pid": f"{dev.idVendor:04x}:{dev.idProduct:04x}",
+                "id": f"{dev.idVendor:04X}:{dev.idProduct:04X}",
                 "vendor": chip.vendor if chip else "unknown",
                 "chip_name": chip.name if chip else "Unknown BT Device",
                 "bus": getattr(dev, "bus", None),
@@ -699,6 +701,24 @@ class USBTransport(Transport):
                     dev, vid_pid_counts[vid_pid_key]
                 ),
             }
+            info["transport_names"] = info["bumble_transport_names"]
+            device_class_name = info["device_class_name"]
+            info["class_name"] = (
+                device_class_name.split(" (", 1)[0]
+                if isinstance(device_class_name, str)
+                else device_class_name
+            )
+            class_code, subclass, protocol = usb_class_tuple(dev, "bDevice")
+            info["subclass_name"] = (
+                "RF Controller"
+                if (class_code, subclass) == (0xE0, 0x01)
+                else str(subclass)
+            )
+            info["protocol_name"] = (
+                "Bluetooth Programming Interface"
+                if (class_code, subclass, protocol) == (0xE0, 0x01, 0x01)
+                else str(protocol)
+            )
             serial = _descriptor_string(dev, "serial_number")
             manufacturer = _descriptor_string(dev, "manufacturer")
             product = _descriptor_string(dev, "product")
@@ -1398,6 +1418,8 @@ class IntelUSBTransport(USBTransport):
         offset = bp.write_offset
         frag_size = 0
         total_sent = 0
+        payload_total = len(fw_data) - bp.write_offset
+        payload_fragments: list[tuple[int, bytes, int]] = []
 
         while offset + frag_size + 3 <= len(fw_data):
             cmd_opcode = int.from_bytes(
@@ -1419,34 +1441,247 @@ class IntelUSBTransport(USBTransport):
 
             # Send when fragment is 4-byte aligned
             if frag_size % 4 == 0:
-                await self._secure_send(0x01, fw_data[offset:offset + frag_size])
+                payload_fragments.append(
+                    (offset, fw_data[offset:offset + frag_size], total_sent)
+                )
                 total_sent += frag_size
                 offset += frag_size
                 frag_size = 0
 
         # Send any remaining data
         if frag_size > 0:
-            await self._secure_send(0x01, fw_data[offset:offset + frag_size])
+            payload_fragments.append(
+                (offset, fw_data[offset:offset + frag_size], total_sent)
+            )
             total_sent += frag_size
 
+        await self._secure_send_payload(payload_fragments, payload_total=payload_total)
         logger.info("Intel: payload sent (%d bytes total)", total_sent)
         return boot_address
 
-    async def _secure_send(self, fragment_type: int, data: bytes) -> None:
+    async def _secure_send_payload(
+        self,
+        fragments: list[tuple[int, bytes, int]],
+        *,
+        payload_total: int,
+    ) -> None:
+        commands: list[tuple[bytes, str]] = []
+        progress_by_command_index: dict[int, int] = {}
+        last_progress_log = 0
+        for offset, data, total_sent in fragments:
+            self._append_secure_send_commands(
+                commands,
+                0x01,
+                data,
+                context=(
+                    f"payload offset={offset} size={len(data)} "
+                    f"sent={total_sent}/{payload_total}"
+                ),
+                base_offset=offset,
+            )
+            progress = total_sent + len(data)
+            if (
+                last_progress_log == 0
+                or progress - last_progress_log >= 64 * 1024
+                or progress == payload_total
+            ):
+                progress_by_command_index[len(commands) - 1] = progress
+                last_progress_log = progress
+        await self._send_intel_secure_send_commands(
+            commands,
+            progress_by_command_index=progress_by_command_index,
+            progress_total=payload_total,
+        )
+
+    async def _secure_send(
+        self,
+        fragment_type: int,
+        data: bytes,
+        *,
+        context: str | None = None,
+        base_offset: int | None = None,
+    ) -> None:
         """Send data via Intel Secure Send (vendor 0xFC09), chunking at 252 bytes.
 
         Args:
             fragment_type: 0x00=CSS header, 0x01=data, 0x03=PKCS key
             data: Payload (chunked internally at 252-byte boundaries).
         """
+        commands: list[tuple[bytes, str]] = []
+        self._append_secure_send_commands(
+            commands,
+            fragment_type,
+            data,
+            context=context,
+            base_offset=base_offset,
+        )
+        await self._send_intel_secure_send_commands(commands)
+
+    def _append_secure_send_commands(
+        self,
+        commands: list[tuple[bytes, str]],
+        fragment_type: int,
+        data: bytes,
+        *,
+        context: str | None = None,
+        base_offset: int | None = None,
+    ) -> None:
         total = (len(data) + 251) // 252
         for i in range(0, len(data), 252):
             chunk = data[i:i + 252]
             params = bytes([fragment_type]) + chunk
-            await self._send_intel_vendor_cmd(self._INTEL_SECURE_SEND, params)
             chunk_num = i // 252 + 1
-            if chunk_num % 100 == 0 or chunk_num == total:
-                logger.debug("Intel: secure_send type=%d chunk %d/%d", fragment_type, chunk_num, total)
+            chunk_context = (
+                f"secure_send type={fragment_type} chunk={chunk_num}/{total} "
+                f"len={len(chunk)}"
+            )
+            if base_offset is not None:
+                chunk_context += f" offset={base_offset + i}"
+            if context:
+                chunk_context = f"{context}; {chunk_context}"
+            commands.append(
+                (
+                    self._build_intel_vendor_command(
+                        self._INTEL_SECURE_SEND, params
+                    ),
+                    chunk_context,
+                )
+            )
+            logger.debug(
+                "Intel: secure_send type=%d chunk %d/%d", fragment_type, chunk_num, total
+            )
+
+    async def _send_intel_secure_send_commands(
+        self,
+        commands: list[tuple[bytes, str]],
+        *,
+        progress_by_command_index: dict[int, int] | None = None,
+        progress_total: int | None = None,
+        timeout: float = 5.0,
+    ) -> None:
+        if not commands:
+            return
+
+        max_in_flight = 1
+        next_command = 0
+        pending_contexts: collections.deque[str] = collections.deque()
+
+        while next_command < len(commands):
+            while next_command < len(commands) and len(pending_contexts) < max_in_flight:
+                command_index = next_command
+                command, context = commands[next_command]
+                logger.debug(
+                    "Intel: vendor cmd 0xFC09 (%s) send in_flight=%d/%d",
+                    context, len(pending_contexts) + 1, max_in_flight,
+                )
+                await self._control_out(command)
+                if (
+                    progress_by_command_index is not None
+                    and progress_total is not None
+                    and command_index in progress_by_command_index
+                ):
+                    logger.info(
+                        "Intel: payload progress: %d/%d bytes",
+                        progress_by_command_index[command_index],
+                        progress_total,
+                    )
+                pending_contexts.append(context)
+                next_command += 1
+
+            if not pending_contexts or next_command >= len(commands):
+                continue
+
+            event = await self._wait_for_intel_firmware_command_complete(
+                pending_contexts[0],
+                timeout=timeout,
+            )
+            pending_contexts.popleft()
+            num_packets = self._parse_command_complete_num_packets(
+                event,
+                expected_opcode=(0x3F << 10) | self._INTEL_SECURE_SEND,
+            )
+            if num_packets > 0:
+                max_in_flight = max(1, num_packets)
+
+    async def _wait_for_intel_firmware_command_complete(
+        self,
+        context: str,
+        *,
+        timeout: float = 5.0,
+    ) -> bytes:
+        label = f"vendor cmd 0xFC09 ({context})"
+        while True:
+            try:
+                event = await self._wait_for_event_bulk_first(timeout=timeout)
+            except TimeoutError:
+                logger.info("Intel: %s timeout after %gs", label, timeout)
+                raise
+            except asyncio.CancelledError:
+                logger.info("Intel: %s cancelled while waiting for Command Complete", label)
+                raise
+
+            if len(event) >= 3 and event[0] == 0xFF:
+                self._defer_intel_vendor_event(event)
+                continue
+            break
+
+        status = self._parse_command_complete_status(
+            event,
+            expected_opcode=(0x3F << 10) | self._INTEL_SECURE_SEND,
+        )
+        if status != 0:
+            raise RuntimeError(f"Intel: {label} failed with status 0x{status:02X}")
+        return event
+
+    def _defer_intel_vendor_event(self, event: bytes) -> None:
+        if not hasattr(self, "_deferred_intel_vendor_events"):
+            self._deferred_intel_vendor_events: collections.deque[bytes] = (
+                collections.deque()
+            )
+        self._deferred_intel_vendor_events.append(event)
+
+    async def _wait_for_event_bulk_first(self, timeout: float = 5.0) -> bytes:
+        if not hasattr(self, "_ep_bulk_in") or self._ep_bulk_in is None:
+            return await self._wait_for_event(timeout=timeout)
+
+        loop = asyncio.get_event_loop()
+        timeout_ms = int(timeout * 1000)
+        try:
+            return await loop.run_in_executor(
+                None,
+                lambda: bytes(self._ep_bulk_in.read(1024, timeout=timeout_ms)),
+            )
+        except Exception:
+            return await self._wait_for_event(timeout=timeout)
+
+    @staticmethod
+    def _parse_command_complete_num_packets(
+        event: bytes,
+        *,
+        expected_opcode: int,
+    ) -> int:
+        if len(event) < 6 or event[0] != 0x0E:
+            raise RuntimeError(f"Intel: expected Command Complete, got {event.hex(' ')}")
+        opcode = int.from_bytes(event[3:5], "little")
+        if opcode != expected_opcode:
+            raise RuntimeError(
+                "Intel: unexpected Command Complete opcode "
+                f"0x{opcode:04X}, expected 0x{expected_opcode:04X}"
+            )
+        return event[2]
+
+    @classmethod
+    def _parse_command_complete_status(
+        cls,
+        event: bytes,
+        *,
+        expected_opcode: int,
+    ) -> int:
+        cls._parse_command_complete_num_packets(
+            event,
+            expected_opcode=expected_opcode,
+        )
+        return event[5]
 
     async def _wait_for_vendor_event(
         self, expected_type: int, timeout: float = 10.0
@@ -1459,10 +1694,26 @@ class IntelUSBTransport(USBTransport):
 
         Events may arrive on either Interrupt IN or Bulk IN endpoint.
         """
+        logger.info(
+            "Intel: vendor event type=0x%02X wait start timeout=%gs",
+            expected_type, timeout,
+        )
+        deferred_events = getattr(self, "_deferred_intel_vendor_events", None)
+        if deferred_events is not None:
+            for _ in range(len(deferred_events)):
+                event = deferred_events.popleft()
+                if len(event) >= 3 and event[0] == 0xFF and event[2] == expected_type:
+                    return event
+                deferred_events.append(event)
+
         deadline = asyncio.get_event_loop().time() + timeout
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:
+                logger.info(
+                    "Intel: vendor event type=0x%02X wait timeout after %gs",
+                    expected_type, timeout,
+                )
                 raise TimeoutError(
                     f"Intel: vendor event type=0x{expected_type:02X} "
                     f"not received within {timeout}s"
@@ -1574,16 +1825,39 @@ class IntelUSBTransport(USBTransport):
 
     # ── Shared helpers ──────────────────────────────────────────────────
 
+    @staticmethod
+    def _build_intel_vendor_command(ocf: int, params: bytes = b"") -> bytes:
+        opcode = (0x3F << 10) | ocf
+        return opcode.to_bytes(2, "little") + len(params).to_bytes(1, "little") + params
+
     async def _send_intel_vendor_cmd(
-        self, ocf: int, params: bytes = b""
+        self,
+        ocf: int,
+        params: bytes = b"",
+        *,
+        context: str | None = None,
+        timeout: float = 5.0,
     ) -> bytes:
         """Send Intel vendor command (OGF=0x3F) and await Command Complete Event."""
         opcode = (0x3F << 10) | ocf
-        opcode_bytes = opcode.to_bytes(2, "little")
-        param_len = len(params).to_bytes(1, "little")
-        command = opcode_bytes + param_len + params
+        command = self._build_intel_vendor_command(ocf, params)
+        label = f"vendor cmd 0x{opcode:04X}"
+        if context:
+            label = f"{label} ({context})"
+        is_payload_fragment = bool(context and context.startswith("payload offset="))
+        wait_logger = logger.debug if is_payload_fragment else logger.info
+        wait_logger("Intel: %s waiting for Command Complete timeout=%gs", label, timeout)
         await self._control_out(command)
-        return await self._wait_for_event()
+        try:
+            event = await self._wait_for_event(timeout=timeout)
+        except TimeoutError:
+            logger.info("Intel: %s timeout after %gs", label, timeout)
+            raise
+        except asyncio.CancelledError:
+            logger.info("Intel: %s cancelled while waiting for Command Complete", label)
+            raise
+        logger.debug("Intel: %s complete", label)
+        return event
 
     def _parse_fw_variant(self, event_data: bytes) -> int:
         """Extract fw_variant from legacy HCI_Intel_Read_Version response.

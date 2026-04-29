@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import ctypes.util
 import sys
 from typing import Any
 
+from pybluehost.transport.firmware import FirmwarePolicy
 from pybluehost.transport.usb import (
     DriverType,
     FailureType,
@@ -26,7 +28,6 @@ def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
     usb_parser = subparsers.add_parser("usb", help="USB Bluetooth device tools")
     usb_sub = usb_parser.add_subparsers(dest="usb_command")
 
-    # usb probe
     probe_parser = usb_sub.add_parser(
         "probe", help="Enumerate and inspect USB Bluetooth devices"
     )
@@ -37,9 +38,16 @@ def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
         "-i", "--intel-tlv", action="store_true",
         help="Read Intel TLV version data (sends HCI command to device)",
     )
+    color_group = probe_parser.add_mutually_exclusive_group()
+    color_group.add_argument(
+        "--color", dest="color", action="store_true", help="Force colored output"
+    )
+    color_group.add_argument(
+        "--no-color", dest="color", action="store_false", help="Disable colored output"
+    )
+    probe_parser.set_defaults(color=None)
     probe_parser.set_defaults(func=_cmd_usb_probe)
 
-    # usb diagnose
     diag_parser = usb_sub.add_parser(
         "diagnose", help="Diagnose USB Bluetooth device accessibility issues"
     )
@@ -81,18 +89,7 @@ def _is_bluetooth_usb_device(dev: Any) -> bool:
 def probe_usb_devices(
     verbose: bool = False, intel_tlv: bool = False
 ) -> list[dict[str, Any]]:
-    """Enumerate USB Bluetooth devices and return info dicts.
-
-    Args:
-        verbose: Include endpoint info.
-        intel_tlv: For Intel new-gen devices, send Read Version V2 to get TLV data.
-
-    Returns:
-        List of device info dicts.
-
-    Raises:
-        RuntimeError: If pyusb is not installed.
-    """
+    """Enumerate USB Bluetooth devices and return info dicts."""
     if usb is None:
         raise RuntimeError(
             "pyusb not installed. Run: pip install pyusb\n"
@@ -105,14 +102,12 @@ def probe_usb_devices(
 
 
 def _get_endpoints(dev: Any) -> list[dict[str, str]]:
-    """Extract endpoint info from USB device."""
     from pybluehost.transport.usb import get_usb_endpoints
 
     return get_usb_endpoints(dev)
 
 
 def _probe_intel_tlv(dev: Any) -> dict[str, Any] | None:
-    """Send Intel Read Version V2 and parse TLV response."""
     from pybluehost.transport.usb import USBTransport
 
     return USBTransport._probe_intel_tlv(dev)
@@ -133,39 +128,53 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
         print("No USB Bluetooth devices found.")
         return 0
 
+    color_choice = getattr(args, "color", None)
+    if not isinstance(color_choice, bool):
+        color_choice = None
+    use_color = _should_use_color(color_choice)
     print(f"Found {len(devices)} USB Bluetooth device(s):\n")
 
     for dev in devices:
-        print(_style(f"ID {dev['vid_pid'].upper()}", "name"))
+        usb_id = dev.get("id") or dev["vid_pid"].upper()
+        print(f"ID {_color(usb_id, 'id', use_color)}")
         if dev.get("vendor") or dev.get("chip_name"):
-            print(
-                f"  {_style('Name:', 'label')}                   "
-                f"{dev.get('vendor', 'unknown')} {dev.get('chip_name', 'Unknown')}"
+            _print_probe_field(
+                "Name",
+                f"{dev.get('vendor', 'unknown')} {dev.get('chip_name', 'Unknown')}",
+                "name",
+                use_color,
             )
-        names = dev.get("bumble_transport_names") or []
+        names = dev.get("transport_names") or dev.get("bumble_transport_names") or []
         if names:
-            print(f"  {_style('Bumble Transport Names:', 'label')} {' or '.join(names)}")
-        print(
-            f"  {_style('Bus/Device:', 'label')}             "
-            f"{int(dev['bus'] or 0):03d}/{int(dev['address'] or 0):03d}"
+            _print_probe_field("Bumble Transport Names", " or ".join(names), "name", use_color)
+        _print_probe_field(
+            "Bus/Device",
+            f"{int(dev.get('bus') or 0):03d}/{int(dev.get('address') or 0):03d}",
+            "number",
+            use_color,
         )
-        print(
-            f"  {_style('Class:', 'label')}                  "
-            f"{dev.get('device_class_name', dev['device_class'])}"
+        _print_probe_field(
+            "Class",
+            dev.get("class_name") or dev.get("device_class_name") or dev["device_class"],
+            "class",
+            use_color,
         )
-        print(
-            f"  {_style('Subclass/Protocol:', 'label')}      "
-            f"{dev.get('subclass_protocol', '0/0')}"
-        )
+        subclass = dev.get("subclass_name")
+        protocol = dev.get("protocol_name")
+        if subclass is not None and protocol is not None:
+            sub_proto = f"{subclass} / {protocol}"
+        else:
+            sub_proto = dev.get("subclass_protocol", "0/0")
+        _print_probe_field("Subclass/Protocol", sub_proto, "class", use_color)
         if dev.get("serial"):
-            print(f"  {_style('Serial:', 'label')}                 {dev['serial']}")
+            _print_probe_field("Serial", dev["serial"], "name", use_color)
         if dev.get("manufacturer"):
-            print(f"  {_style('Manufacturer:', 'label')}           {dev['manufacturer']}")
+            _print_probe_field("Manufacturer", dev["manufacturer"], "name", use_color)
         if dev.get("product"):
-            print(f"  {_style('Product:', 'label')}                {dev['product']}")
+            _print_probe_field("Product", dev["product"], "name", use_color)
 
         if args.verbose and dev.get("endpoints"):
-            print(f"  {_style('Endpoints:', 'label')}")
+            print("  Endpoints:")
             for ep in dev["endpoints"]:
                 print(f"    EP {ep['address']}  {ep['type']} {ep['direction']}")
 
@@ -203,13 +212,12 @@ def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
 
     exit_code = 0
     print("USB Bluetooth diagnostics")
-    backend = USBTransport._get_usb_backend()
     dll = _libusb_library_path()
     if sys.platform == "win32":
         if dll:
             print(f"[OK] libusb backend: available ({dll})")
         else:
-            print("[WARN] libusb DLL path: libusb-1.0.dll not found by path lookup")
+            print(f"{_warn_prefix()} libusb DLL path: libusb-1.0.dll not found by path lookup")
             print("       Continuing with pyusb backend discovery.")
     else:
         print("[OK] libusb backend: pyusb backend resolved")
@@ -247,10 +255,7 @@ def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
         if _diagnosis_needs_firmware_load(diagnosis):
             if _confirm_firmware_load(diagnosis):
                 load_ok = _load_firmware_for_diagnosis(diagnosis, FirmwarePolicy.AUTO_DOWNLOAD)
-                if load_ok:
-                    exit_code = 0
-                else:
-                    exit_code = 1
+                exit_code = 0 if load_ok else 1
 
         print()
 
@@ -278,27 +283,43 @@ def _format_device_class(dev: Any) -> str:
     return f"{cls:02x}:{sub:02x}:{proto:02x}"
 
 
-def _style(text: str, role: str) -> str:
-    if not sys.stdout.isatty():
+def _should_use_color(choice: bool | None) -> bool:
+    if choice is not None:
+        return bool(choice)
+    return sys.stdout.isatty()
+
+
+def _color(text: str, role: str, enabled: bool) -> str:
+    if not enabled:
         return text
     colors = {
-        "name": "\033[36;1m",
-        "label": "\033[33m",
+        "id": "\033[36;1m",
+        "name": "\033[32m",
+        "number": "\033[35m",
+        "class": "\033[33m",
         "ok": "\033[32m",
         "warn": "\033[33;1m",
         "fail": "\033[31;1m",
     }
     color = colors.get(role)
-    if not color:
+    if color is None:
         return text
     return f"{color}{text}\033[0m"
 
 
+def _print_probe_field(label: str, value: str, role: str, use_color: bool) -> None:
+    print(f"  {label + ':':<24}{_color(value, role, use_color)}")
+
+
+def _warn_prefix() -> str:
+    return _color("[WARN]", "warn", sys.stderr.isatty() or sys.stdout.isatty())
+
+
 def _format_check(check: Any) -> str:
     labels = {
-        "ok": _style("[OK]", "ok"),
-        "warn": _style("[WARN]", "warn"),
-        "fail": _style("[FAIL]", "fail"),
+        "ok": _color("[OK]", "ok", sys.stdout.isatty()),
+        "warn": _color("[WARN]", "warn", sys.stdout.isatty()),
+        "fail": _color("[FAIL]", "fail", sys.stdout.isatty()),
         "info": "      ",
     }
     return f"{labels.get(check.level, '[INFO]')} {check.name}: {check.message}"
@@ -331,11 +352,12 @@ def _confirm_firmware_load(diagnosis: Any) -> bool:
     return True
 
 
-def _load_firmware_for_diagnosis(diagnosis: Any, policy: Any) -> bool:
+def _load_firmware_for_diagnosis(diagnosis: Any, policy: FirmwarePolicy) -> bool:
     from pybluehost.transport.usb import USBTransport
 
     chip = diagnosis.chip_info
     dev = diagnosis.device
+    transport = None
     try:
         transport = USBTransport.auto_detect(
             firmware_policy=policy,
@@ -343,10 +365,11 @@ def _load_firmware_for_diagnosis(diagnosis: Any, policy: Any) -> bool:
             bus=int(getattr(dev, "bus", 0) or 0),
             address=int(getattr(dev, "address", 0) or 0),
         )
-        import asyncio
+
         async def run_load() -> None:
             await transport.open()
             await transport.close()
+
         asyncio.run(run_load())
         print("[OK] Firmware load completed")
         return True
