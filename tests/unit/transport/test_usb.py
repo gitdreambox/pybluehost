@@ -383,12 +383,13 @@ async def test_intel_payload_vendor_command_success_does_not_log_every_wait(capl
 async def test_secure_send_firmware_logs_payload_offsets(caplog):
     transport = IntelUSBTransport.__new__(IntelUSBTransport)
     calls: list[str] = []
+    progress_values: list[int] = []
 
-    async def fake_send_intel_vendor_cmd(ocf, params=b"", *, context=None, timeout=5.0):
-        calls.append(context or "")
-        return b"\x0e\x04\x01\x09\xfc\x00"
+    async def fake_send_intel_secure_send_commands(commands, **kwargs):
+        calls.extend(command[1] for command in commands)
+        progress_values.extend(kwargs.get("progress_by_command_index", {}).values())
 
-    transport._send_intel_vendor_cmd = fake_send_intel_vendor_cmd
+    transport._send_intel_secure_send_commands = fake_send_intel_secure_send_commands
     fw_data = bytearray(1100)
     fw_data[964:967] = bytes([0x01, 0xFC, 0x01])
 
@@ -399,8 +400,65 @@ async def test_secure_send_firmware_logs_payload_offsets(caplog):
         )
 
     assert any("payload offset=964" in call for call in calls)
-    messages = "\n".join(record.getMessage() for record in caplog.records)
-    assert "payload progress: 4/136 bytes" in messages
+    assert 4 in progress_values
+
+
+@pytest.mark.asyncio
+async def test_secure_send_firmware_pipelines_payload_fragments():
+    transport = IntelUSBTransport.__new__(IntelUSBTransport)
+    control_count = 0
+    control_counts_at_wait: list[int] = []
+
+    async def fake_control_out(data):
+        nonlocal control_count
+        assert data[:2] == bytes.fromhex("09 fc")
+        control_count += 1
+
+    async def fake_wait_for_firmware_command_complete(context, timeout=5.0):
+        control_counts_at_wait.append(control_count)
+        return bytes.fromhex("0e 04 1f 09 fc 00")
+
+    transport._control_out = fake_control_out
+    transport._wait_for_intel_firmware_command_complete = (
+        fake_wait_for_firmware_command_complete
+    )
+
+    fragment = bytes([0x8E, 0xFC, 245]) + bytes(245)
+    fw_data = bytearray(964)
+    fw_data.extend(fragment * 40)
+
+    await transport._secure_send_firmware(
+        bytes(fw_data),
+        transport._BOOT_PARAMS_ECDSA,
+    )
+
+    deltas = [
+        current - previous
+        for previous, current in zip(control_counts_at_wait, control_counts_at_wait[1:])
+    ]
+    assert max(deltas) > 1
+
+
+@pytest.mark.asyncio
+async def test_intel_firmware_vendor_event_is_deferred_during_flow_control():
+    transport = IntelUSBTransport.__new__(IntelUSBTransport)
+    events = [
+        bytes.fromhex("ff 05 06 00 00 00 00"),
+        bytes.fromhex("0e 04 1f 09 fc 00"),
+    ]
+
+    async def fake_wait_for_event_bulk_first(timeout=5.0):
+        return events.pop(0)
+
+    transport._wait_for_event_bulk_first = fake_wait_for_event_bulk_first
+
+    event = await transport._wait_for_intel_firmware_command_complete(
+        "payload offset=1",
+    )
+
+    assert event == bytes.fromhex("0e 04 1f 09 fc 00")
+    deferred = await transport._wait_for_vendor_event(expected_type=0x06, timeout=0.01)
+    assert deferred == bytes.fromhex("ff 05 06 00 00 00 00")
 
 
 @pytest.mark.asyncio
