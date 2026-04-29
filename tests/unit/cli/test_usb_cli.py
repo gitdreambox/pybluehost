@@ -2,9 +2,16 @@
 
 import pytest
 import asyncio
+import logging
 from unittest.mock import MagicMock, patch, PropertyMock
 
-from pybluehost.cli.tools.usb import probe_usb_devices, _cmd_usb_probe, _cmd_usb_diagnose
+from pybluehost.cli.tools.usb import (
+    probe_usb_devices,
+    _cmd_usb_probe,
+    _cmd_usb_diagnose,
+    _load_firmware_for_diagnosis,
+)
+from pybluehost.transport.firmware import FirmwarePolicy
 
 
 def _mock_usb_device(vid, pid, bus=1, addr=1, dev_class=0xE0, sub=0x01, proto=0x01):
@@ -285,3 +292,39 @@ def test_cmd_diagnose_reports_hci_reset_status_failure(mock_usb, mock_libusb, ca
     out = capsys.readouterr().out
     assert "[FAIL] HCI Reset status: 0x0C" in out
     assert "firmware load" in out
+
+
+def test_load_firmware_for_diagnosis_logs_progress_to_terminal_and_file(tmp_path, capsys):
+    class FakeChip:
+        vendor = "intel"
+
+    class FakeTransport:
+        async def open(self):
+            logging.getLogger("pybluehost.transport.usb").info(
+                "Intel: payload progress: 123/456 bytes"
+            )
+
+        async def close(self):
+            pass
+
+    diagnosis = MagicMock()
+    diagnosis.chip_info = FakeChip()
+    diagnosis.device = _mock_usb_device(0x8087, 0x0036, bus=1, addr=49)
+    log_file = tmp_path / "firmware-load.log"
+
+    with patch(
+        "pybluehost.transport.usb.USBTransport.auto_detect",
+        return_value=FakeTransport(),
+    ):
+        result = _load_firmware_for_diagnosis(
+            diagnosis,
+            FirmwarePolicy.AUTO_DOWNLOAD,
+            log_file,
+        )
+
+    assert result is True
+    out = capsys.readouterr().out
+    assert f"[INFO] Firmware load log: {log_file}" in out
+    assert "Intel: payload progress: 123/456 bytes" in out
+    assert "[OK] Firmware load completed" in out
+    assert "Intel: payload progress: 123/456 bytes" in log_file.read_text(encoding="utf-8")

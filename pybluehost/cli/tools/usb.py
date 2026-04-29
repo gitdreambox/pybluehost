@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import ctypes.util
+import logging
 import sys
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from pybluehost.transport.firmware import FirmwarePolicy
@@ -21,6 +24,10 @@ try:
     import usb.util
 except ImportError:
     usb = None  # type: ignore[assignment]
+
+
+_FIRMWARE_LOAD_LOGGER = "pybluehost.transport.usb"
+_DEFAULT_FIRMWARE_LOAD_LOG = Path("pybluehost-usb-firmware-load.log")
 
 
 def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
@@ -50,6 +57,15 @@ def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
 
     diag_parser = usb_sub.add_parser(
         "diagnose", help="Diagnose USB Bluetooth device accessibility issues"
+    )
+    diag_parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=_DEFAULT_FIRMWARE_LOAD_LOG,
+        help=(
+            "Write firmware-load progress logs to this file "
+            f"(default: {_DEFAULT_FIRMWARE_LOAD_LOG})"
+        ),
     )
     diag_parser.set_defaults(func=_cmd_usb_diagnose)
 
@@ -254,7 +270,11 @@ def _cmd_usb_diagnose(args: argparse.Namespace) -> int:
             exit_code = 1
         if _diagnosis_needs_firmware_load(diagnosis):
             if _confirm_firmware_load(diagnosis):
-                load_ok = _load_firmware_for_diagnosis(diagnosis, FirmwarePolicy.AUTO_DOWNLOAD)
+                load_ok = _load_firmware_for_diagnosis(
+                    diagnosis,
+                    FirmwarePolicy.AUTO_DOWNLOAD,
+                    _firmware_log_path_from_args(args),
+                )
                 exit_code = 0 if load_ok else 1
 
         print()
@@ -352,7 +372,59 @@ def _confirm_firmware_load(diagnosis: Any) -> bool:
     return True
 
 
-def _load_firmware_for_diagnosis(diagnosis: Any, policy: FirmwarePolicy) -> bool:
+def _firmware_log_path_from_args(args: argparse.Namespace) -> Path:
+    log_file = getattr(args, "log_file", _DEFAULT_FIRMWARE_LOAD_LOG)
+    if isinstance(log_file, Path):
+        return log_file
+    if isinstance(log_file, str):
+        return Path(log_file)
+    return _DEFAULT_FIRMWARE_LOAD_LOG
+
+
+@contextmanager
+def _firmware_load_logging(log_file: str | Path | None) -> Any:
+    logger = logging.getLogger(_FIRMWARE_LOAD_LOGGER)
+    old_level = logger.level
+    old_propagate = logger.propagate
+    handlers: list[logging.Handler] = []
+
+    formatter = logging.Formatter("%(message)s")
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+    handlers.append(stream_handler)
+
+    if log_file is not None:
+        try:
+            path = Path(log_file)
+            if path.parent != Path("."):
+                path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.FileHandler(path, mode="a", encoding="utf-8")
+            file_handler.setFormatter(formatter)
+            handlers.append(file_handler)
+            print(f"[INFO] Firmware load log: {path}")
+        except OSError as e:
+            print(f"{_warn_prefix()} Firmware load log unavailable: {type(e).__name__}: {e}")
+
+    for handler in handlers:
+        logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    try:
+        yield
+    finally:
+        for handler in handlers:
+            logger.removeHandler(handler)
+            handler.close()
+        logger.setLevel(old_level)
+        logger.propagate = old_propagate
+
+
+def _load_firmware_for_diagnosis(
+    diagnosis: Any,
+    policy: FirmwarePolicy,
+    log_file: str | Path | None = _DEFAULT_FIRMWARE_LOAD_LOG,
+) -> bool:
     from pybluehost.transport.usb import USBTransport
 
     chip = diagnosis.chip_info
@@ -370,7 +442,8 @@ def _load_firmware_for_diagnosis(diagnosis: Any, policy: FirmwarePolicy) -> bool
             await transport.open()
             await transport.close()
 
-        asyncio.run(run_load())
+        with _firmware_load_logging(log_file):
+            asyncio.run(run_load())
         print("[OK] Firmware load completed")
         return True
     except Exception as e:
