@@ -1,6 +1,7 @@
 """Tests for USB probe CLI command."""
 
 import pytest
+import asyncio
 from unittest.mock import MagicMock, patch, PropertyMock
 
 from pybluehost.cli.tools.usb import probe_usb_devices, _cmd_usb_probe, _cmd_usb_diagnose
@@ -473,3 +474,27 @@ def test_load_intel_firmware_releases_diagnostic_handle_before_auto_detect(
     assert mock_auto_detect.call_args.kwargs["address"] == 30
     mock_asyncio_run.assert_called_once()
     mock_asyncio_run.call_args.args[0].close()
+
+
+@pytest.mark.asyncio
+async def test_open_and_close_transport_reports_firmware_load_timeout(capsys):
+    class HangingTransport:
+        def __init__(self):
+            self.closed = False
+
+        async def open(self):
+            await asyncio.sleep(1)
+
+        async def close(self):
+            self.closed = True
+
+    transport = HangingTransport()
+
+    from pybluehost.cli.tools.usb import _open_and_close_transport
+
+    with pytest.raises(asyncio.TimeoutError):
+        await _open_and_close_transport(transport, timeout=0.01)
+
+    assert transport.closed is True
+    out = capsys.readouterr().out
+    assert "Intel firmware load timeout after 0.01s" in out

@@ -1,5 +1,7 @@
 """Tests for USB transport: ChipInfo, KNOWN_CHIPS, USBTransport, auto_detect, endpoint routing."""
 
+import logging
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -322,3 +324,97 @@ def test_is_operational_new_platform():
     assert t._is_operational(hw_variant=0x1C, fw_variant=0x89) is True
     assert t._is_operational(hw_variant=0x1C, fw_variant=0x03) is False
     assert t._is_operational(hw_variant=0x17, fw_variant=0x89) is True
+
+
+@pytest.mark.asyncio
+async def test_intel_vendor_command_timeout_logs_context(caplog):
+    transport = IntelUSBTransport.__new__(IntelUSBTransport)
+
+    async def fake_control_out(data):
+        assert data[:3] == bytes.fromhex("09 fc 02")
+
+    async def fake_wait_for_event(timeout=5.0):
+        assert timeout == 2.5
+        raise TimeoutError("no event")
+
+    transport._control_out = fake_control_out
+    transport._wait_for_event = fake_wait_for_event
+
+    with caplog.at_level(logging.INFO, logger="pybluehost.transport.usb"):
+        with pytest.raises(TimeoutError):
+            await transport._send_intel_vendor_cmd(
+                transport._INTEL_SECURE_SEND,
+                b"\x01\x00",
+                context="payload offset=4096 size=252",
+                timeout=2.5,
+            )
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "vendor cmd 0xFC09" in messages
+    assert "payload offset=4096 size=252" in messages
+    assert "timeout after 2.5s" in messages
+
+
+@pytest.mark.asyncio
+async def test_intel_payload_vendor_command_success_does_not_log_every_wait(caplog):
+    transport = IntelUSBTransport.__new__(IntelUSBTransport)
+
+    async def fake_control_out(data):
+        assert data[:2] == bytes.fromhex("09 fc")
+
+    async def fake_wait_for_event(timeout=5.0):
+        return b"\x0e\x04\x01\x09\xfc\x00"
+
+    transport._control_out = fake_control_out
+    transport._wait_for_event = fake_wait_for_event
+
+    with caplog.at_level(logging.INFO, logger="pybluehost.transport.usb"):
+        await transport._send_intel_vendor_cmd(
+            transport._INTEL_SECURE_SEND,
+            b"\x01\x00",
+            context="payload offset=4096 size=252",
+        )
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "waiting for Command Complete" not in messages
+
+
+@pytest.mark.asyncio
+async def test_secure_send_firmware_logs_payload_offsets(caplog):
+    transport = IntelUSBTransport.__new__(IntelUSBTransport)
+    calls: list[str] = []
+
+    async def fake_send_intel_vendor_cmd(ocf, params=b"", *, context=None, timeout=5.0):
+        calls.append(context or "")
+        return b"\x0e\x04\x01\x09\xfc\x00"
+
+    transport._send_intel_vendor_cmd = fake_send_intel_vendor_cmd
+    fw_data = bytearray(1100)
+    fw_data[964:967] = bytes([0x01, 0xFC, 0x01])
+
+    with caplog.at_level(logging.INFO, logger="pybluehost.transport.usb"):
+        await transport._secure_send_firmware(
+            bytes(fw_data),
+            transport._BOOT_PARAMS_ECDSA,
+        )
+
+    assert any("payload offset=964" in call for call in calls)
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "payload progress: 4/136 bytes" in messages
+
+
+@pytest.mark.asyncio
+async def test_intel_vendor_event_wait_logs_timeout(caplog):
+    transport = IntelUSBTransport.__new__(IntelUSBTransport)
+
+    async def fake_wait_for_event(timeout=5.0):
+        raise TimeoutError("no event")
+
+    transport._wait_for_event = fake_wait_for_event
+
+    with caplog.at_level(logging.INFO, logger="pybluehost.transport.usb"):
+        with pytest.raises(TimeoutError):
+            await transport._wait_for_vendor_event(expected_type=0x06, timeout=0.01)
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "vendor event type=0x06 wait timeout after 0.01s" in messages

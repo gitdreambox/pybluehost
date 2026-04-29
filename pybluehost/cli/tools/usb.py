@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import contextmanager
 import ctypes.util
+import logging
 import sys
 import time
 from typing import Any
@@ -14,6 +16,8 @@ try:
     import usb.util
 except ImportError:
     usb = None  # type: ignore[assignment]
+
+_INTEL_FIRMWARE_LOAD_TIMEOUT = 120.0
 
 
 def register_usb_commands(subparsers: argparse._SubParsersAction) -> None:
@@ -939,7 +943,13 @@ def _load_intel_firmware_after_confirmation(dev: Any) -> bool:
             bus=bus,
             address=address,
         )
-        asyncio.run(_open_and_close_transport(transport))
+        with _firmware_load_logging():
+            asyncio.run(
+                _open_and_close_transport(
+                    transport,
+                    timeout=_INTEL_FIRMWARE_LOAD_TIMEOUT,
+                )
+            )
     except Exception as e:
         print(f"[FAIL] Intel firmware load failed: {type(e).__name__}: {e}")
         return False
@@ -957,11 +967,34 @@ def _release_usb_device(dev: Any) -> None:
         pass
 
 
-async def _open_and_close_transport(transport: Any) -> None:
+async def _open_and_close_transport(
+    transport: Any, timeout: float = _INTEL_FIRMWARE_LOAD_TIMEOUT
+) -> None:
     try:
-        await transport.open()
+        print(f"[INFO] Intel firmware load step: transport.open timeout={timeout:g}s")
+        try:
+            await asyncio.wait_for(transport.open(), timeout=timeout)
+        except asyncio.TimeoutError:
+            print(f"[FAIL] Intel firmware load timeout after {timeout:g}s")
+            raise
     finally:
         await transport.close()
+
+
+@contextmanager
+def _firmware_load_logging() -> Any:
+    logger = logging.getLogger("pybluehost.transport.usb")
+    old_level = logger.level
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("[FW] %(message)s"))
+    handler.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        yield
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
 
 
 def _find_interrupt_in_endpoint(intf: Any) -> Any | None:
