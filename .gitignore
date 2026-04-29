@@ -6,3 +6,4 @@ __pycache__
 .claude/worktrees/
 /.pytest_cache
 /.temp
+/pybluehost.log

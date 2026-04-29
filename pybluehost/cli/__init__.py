@@ -12,7 +12,7 @@ def main(argv: list[str] | None = None) -> int:
     """Main CLI entry point for pybluehost."""
     parser = argparse.ArgumentParser(
         prog="pybluehost",
-        description="PyBlueHost — Python Bluetooth Host Stack CLI",
+        description="PyBlueHost - Python Bluetooth Host Stack CLI",
     )
     parser.add_argument(
         "--log-file",
