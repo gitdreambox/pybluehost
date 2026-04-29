@@ -271,6 +271,17 @@ PyBlueHost CLI 分为两个命名空间：
 - `pybluehost app <cmd>` — 需要打开 HCI transport，跑真实蓝牙功能
 - `pybluehost tools <cmd>` — 离线工具，不需要 transport
 
+顶层日志参数对 `app` 和 `tools` 都生效：
+
+- `--log-file <path>`：把 PyBlueHost 日志写入文件，默认 `pybluehost.log`
+- `--log-level <level>`：设置 PyBlueHost 日志级别，默认 `INFO`，例如 `DEBUG`
+
+日志配置来自 `pybluehost/config/log_config.yaml`，程序入口会读取 YAML 并调用 `logging.config.dictConfig(config)`；默认同时输出到终端流和日志文件。
+
+```bash
+uv run pybluehost --log-file session.log --log-level DEBUG tools usb diagnose
+```
+
 ### app（蓝牙功能，必填 `--transport`）
 
 ```bash
