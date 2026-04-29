@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 import pytest
@@ -26,6 +27,7 @@ _FALLBACK_TRACKER = FallbackTracker()
 _PRIMARY_CACHE_ATTR = "_pybluehost_selected_transport_spec"
 _PEER_CACHE_ATTR = "_pybluehost_selected_peer_spec"
 _CACHE_MISSING = object()
+logger = logging.getLogger(__name__)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -73,18 +75,22 @@ def pytest_configure(config: pytest.Config) -> None:
 
         candidates = USBTransport.list_devices()
         if not candidates:
-            print("[pybluehost-tests] No Bluetooth USB adapters detected.")
+            logger.warning("[pybluehost-tests] No Bluetooth USB adapters detected.")
         else:
-            print("[pybluehost-tests] Detected Bluetooth USB adapters:")
+            logger.warning("[pybluehost-tests] Detected Bluetooth USB adapters:")
             for candidate in candidates:
                 spec = (
                     f"usb:vendor={candidate.vendor},"
                     f"bus={candidate.bus},"
                     f"address={candidate.address}"
                 )
-                print(
-                    f"  {candidate.vendor:8s} {candidate.name:10s} "
-                    f"bus={candidate.bus} address={candidate.address}  ({spec})"
+                logger.warning(
+                    "  %-8s %-10s bus=%s address=%s  (%s)",
+                    candidate.vendor,
+                    candidate.name,
+                    candidate.bus,
+                    candidate.address,
+                    spec,
                 )
         pytest.exit("--list-transports done", returncode=0)
 

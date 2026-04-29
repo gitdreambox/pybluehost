@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from pathlib import Path
 import pytest
 
@@ -166,7 +165,7 @@ def test_auto_detect_finds_intel_device():
     info = t.info
     assert info.type == "usb"
     assert "intel" in info.description.lower()
-    print(f"\n  [PASS] auto_detect: {info.description}")
+    logger.info("\n  [PASS] auto_detect: %s", info.description)
 
 
 # ===========================================================================
@@ -182,7 +181,13 @@ def test_device_vid_pid_in_known_chips(hw_device, hw_chip):
         None,
     )
     assert match is not None
-    print(f"\n  [PASS] {match.vendor} {match.name} VID={match.vid:#06x} PID={match.pid:#06x}")
+    logger.info(
+        "\n  [PASS] %s %s VID=%#06x PID=%#06x",
+        match.vendor,
+        match.name,
+        match.vid,
+        match.pid,
+    )
 
 
 # ===========================================================================
@@ -195,7 +200,7 @@ def test_transport_info(transport, hw_chip):
     assert info.type == "usb"
     assert hw_chip.vendor in info.description.lower()
     assert hw_chip.name in info.description
-    print(f"\n  [PASS] transport.info: {info.description}")
+    logger.info("\n  [PASS] transport.info: %s", info.description)
 
 
 # ===========================================================================
@@ -211,9 +216,12 @@ async def test_open_claims_interface(transport):
         assert transport._ep_intr_in is not None
         assert transport._ep_bulk_out is not None
         assert transport._ep_bulk_in is not None
-        print(f"\n  [PASS] Endpoints: IntrIN={transport._ep_intr_in.bEndpointAddress:#04x} "
-              f"BulkIN={transport._ep_bulk_in.bEndpointAddress:#04x} "
-              f"BulkOUT={transport._ep_bulk_out.bEndpointAddress:#04x}")
+        logger.info(
+            "\n  [PASS] Endpoints: IntrIN=%#04x BulkIN=%#04x BulkOUT=%#04x",
+            transport._ep_intr_in.bEndpointAddress,
+            transport._ep_bulk_in.bEndpointAddress,
+            transport._ep_bulk_out.bEndpointAddress,
+        )
     finally:
         await _close_raw(transport)
 
@@ -243,8 +251,8 @@ async def test_hci_intel_read_version_v2(transport):
         assert status == 0x00, f"Command failed: status=0x{status:02X}"
         assert len(event) > 10, f"TLV response too short: {len(event)} bytes"
 
-        print(f"\n  [PASS] Read Version V2 ({len(event)} bytes)")
-        print(f"         Raw: {event[:32].hex(' ')}...")
+        logger.info("\n  [PASS] Read Version V2 (%d bytes)", len(event))
+        logger.info("         Raw: %s...", event[:32].hex(" "))
 
     finally:
         await _close_raw(transport)
@@ -293,12 +301,12 @@ async def test_tlv_parsing_bootloader_detection(transport):
         bdaddr = tlv.get(IntelUSBTransport._TLV_OTP_BDADDR, b"")
         bdaddr_str = ":".join(f"{b:02X}" for b in reversed(bdaddr)) if bdaddr else "N/A"
 
-        print(f"\n  [PASS] TLV parsed ({len(tlv)} entries)")
-        print(f"         Image type  : 0x{image_type:02X} ({image_label})")
-        print(f"         cnvi_top    : 0x{cnvi_top:08X}")
-        print(f"         cnvr_top    : 0x{cnvr_top:08X}")
-        print(f"         Firmware    : {fw_name}.sfi")
-        print(f"         BD_ADDR     : {bdaddr_str}")
+        logger.info("\n  [PASS] TLV parsed (%d entries)", len(tlv))
+        logger.info("         Image type  : 0x%02X (%s)", image_type, image_label)
+        logger.info("         cnvi_top    : 0x%08X", cnvi_top)
+        logger.info("         cnvr_top    : 0x%08X", cnvr_top)
+        logger.info("         Firmware    : %s.sfi", fw_name)
+        logger.info("         BD_ADDR     : %s", bdaddr_str)
 
         assert image_type in (0x01, 0x03), f"Unexpected image_type: 0x{image_type:02X}"
 
@@ -330,10 +338,10 @@ async def test_firmware_name_computation(transport):
         fw_name = IntelUSBTransport._compute_fw_name(cnvi_top, cnvr_top)
 
         fw_path = _FW_DIR / f"{fw_name}.sfi"
-        print(f"\n  Firmware needed: {fw_path}")
+        logger.info("\n  Firmware needed: %s", fw_path)
         if fw_path.exists():
             size = fw_path.stat().st_size
-            print(f"  [PASS] Firmware found: {size} bytes")
+            logger.info("  [PASS] Firmware found: %d bytes", size)
         else:
             pytest.skip(f"Firmware file not available: {fw_path.name}")
 
@@ -392,10 +400,10 @@ async def test_intel_firmware_loading(hw_device, hw_chip):
     tlv = IntelUSBTransport._parse_tlv(resp[6:])
     default_img = bytes([0xFF])
     image_type = tlv.get(IntelUSBTransport._TLV_IMAGE_TYPE, default_img)[0]
-    print(f"\n  Current state: image_type=0x{image_type:02X}")
+    logger.info("\n  Current state: image_type=0x%02X", image_type)
 
     if image_type == IntelUSBTransport._IMAGE_TYPE_OPERATIONAL:
-        print("  Rebooting to bootloader (Intel Reset reset_type=0x01)...")
+        logger.info("  Rebooting to bootloader (Intel Reset reset_type=0x01)...")
         reset_op = ((0x3F << 10) | 0x01).to_bytes(2, "little")
         params = struct.pack("<BBBBI", 0x01, 0x01, 0x01, 0x00, 0)
         hw_device.ctrl_transfer(0x20, 0x00, 0, 0, reset_op + len(params).to_bytes(1, "little") + params)
@@ -412,10 +420,10 @@ async def test_intel_firmware_loading(hw_device, hw_chip):
         new_dev = usb.core.find(idVendor=0x8087, idProduct=hw_chip.pid, backend=be)
         assert new_dev is not None, "Device not found after bootloader reboot"
         hw_device = new_dev
-        print("  Device rebooted to bootloader mode")
+        logger.info("  Device rebooted to bootloader mode")
     else:
         usbutil.release_interface(hw_device, 0)
-        print("  Already in bootloader mode")
+        logger.info("  Already in bootloader mode")
 
     # --- Phase 1: Load firmware via IntelUSBTransport.open() ---
     fresh_transport = IntelUSBTransport(
@@ -428,7 +436,7 @@ async def test_intel_firmware_loading(hw_device, hw_chip):
     try:
         await fresh_transport.open()
         assert fresh_transport.is_open
-        print("\n  [PASS] Firmware loaded! Device is operational.")
+        logger.info("\n  [PASS] Firmware loaded! Device is operational.")
     except Exception as e:
         err_msg = str(e).lower()
         if "not found" in err_msg or "firmware" in err_msg:

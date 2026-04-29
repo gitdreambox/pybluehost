@@ -1,10 +1,13 @@
 """Tests for 'app gatt-browser' command."""
 import argparse
 import asyncio
+import logging
 from pathlib import Path
 
 import pytest
 from pybluehost.cli.app.gatt_browser import _gatt_browser_main, register_gatt_browser_command
+
+logger = logging.getLogger(__name__)
 
 
 def test_gatt_browser_parser_has_target_example_and_trace_options():
@@ -141,7 +144,7 @@ async def test_gatt_browser_real_transport_prints_characteristics_and_descriptor
     assert "Descriptor 0x2902" in out
 
 
-async def test_gatt_browser_prints_meaningful_timeout(monkeypatch, capsys):
+async def test_gatt_browser_prints_meaningful_timeout(monkeypatch, capsys, caplog):
     class FakeStack:
         def on_connection_event(self, handler):
             pass
@@ -156,7 +159,7 @@ async def test_gatt_browser_prints_meaningful_timeout(monkeypatch, capsys):
         try:
             await main_coro(FakeStack(), asyncio.Event())
         except Exception as e:
-            print(f"Error: {e}", file=__import__("sys").stderr)
+            logger.error("Error: %s", e)
             return 1
         return 0
 
@@ -170,12 +173,12 @@ async def test_gatt_browser_prints_meaningful_timeout(monkeypatch, capsys):
     )
     rc = await _gatt_browser_main(args)
 
-    err = capsys.readouterr().err
+    capsys.readouterr()
     assert rc == 1
-    assert "Timed out waiting for BLE connection or GATT response" in err
+    assert "Timed out waiting for BLE connection or GATT response" in caplog.text
 
 
-async def test_gatt_browser_prints_connection_events(monkeypatch, capsys):
+async def test_gatt_browser_prints_connection_events(monkeypatch, capsys, caplog):
     class FakeEvent:
         state = "disconnected"
         handle = 0x0041
@@ -195,7 +198,7 @@ async def test_gatt_browser_prints_connection_events(monkeypatch, capsys):
         try:
             await main_coro(FakeStack(), asyncio.Event())
         except Exception as e:
-            print(f"Error: {e}", file=__import__("sys").stderr)
+            logger.error("Error: %s", e)
             return 1
         return 0
 
@@ -212,4 +215,4 @@ async def test_gatt_browser_prints_connection_events(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert rc == 1
     assert "Disconnected handle=0x0041 reason=FAILED_TO_ESTABLISH_CONNECTION (0x3E)" in captured.err
-    assert "LE connection failed: FAILED_TO_ESTABLISH_CONNECTION (0x3E)" in captured.err
+    assert "LE connection failed: FAILED_TO_ESTABLISH_CONNECTION (0x3E)" in caplog.text
