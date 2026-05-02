@@ -41,7 +41,7 @@ async def test_parse_unknown_raises():
 
 
 async def test_parse_uart_missing_port_raises():
-    with pytest.raises(ValueError, match="UART port required"):
+    with pytest.raises(ValueError, match="UART spec missing port"):
         await parse_transport_arg("uart:")
 
 
