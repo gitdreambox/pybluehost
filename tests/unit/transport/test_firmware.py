@@ -33,7 +33,7 @@ def test_firmware_manager_missing_raises_on_error_policy():
     with pytest.raises(FirmwareNotFoundError) as exc_info:
         mgr.find("nonexistent-fw-file-12345.sfi")
     assert "nonexistent-fw-file-12345.sfi" in str(exc_info.value)
-    assert "pybluehost fw download" in str(exc_info.value)
+    assert "pybluehost tools fw download" in str(exc_info.value)
 
 
 def test_firmware_manager_prompt_policy():
@@ -42,7 +42,7 @@ def test_firmware_manager_prompt_policy():
         mgr.find("nonexistent-fw-file-12345.sfi")
     msg = str(exc_info.value)
     # Should contain download instructions
-    assert "pybluehost fw download" in msg
+    assert "pybluehost tools fw download" in msg
 
 
 def test_firmware_search_priority(tmp_path):

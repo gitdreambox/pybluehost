@@ -44,6 +44,15 @@ def test_known_chips_realtek_rtl8761b():
     assert rtl.vendor == "realtek"
 
 
+def test_known_chips_realtek_rtl8852be_4853_uses_bu_firmware():
+    rtl = next((c for c in KNOWN_CHIPS if c.vid == 0x0BDA and c.pid == 0x4853), None)
+
+    assert rtl is not None
+    assert rtl.name == "RTL8852BE"
+    assert rtl.firmware_pattern == "rtl8852bu_fw.bin"
+    assert rtl.vendor == "realtek"
+
+
 def test_known_chips_CSR8510():
     csr = next((c for c in KNOWN_CHIPS if c.name == "CSR8510"), None)
     assert csr is not None

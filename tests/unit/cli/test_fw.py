@@ -119,17 +119,21 @@ class TestDownloadFirmwareFiles:
         with patch(
             "pybluehost.transport.firmware.downloader.FirmwareDownloader.download"
         ) as mock_dl:
-            mock_dl.side_effect = [
-                tmp_path / "rtl8761b_fw.bin",
-                tmp_path / "rtl8761b_config.bin",
-            ]
+            mock_dl.side_effect = lambda filename, vendor, fw_dir: tmp_path / filename
             downloaded = _download_firmware_files("realtek", tmp_path)
 
-        assert len(downloaded) == 2
-        assert mock_dl.call_count == 2
+        assert len(downloaded) == 7
+        assert mock_dl.call_count == 7
         calls = [c.args[0] for c in mock_dl.call_args_list]
-        assert "rtl8761b_fw.bin" in calls
-        assert "rtl8761b_config.bin" in calls
+        assert "rtl8761bu_fw.bin" in calls
+        assert "rtl8761bu_config.bin" in calls
+        assert "rtl8852au_fw.bin" in calls
+        assert "rtl8852bu_fw.bin" in calls
+        assert "rtl8852cu_fw_v2.bin" in calls
+        assert "rtl8852cu_fw.bin" in calls
+        assert "rtl8723d_fw.bin" in calls
+        assert "rtl8852bu_config.bin" not in calls
+        assert "rtl8852cu_config.bin" not in calls
 
     def test_download_unknown_vendor(self, tmp_path: Path):
         with patch(

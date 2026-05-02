@@ -139,14 +139,14 @@ class FirmwareManager:
         if self._policy == FirmwarePolicy.ERROR:
             msg += (
                 "To download firmware, run:\n"
-                f"  pybluehost fw download {self._vendor}\n\n"
+                f"  pybluehost tools fw download {self._vendor}\n\n"
                 "Or set the firmware directory via environment variable:\n"
                 f"  export {_ENV_VARS.get(self._vendor, 'PYBLUEHOST_FW_DIR')}=/path/to/firmware"
             )
         elif self._policy == FirmwarePolicy.PROMPT:
             msg += (
                 "To resolve this, you can:\n"
-                f"  Option 1: pybluehost fw download {self._vendor}\n"
+                f"  Option 1: pybluehost tools fw download {self._vendor}\n"
                 f"  Option 2: Manually place '{filename}' in {self.data_dir}\n"
                 f"  Option 3: Set {_ENV_VARS.get(self._vendor, 'PYBLUEHOST_FW_DIR')}=/path/to/firmware"
             )
@@ -154,7 +154,7 @@ class FirmwareManager:
             # AUTO_DOWNLOAD
             msg += (
                 "Auto-download failed or was disabled.\n"
-                f"Please run: pybluehost fw download {self._vendor}"
+                f"Please run: pybluehost tools fw download {self._vendor}"
             )
 
         return msg

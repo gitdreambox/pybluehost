@@ -47,13 +47,19 @@ class FirmwareDownloader:
     """Download Bluetooth firmware files from linux-firmware.git."""
 
     _BASE_URLS = {
-        "intel": (
+        "intel": ((
             "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/"
             "linux-firmware.git/plain/intel/{filename}"
-        ),
+        ),),
         "realtek": (
+            (
             "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/"
             "linux-firmware.git/plain/rtl_bt/{filename}"
+            ),
+            (
+            "https://gitlab.com/kernel-firmware/linux-firmware/-/raw/main/"
+            "rtl_bt/{filename}"
+            ),
         ),
     }
 
@@ -65,35 +71,39 @@ class FirmwareDownloader:
     @classmethod
     def download(cls, filename: str, vendor: str, dest_dir: Path) -> Path:
         """Download a firmware file, retrying on transient errors."""
-        url = cls._build_url(filename, vendor)
         dest_path = dest_dir / filename
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         last_error = ""
-        for attempt in range(1, cls._MAX_RETRIES + 1):
-            try:
-                cls._download_file(url, dest_path)
-                return dest_path
-            except (urllib.error.URLError, OSError) as e:
-                last_error = str(e)
-                if attempt < cls._MAX_RETRIES:
-                    delay = cls._RETRY_DELAY_BASE * (2 ** (attempt - 1))
-                    time.sleep(delay)
+        last_url = ""
+        for url in cls._build_urls(filename, vendor):
+            last_url = url
+            for attempt in range(1, cls._MAX_RETRIES + 1):
+                try:
+                    cls._download_file(url, dest_path)
+                    return dest_path
+                except (urllib.error.URLError, OSError) as e:
+                    last_error = str(e)
+                    if attempt < cls._MAX_RETRIES:
+                        delay = cls._RETRY_DELAY_BASE * (2 ** (attempt - 1))
+                        time.sleep(delay)
 
-        raise FirmwareDownloadError(filename, url, last_error)
+        raise FirmwareDownloadError(filename, last_url, last_error)
 
     @classmethod
     def _build_url(cls, filename: str, vendor: str) -> str:
-        template = cls._BASE_URLS.get(vendor)
-        if template is None:
+        return cls._build_urls(filename, vendor)[0]
+
+    @classmethod
+    def _build_urls(cls, filename: str, vendor: str) -> list[str]:
+        templates = cls._BASE_URLS.get(vendor)
+        if templates is None:
             raise FirmwareDownloadError(filename, "", f"Unknown vendor: {vendor}")
-        return template.format(filename=filename)
+        return [template.format(filename=filename) for template in templates]
 
     @classmethod
     def _download_file(cls, url: str, dest: Path) -> None:
-        with urllib.request.urlopen(
-            url, timeout=(cls._CONNECT_TIMEOUT, cls._READ_TIMEOUT)
-        ) as response:
+        with urllib.request.urlopen(url, timeout=cls._CONNECT_TIMEOUT) as response:
             data = response.read()
             if not data:
                 raise OSError("Empty response")

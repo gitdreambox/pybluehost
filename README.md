@@ -50,6 +50,12 @@ uv run pytest tests/ --transport=virtual
 
 ---
 
+## 已测试设备
+
+| 芯片型号 | VID | PID | Transport | 协议版本 | 类型 | 固件名称 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Realtek RTL8852BE | `0x0BDA` | `0x4853` | USB | 5.2 | BR/EDR + BLE | `rtl8852bu_fw.bin` |
+
 ## 快速开始
 
 ### 在单进程内运行完整 BLE 协议栈

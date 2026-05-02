@@ -81,8 +81,13 @@ def _download_firmware_files(vendor: str, fw_dir: Path) -> list[Path]:
         ]
     elif vendor == "realtek":
         files = [
-            "rtl8761b_fw.bin",
-            "rtl8761b_config.bin",
+            "rtl8761bu_fw.bin",
+            "rtl8761bu_config.bin",
+            "rtl8852au_fw.bin",
+            "rtl8852bu_fw.bin",
+            "rtl8852cu_fw_v2.bin",
+            "rtl8852cu_fw.bin",
+            "rtl8723d_fw.bin",
         ]
     else:
         logger.error("Unknown vendor: %s", vendor)
