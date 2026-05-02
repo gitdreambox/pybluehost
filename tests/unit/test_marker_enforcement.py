@@ -192,44 +192,44 @@ def test_invalid_vendor_value_is_marker_error():
 
 def test_virtual_only_skip_reason_on_non_virtual_family():
     assert (
-        project_conftest._virtual_only_skip_reason("usb")
+        project_conftest.virtual_only_skip_reason("usb")
         == "deterministic test, runs only on virtual controller"
     )
-    assert project_conftest._virtual_only_skip_reason("uart") is not None
-    assert project_conftest._virtual_only_skip_reason("virtual") is None
+    assert project_conftest.virtual_only_skip_reason("uart") is not None
+    assert project_conftest.virtual_only_skip_reason("virtual") is None
 
 
 def test_real_hardware_only_transport_constraint_on_real_hardware_family():
     marker = _Marker(transport="usb")
 
     assert (
-        project_conftest._real_hw_skip_reason(
+        project_conftest.real_hw_skip_reason(
             marker,
             "uart",
             current_vendor=None,
         )
         == "requires 'usb' transport, got 'uart'"
     )
-    assert project_conftest._real_hw_skip_reason(marker, "usb", "intel") is None
+    assert project_conftest.real_hw_skip_reason(marker, "usb", "intel") is None
 
 
 @pytest.mark.parametrize("vendors", ["intel", ("intel", "realtek"), ["intel", "csr"]])
 def test_real_hardware_only_accepts_vendor_string_tuple_and_list(vendors: object):
     marker = _Marker(transport="usb", vendor=vendors)
 
-    assert project_conftest._real_hw_skip_reason(marker, "usb", "intel") is None
+    assert project_conftest.real_hw_skip_reason(marker, "usb", "intel") is None
 
 
 def test_real_hardware_only_rejects_bad_vendor_inside_tuple_or_list():
     tuple_marker = _Marker(transport="usb", vendor=("intel", "qualcomm"))
     list_marker = _Marker(transport="usb", vendor=["csr", "qualcomm"])
 
-    assert "unsupported vendor 'qualcomm'" in project_conftest._real_hw_skip_reason(
+    assert "unsupported vendor 'qualcomm'" in project_conftest.real_hw_skip_reason(
         tuple_marker,
         "usb",
         "intel",
     )
-    assert "unsupported vendor 'qualcomm'" in project_conftest._real_hw_skip_reason(
+    assert "unsupported vendor 'qualcomm'" in project_conftest.real_hw_skip_reason(
         list_marker,
         "usb",
         "csr",
@@ -240,6 +240,6 @@ def test_real_hardware_only_skips_non_matching_vendor():
     marker = _Marker(transport="usb", vendor=("intel", "realtek"))
 
     assert (
-        project_conftest._real_hw_skip_reason(marker, "usb", "csr")
+        project_conftest.real_hw_skip_reason(marker, "usb", "csr")
         == "requires vendor in ('intel', 'realtek'), got 'csr'"
     )

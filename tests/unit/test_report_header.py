@@ -141,8 +141,10 @@ def test_report_header_shows_explicit_peer_virtual():
 def test_peer_report_header_uses_peer_explicit_label_when_primary_auto(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    from tests._transport_resolve import _PRIMARY_CACHE_ATTR
+
     config = _Config(peer="virtual")
-    setattr(config, project_conftest._PRIMARY_CACHE_ATTR, "virtual")
+    setattr(config, _PRIMARY_CACHE_ATTR, "virtual")
 
     assert project_conftest.pytest_report_header(config) == [
         "[pybluehost-tests] transport: virtual [auto-detected]",
@@ -189,7 +191,7 @@ def test_report_header_suppressed_for_list_transports(
     def fail_if_resolved(_config: object) -> str:
         raise AssertionError("list mode should not resolve transport specs")
 
-    monkeypatch.setattr(project_conftest, "_resolve_primary_spec", fail_if_resolved)
+    monkeypatch.setattr(project_conftest, "resolve_primary_spec", fail_if_resolved)
 
     assert project_conftest.pytest_report_header(
         _Config(list_transports=True),
@@ -197,9 +199,11 @@ def test_report_header_suppressed_for_list_transports(
 
 
 def test_report_header_uses_exact_fallback_label(monkeypatch: pytest.MonkeyPatch):
-    tracker = project_conftest.FallbackTracker()
+    from tests._fallback_tracker import FallbackTracker
+
+    tracker = FallbackTracker()
     tracker.mark_fallback()
-    monkeypatch.setattr(project_conftest, "_FALLBACK_TRACKER", tracker)
+    monkeypatch.setattr(project_conftest, "TRACKER", tracker)
 
     assert project_conftest._header_source_label(_Config()) == (
         "auto-detected — no hardware found"
@@ -207,11 +211,13 @@ def test_report_header_uses_exact_fallback_label(monkeypatch: pytest.MonkeyPatch
 
 
 def test_fallback_summary_uses_stack_fixture_count(monkeypatch: pytest.MonkeyPatch):
-    tracker = project_conftest.FallbackTracker()
+    from tests._fallback_tracker import FallbackTracker
+
+    tracker = FallbackTracker()
     tracker.mark_fallback()
     tracker.increment()
     tracker.increment()
-    monkeypatch.setattr(project_conftest, "_FALLBACK_TRACKER", tracker)
+    monkeypatch.setattr(project_conftest, "TRACKER", tracker)
     terminal = _TerminalReporter()
 
     project_conftest.pytest_terminal_summary(terminal, exitstatus=0, config=_Config())

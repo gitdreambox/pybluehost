@@ -24,6 +24,8 @@ assert _CONFTEST_SPEC.loader is not None
 project_conftest = importlib.util.module_from_spec(_CONFTEST_SPEC)
 _CONFTEST_SPEC.loader.exec_module(project_conftest)
 
+from tests import _transport_resolve  # noqa: E402  (loaded after conftest spec)
+
 
 @dataclass(frozen=True)
 class _Candidate:
@@ -178,11 +180,11 @@ def test_primary_resolution_is_cached_per_config(
         return []
 
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
-    monkeypatch.setattr(project_conftest, "autodetect_usb_candidates", fake_autodetect)
+    monkeypatch.setattr(_transport_resolve, "autodetect_usb_candidates", fake_autodetect)
     config = _Config()
 
-    assert project_conftest._resolve_primary_spec(config) == "virtual"
-    assert project_conftest._resolve_primary_spec(config) == "virtual"
+    assert project_conftest.resolve_primary_spec(config) == "virtual"
+    assert project_conftest.resolve_primary_spec(config) == "virtual"
     assert calls == 1
 
 
@@ -191,17 +193,17 @@ def test_autodetected_usb_falls_back_to_virtual_when_probe_fails(
 ) -> None:
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
     monkeypatch.setattr(
-        project_conftest,
+        _transport_resolve,
         "autodetect_usb_candidates",
         lambda: ["usb:vendor=intel,bus=1,address=4"],
     )
     monkeypatch.setattr(
-        project_conftest,
+        _transport_resolve,
         "_probe_autodetected_spec_usable",
         lambda spec: False,
     )
 
-    assert project_conftest._resolve_primary_spec(_Config()) == "virtual"
+    assert project_conftest.resolve_primary_spec(_Config()) == "virtual"
 
 
 def test_autodetected_usb_keeps_hardware_when_probe_passes(
@@ -209,18 +211,18 @@ def test_autodetected_usb_keeps_hardware_when_probe_passes(
 ) -> None:
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
     monkeypatch.setattr(
-        project_conftest,
+        _transport_resolve,
         "autodetect_usb_candidates",
         lambda: ["usb:vendor=intel,bus=1,address=4"],
     )
     monkeypatch.setattr(
-        project_conftest,
+        _transport_resolve,
         "_probe_autodetected_spec_usable",
         lambda spec: True,
     )
 
     assert (
-        project_conftest._resolve_primary_spec(_Config())
+        project_conftest.resolve_primary_spec(_Config())
         == "usb:vendor=intel,bus=1,address=4"
     )
 
@@ -239,11 +241,11 @@ def test_autodetected_usb_tries_next_candidate_when_first_probe_fails(
         return spec.endswith("address=5")
 
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
-    monkeypatch.setattr(project_conftest, "autodetect_usb_candidates", lambda: candidates)
-    monkeypatch.setattr(project_conftest, "_probe_autodetected_spec_usable", fake_probe)
+    monkeypatch.setattr(_transport_resolve, "autodetect_usb_candidates", lambda: candidates)
+    monkeypatch.setattr(_transport_resolve, "_probe_autodetected_spec_usable", fake_probe)
 
     assert (
-        project_conftest._resolve_primary_spec(_Config())
+        project_conftest.resolve_primary_spec(_Config())
         == "usb:vendor=csr,bus=2,address=5"
     )
     assert seen == candidates
@@ -252,14 +254,16 @@ def test_autodetected_usb_tries_next_candidate_when_first_probe_fails(
 def test_first_usable_autodetected_spec_returns_virtual_when_all_probes_fail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from tests import _transport_resolve
+
     monkeypatch.setattr(
-        project_conftest,
+        _transport_resolve,
         "_probe_autodetected_spec_usable",
         lambda spec: False,
     )
 
     assert (
-        project_conftest._first_usable_autodetected_spec(
+        _transport_resolve._first_usable_autodetected_spec(
             ["usb:vendor=intel,bus=1,address=4"]
         )
         == "virtual"
@@ -292,8 +296,8 @@ def test_explicit_usb_primary_normalizes_to_concrete_adapter_and_peer_second(
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT_PEER", raising=False)
 
     config = _Config(transport="usb")
-    primary = project_conftest._resolve_primary_spec(config)
-    peer = project_conftest._resolve_peer_spec(config, primary)
+    primary = project_conftest.resolve_primary_spec(config)
+    peer = project_conftest.resolve_peer_spec(config, primary)
 
     assert primary == "usb:vendor=intel,bus=1,address=4"
     assert peer == "usb:vendor=realtek,bus=2,address=5"
@@ -324,7 +328,7 @@ def test_vendor_filtered_usb_primary_normalizes_to_matching_candidate(
     monkeypatch.setattr(USBTransport, "auto_detect", fake_auto_detect)
     monkeypatch.setattr(USBTransport, "list_devices", classmethod(lambda cls: candidates))
 
-    primary = project_conftest._resolve_primary_spec(_Config(transport="usb:vendor=intel"))
+    primary = project_conftest.resolve_primary_spec(_Config(transport="usb:vendor=intel"))
 
     assert primary == "usb:vendor=intel,bus=2,address=5"
     assert seen_auto_detect == [("intel", None, None)]
@@ -338,13 +342,15 @@ def test_generic_usb_fallback_keeps_original_when_no_known_candidate(
     monkeypatch.setattr(USBTransport, "auto_detect", lambda **_kwargs: object())
     monkeypatch.setattr(USBTransport, "list_devices", classmethod(lambda cls: []))
 
-    assert project_conftest._resolve_primary_spec(_Config(transport="usb")) == "usb"
+    assert project_conftest.resolve_primary_spec(_Config(transport="usb")) == "usb"
 
 
 @pytest.mark.asyncio
 async def test_build_stack_from_spec_rejects_invalid_uart_baudrate() -> None:
-    with pytest.raises(project_conftest.InvalidSpec) as excinfo:
-        await project_conftest._build_stack_from_spec("uart:/dev/ttyUSB0@fast")
+    from pybluehost.transport.spec import InvalidSpec
+
+    with pytest.raises(InvalidSpec) as excinfo:
+        await project_conftest.build_stack_from_spec("uart:/dev/ttyUSB0@fast")
 
     assert "Invalid UART baudrate" in str(excinfo.value)
     assert "fast" in str(excinfo.value)
@@ -357,7 +363,7 @@ async def test_stack_fixture_exits_with_clear_transport_error(
     async def fake_build(_spec: str) -> object:
         raise RuntimeError("open failed")
 
-    monkeypatch.setattr(project_conftest, "_build_stack_from_spec", fake_build)
+    monkeypatch.setattr(project_conftest, "build_stack_from_spec", fake_build)
 
     gen = project_conftest.stack.__wrapped__("usb:vendor=intel")
     with pytest.raises(Exit) as excinfo:
@@ -376,7 +382,7 @@ async def test_peer_stack_fixture_skips_with_clear_transport_error(
     async def fake_build(_spec: str) -> object:
         raise RuntimeError("peer open failed")
 
-    monkeypatch.setattr(project_conftest, "_build_stack_from_spec", fake_build)
+    monkeypatch.setattr(project_conftest, "build_stack_from_spec", fake_build)
 
     gen = project_conftest.peer_stack.__wrapped__("usb:vendor=realtek")
     with pytest.raises(pytest.skip.Exception) as excinfo:

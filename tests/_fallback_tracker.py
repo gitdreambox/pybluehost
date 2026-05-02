@@ -31,3 +31,7 @@ class FallbackTracker:
     @property
     def count(self) -> int:
         return self._count
+
+
+# Session-wide singleton shared by conftest.py and _transport_resolve.py.
+TRACKER = FallbackTracker()
