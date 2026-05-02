@@ -102,6 +102,11 @@ def vendor_of(spec: str) -> str | None:
     return params.get("vendor")
 
 
+def format_usb_candidate_spec(vendor: str, bus: int, address: int) -> str:
+    """Render a concrete usb spec string for a known-vendor adapter location."""
+    return f"usb:vendor={vendor},bus={bus},address={address}"
+
+
 def enforce_same_family(primary: str, peer: str) -> None:
     """Raise :class:`SameFamilyError` if peer family differs from primary."""
     p_fam = family_of(primary)

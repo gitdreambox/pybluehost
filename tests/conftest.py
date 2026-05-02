@@ -15,6 +15,8 @@ import os
 
 import pytest
 
+from pybluehost.transport.spec import format_usb_candidate_spec
+
 from tests._fallback_tracker import TRACKER
 from tests._marker_enforcement import (
     real_hw_skip_reason,
@@ -89,10 +91,10 @@ def pytest_configure(config: pytest.Config) -> None:
         else:
             logger.warning("[pybluehost-tests] Detected Bluetooth USB adapters:")
             for candidate in candidates:
-                spec = (
-                    f"usb:vendor={candidate.vendor},"
-                    f"bus={candidate.bus},"
-                    f"address={candidate.address}"
+                spec = format_usb_candidate_spec(
+                    vendor=candidate.vendor,
+                    bus=candidate.bus,
+                    address=candidate.address,
                 )
                 logger.warning(
                     "  %-8s %-10s bus=%s address=%s  (%s)",

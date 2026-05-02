@@ -11,6 +11,7 @@ from pybluehost.transport.spec import (
     SameFamilyError,
     enforce_same_family,
     family_of,
+    format_usb_candidate_spec,
     parse_spec,
     uart_spec_port_baud,
     usb_spec_bus_address,
@@ -69,8 +70,8 @@ def find_second_usb_adapter(
 
 
 def _usb_candidate_spec(candidate: object) -> str:
-    return (
-        f"usb:vendor={candidate.vendor},"
-        f"bus={candidate.bus},"
-        f"address={candidate.address}"
+    return format_usb_candidate_spec(
+        vendor=candidate.vendor,
+        bus=candidate.bus,
+        address=candidate.address,
     )

@@ -254,7 +254,13 @@ class Stack:
         from pybluehost.hci.virtual import VirtualController
 
         vc, host_t = await VirtualController.create()
-        stack = await cls._build(host_t, config, StackMode.VIRTUAL)
+        try:
+            stack = await cls._build(host_t, config, StackMode.VIRTUAL)
+        except Exception:
+            close = getattr(host_t, "close", None)
+            if close is not None:
+                await close()
+            raise
         stack._local_address = vc._address
         return stack
 

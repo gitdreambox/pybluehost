@@ -141,7 +141,12 @@ def test_report_header_shows_explicit_peer_virtual():
 def test_peer_report_header_uses_peer_explicit_label_when_primary_auto(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    from tests._fallback_tracker import FallbackTracker
     from tests._transport_resolve import _PRIMARY_CACHE_ATTR
+
+    # The TRACKER singleton is shared across the session and may have been
+    # mutated by other tests; pin a fresh tracker so we read a clean state.
+    monkeypatch.setattr(project_conftest, "TRACKER", FallbackTracker())
 
     config = _Config(peer="virtual")
     setattr(config, _PRIMARY_CACHE_ATTR, "virtual")

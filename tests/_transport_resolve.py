@@ -17,6 +17,8 @@ import os
 import pytest
 
 from tests._fallback_tracker import TRACKER
+from pybluehost.transport.spec import format_usb_candidate_spec
+
 from tests._transport_select import (
     InvalidSpec,
     SameFamilyError,
@@ -207,9 +209,9 @@ def _known_usb_candidate_spec(
             continue
         if address is not None and candidate.address != address:
             continue
-        return (
-            f"usb:vendor={candidate.vendor},"
-            f"bus={candidate.bus},"
-            f"address={candidate.address}"
+        return format_usb_candidate_spec(
+            vendor=candidate.vendor,
+            bus=candidate.bus,
+            address=candidate.address,
         )
     return None
