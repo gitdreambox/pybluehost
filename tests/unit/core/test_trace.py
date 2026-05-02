@@ -306,6 +306,15 @@ class TestBtsnoopSink:
         assert datalink == 1002  # H4
 
     @pytest.mark.asyncio
+    async def test_header_is_flushed_before_close(self, tmp_path: Path):
+        path = tmp_path / "trace.cfa"
+        sink = BtsnoopSink(str(path))
+
+        assert path.read_bytes() == b"btsnoop\x00" + struct.pack(">II", 1, 1002)
+
+        await sink.close()
+
+    @pytest.mark.asyncio
     async def test_writes_packet_record(self, tmp_path: Path):
         path = tmp_path / "trace.cfa"
         sink = BtsnoopSink(str(path))
@@ -325,6 +334,17 @@ class TestBtsnoopSink:
         assert orig_len == incl_len
         assert orig_len == 4
         assert flags == 0  # sent (DOWN)
+
+    @pytest.mark.asyncio
+    async def test_packet_record_is_flushed_before_close(self, tmp_path: Path):
+        path = tmp_path / "trace.cfa"
+        sink = BtsnoopSink(str(path))
+
+        await sink.on_trace(_make_event("hci", Direction.DOWN, b"\x01\x03\x0c\x00"))
+
+        assert len(path.read_bytes()) > 16
+
+        await sink.close()
 
     @pytest.mark.asyncio
     async def test_direction_flags(self, tmp_path: Path):

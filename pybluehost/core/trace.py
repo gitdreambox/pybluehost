@@ -192,6 +192,7 @@ class BtsnoopSink:
         self._file.write(b"btsnoop\x00")
         self._file.write(_struct.pack(">I", 1))
         self._file.write(_struct.pack(">I", 1002))
+        self._file.flush()
 
     async def on_trace(self, event: TraceEvent) -> None:
         if event.source_layer not in self._HCI_LAYERS:
@@ -211,6 +212,7 @@ class BtsnoopSink:
         self._file.write(
             _struct.pack(">IIIIq", orig_len, incl_len, flags, drops, ts) + payload
         )
+        self._file.flush()
 
     async def flush(self) -> None:
         if not self._file.closed:
