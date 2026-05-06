@@ -127,3 +127,35 @@ def apply_logging_levels(spec: TraceSpec) -> None:
         if logger_name is None:
             continue  # parse_trace_spec already validated; defensive only
         logging.getLogger(logger_name).setLevel(_LEVEL_TO_LOGGING[level])
+
+
+def attach_console_sink(
+    spec: TraceSpec,
+    trace_system,
+    *,
+    stream=None,
+):
+    """Attach a ConsoleSink to trace_system if the spec enables the hci layer.
+
+    Returns the new sink (so caller can keep a reference) or None when no
+    sink was attached (hci layer absent or stream unavailable).
+    """
+    from pybluehost.core.trace_console import ConsoleSink
+
+    hci_level = spec.layers.get("hci")
+    if hci_level is None:
+        return None
+    sink = ConsoleSink(
+        stream=stream,
+        level=hci_level,
+        full_acl=spec.full_acl,
+        include=set(spec.include),
+    )
+    trace_system.add_sink(sink)
+    return sink
+
+
+def trace_install(spec: TraceSpec, trace_system, *, stream=None):
+    """One-shot install: apply logging levels + attach ConsoleSink."""
+    apply_logging_levels(spec)
+    return attach_console_sink(spec, trace_system, stream=stream)

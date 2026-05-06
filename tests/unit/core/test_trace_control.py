@@ -102,3 +102,55 @@ def test_apply_logging_levels_empty_spec_does_not_change_levels():
     logger.setLevel(logging.WARNING)
     apply_logging_levels(parse_trace_spec(""))
     assert logger.level == logging.WARNING
+
+
+@pytest.mark.asyncio
+async def test_attach_console_sink_only_when_hci_layer_enabled():
+    import io
+
+    from pybluehost.core.trace import TraceSystem
+    from pybluehost.core.trace_control import (
+        attach_console_sink,
+        parse_trace_spec,
+    )
+
+    trace_system = TraceSystem()
+    sink = attach_console_sink(parse_trace_spec("hci"), trace_system, stream=io.StringIO())
+    assert sink is not None
+    assert sink in trace_system._sinks
+
+
+@pytest.mark.asyncio
+async def test_attach_console_sink_returns_none_when_hci_layer_absent():
+    import io
+
+    from pybluehost.core.trace import TraceSystem
+    from pybluehost.core.trace_control import (
+        attach_console_sink,
+        parse_trace_spec,
+    )
+
+    trace_system = TraceSystem()
+    sink = attach_console_sink(parse_trace_spec("l2cap"), trace_system, stream=io.StringIO())
+    assert sink is None
+    assert trace_system._sinks == []
+
+
+@pytest.mark.asyncio
+async def test_attach_console_sink_passes_full_acl_and_include():
+    import io
+
+    from pybluehost.core.trace import TraceSystem
+    from pybluehost.core.trace_control import (
+        attach_console_sink,
+        parse_trace_spec,
+    )
+
+    trace_system = TraceSystem()
+    sink = attach_console_sink(
+        parse_trace_spec("hci,full-acl,include=Number_Of_Completed_Packets"),
+        trace_system,
+        stream=io.StringIO(),
+    )
+    assert sink._full_acl is True
+    assert "Number_Of_Completed_Packets" in sink._include
