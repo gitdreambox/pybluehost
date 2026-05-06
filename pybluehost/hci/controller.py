@@ -274,6 +274,13 @@ class HCIController:
     def _emit_trace(self, direction: Direction, raw: bytes) -> None:
         if self._trace is None:
             return
+        decoded: object | None
+        try:
+            from pybluehost.hci.packets import decode_hci_packet
+
+            decoded = decode_hci_packet(raw)
+        except Exception:
+            decoded = None
         self._trace.emit(
             TraceEvent(
                 timestamp=time.time(),
@@ -281,7 +288,7 @@ class HCIController:
                 source_layer="hci",
                 direction=direction,
                 raw_bytes=raw,
-                decoded=None,
+                decoded=decoded,
                 connection_handle=None,
                 metadata={},
             )

@@ -23,7 +23,7 @@ class TraceEvent:
     source_layer: str
     direction: Direction
     raw_bytes: bytes
-    decoded: dict[str, Any] | None
+    decoded: object | None
     connection_handle: int | None
     metadata: dict[str, Any]
 
@@ -158,7 +158,11 @@ class JsonSink:
             "hex": event.raw_bytes.hex(),
         }
         if self._decode and event.decoded is not None:
-            obj["decoded"] = event.decoded
+            decoded = event.decoded
+            if isinstance(decoded, dict):
+                obj["decoded"] = decoded
+            else:
+                obj["decoded"] = {"_type": type(decoded).__name__}
         if event.connection_handle is not None:
             obj["handle"] = event.connection_handle
         if event.metadata:
