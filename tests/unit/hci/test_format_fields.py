@@ -85,3 +85,52 @@ def test_format_uuid16_known_service():
 def test_format_uuid16_with_lookup_appends_name():
     out = format_uuid16(0x180D, sig_lookup=lambda v: "Heart_Rate")
     assert out == "0x180D (Heart_Rate)"
+
+
+def test_format_company_id_known():
+    from pybluehost.hci.format_fields import format_company_id
+
+    assert format_company_id(0x000F) == "0x000F (Broadcom Corporation)"
+
+
+def test_format_company_id_unknown():
+    from pybluehost.hci.format_fields import format_company_id
+
+    assert format_company_id(0xFFFE).startswith("0xFFFE")
+
+
+def test_format_uuid16_via_sig_db_default_lookup():
+    from pybluehost.hci.format_fields import format_uuid16_default
+
+    # 0x180D = Heart Rate Service in SIG yaml.
+    out = format_uuid16_default(0x180D)
+    assert out.startswith("0x180D (")
+    assert "Heart" in out
+
+
+def test_format_uuid128_renders_lowercase_canonical():
+    from pybluehost.hci.format_fields import format_uuid128
+
+    # On-air little-endian byte order for 0000180d-0000-1000-8000-00805f9b34fb.
+    raw = bytes.fromhex("fb349b5f80000080001000000d180000")
+    # Canonical xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (big-endian display).
+    assert format_uuid128(raw) == "0000180d-0000-1000-8000-00805f9b34fb"
+
+
+def test_format_class_of_device_phone():
+    from pybluehost.hci.format_fields import format_class_of_device
+
+    # 0x5A020C = Phone, Smartphone (CoD layout per Bluetooth assigned numbers):
+    # octet0=0x0C -> minor=0x03 (Smartphone); octet1=0x02 -> major=0x02 (Phone).
+    out = format_class_of_device(0x5A020C)
+    assert out.startswith("0x5A020C")
+    assert "Phone" in out
+
+
+def test_format_ad_type_byte_known():
+    from pybluehost.hci.format_fields import format_ad_type
+
+    # AD type 0x09 = Complete Local Name (SIG yaml uses spaces, not underscores).
+    out = format_ad_type(0x09)
+    assert out.startswith("0x09")
+    assert "Local Name" in out

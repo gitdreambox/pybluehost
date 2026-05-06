@@ -110,3 +110,87 @@ def format_uuid16(value: int, *, sig_lookup: Callable[[int], str | None]) -> str
     if name is None:
         return f"0x{value:04X}"
     return f"0x{value:04X} ({name})"
+
+
+def format_company_id(value: int) -> str:
+    """Company identifier (Bluetooth assigned numbers)."""
+    from pybluehost.core.sig_db import SIGDatabase
+
+    name = SIGDatabase.get().company_name(value)
+    if name is None:
+        return f"0x{value:04X}"
+    return f"0x{value:04X} ({name})"
+
+
+def format_uuid16_default(value: int) -> str:
+    """16-bit UUID using the project SIGDatabase for lookup."""
+    from pybluehost.core.sig_db import SIGDatabase
+
+    db = SIGDatabase.get()
+
+    def lookup(v: int) -> str | None:
+        return (
+            db.service_name(v)
+            or db.characteristic_name(v)
+            or db.descriptor_name(v)
+        )
+
+    return format_uuid16(value, sig_lookup=lookup)
+
+
+def format_uuid128(raw: bytes) -> str:
+    """128-bit UUID in canonical xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx form."""
+    if len(raw) != 16:
+        raise ValueError(f"UUID128 must be 16 bytes, got {len(raw)}")
+    msb_first = bytes(reversed(raw))
+    h = msb_first.hex()
+    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+
+
+# Major Service Class bits (CoD octets 13..23, here we encode the most useful subset).
+_COD_MAJOR_DEVICE_CLASS: dict[int, str] = {
+    0x00: "Miscellaneous",
+    0x01: "Computer",
+    0x02: "Phone",
+    0x03: "LAN/Network_Access_Point",
+    0x04: "Audio/Video",
+    0x05: "Peripheral",
+    0x06: "Imaging",
+    0x07: "Wearable",
+    0x08: "Toy",
+    0x09: "Health",
+    0x1F: "Uncategorized",
+}
+
+# Phone minor classes (when major = 0x02).
+_COD_PHONE_MINOR: dict[int, str] = {
+    0x00: "Uncategorized",
+    0x01: "Cellular",
+    0x02: "Cordless",
+    0x03: "Smartphone",
+    0x04: "Wired_Modem_Or_Voice_Gateway",
+    0x05: "ISDN",
+}
+
+
+def format_class_of_device(value: int) -> str:
+    """Class of Device (24-bit) -> '0xNNNNNN (Major, Minor)' if classifiable."""
+    major = (value >> 8) & 0x1F
+    minor = (value >> 2) & 0x3F
+    major_name = _COD_MAJOR_DEVICE_CLASS.get(major)
+    if major_name is None:
+        return f"0x{value:06X}"
+    if major == 0x02:
+        minor_name = _COD_PHONE_MINOR.get(minor, f"minor=0x{minor:02X}")
+        return f"0x{value:06X} ({major_name}, {minor_name})"
+    return f"0x{value:06X} ({major_name})"
+
+
+def format_ad_type(value: int) -> str:
+    """Advertising data type byte; uses SIG DB ad_type_name."""
+    from pybluehost.core.sig_db import SIGDatabase
+
+    name = SIGDatabase.get().ad_type_name(value)
+    if name is None:
+        return f"0x{value:02X}"
+    return f"0x{value:02X} ({name})"
