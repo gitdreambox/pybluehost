@@ -685,6 +685,57 @@ class HCI_LE_Meta_Event(HCIEvent):
 
 
 # ---------------------------------------------------------------------------
+# LE Advertising Report helper
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LEAdvertisingReport:
+    """One entry from an LE Advertising Report sub-event (Vol 4, Part E §7.7.65.2)."""
+
+    event_type: int           # 0=ADV_IND, 1=ADV_DIRECT_IND, 2=ADV_SCAN_IND, 3=ADV_NONCONN_IND, 4=SCAN_RSP
+    address_type: int         # 0=public, 1=random
+    address: bytes            # 6 bytes, raw HCI (little-endian) order
+    data: bytes               # advertising/scan-response data
+    rssi: int                 # signed dBm, 127 = not available
+
+
+def parse_le_advertising_reports(subevent_parameters: bytes) -> list[LEAdvertisingReport]:
+    """Parse the body of an LE Advertising Report sub-event into per-report entries.
+
+    Layout: ``num_reports`` followed by N back-to-back
+    ``(event_type, address_type, address[6], data_length, data, rssi)`` tuples.
+    Returns an empty list on truncated input rather than raising — controllers
+    occasionally emit malformed reports.
+    """
+    if not subevent_parameters:
+        return []
+    num_reports = subevent_parameters[0]
+    offset = 1
+    reports: list[LEAdvertisingReport] = []
+    for _ in range(num_reports):
+        if offset + 9 > len(subevent_parameters):
+            break
+        event_type = subevent_parameters[offset]
+        address_type = subevent_parameters[offset + 1]
+        address = bytes(subevent_parameters[offset + 2:offset + 8])
+        data_len = subevent_parameters[offset + 8]
+        offset += 9
+        if offset + data_len + 1 > len(subevent_parameters):
+            break
+        data = bytes(subevent_parameters[offset:offset + data_len])
+        rssi = struct.unpack_from("<b", subevent_parameters, offset + data_len)[0]
+        offset += data_len + 1
+        reports.append(LEAdvertisingReport(
+            event_type=event_type,
+            address_type=address_type,
+            address=address,
+            data=data,
+            rssi=rssi,
+        ))
+    return reports
+
+
+# ---------------------------------------------------------------------------
 # Decoder
 # ---------------------------------------------------------------------------
 

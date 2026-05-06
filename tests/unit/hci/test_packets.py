@@ -224,3 +224,39 @@ def test_packet_registry_roundtrip():
     raw = cmd.to_bytes()
     decoded = decode_hci_packet(raw)
     assert type(decoded) is HCI_Reset
+
+
+def test_parse_le_advertising_reports_single():
+    from pybluehost.hci.packets import LEAdvertisingReport, parse_le_advertising_reports
+
+    # num_reports=1, event_type=0x00 (ADV_IND), addr_type=0x00 (public),
+    # addr=01:02:03:04:05:06 (LE on the wire),
+    # data_length=3, data=02 01 06 (Flags=0x06), rssi=-70 (0xBA)
+    params = (
+        bytes([0x01])
+        + bytes([0x00])
+        + bytes([0x00])
+        + bytes([0x06, 0x05, 0x04, 0x03, 0x02, 0x01])
+        + bytes([0x03])
+        + bytes([0x02, 0x01, 0x06])
+        + bytes([0xBA])
+    )
+    reports = parse_le_advertising_reports(params)
+    assert len(reports) == 1
+    assert isinstance(reports[0], LEAdvertisingReport)
+    assert reports[0].rssi == -70
+    assert reports[0].address == bytes([0x06, 0x05, 0x04, 0x03, 0x02, 0x01])
+
+
+def test_parse_le_advertising_reports_truncated_returns_partial():
+    from pybluehost.hci.packets import parse_le_advertising_reports
+
+    # Claim 1 report but truncate before rssi byte.
+    params = bytes([0x01, 0x00, 0x00, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00])
+    assert parse_le_advertising_reports(params) == []
+
+
+def test_parse_le_advertising_reports_empty_input():
+    from pybluehost.hci.packets import parse_le_advertising_reports
+
+    assert parse_le_advertising_reports(b"") == []
