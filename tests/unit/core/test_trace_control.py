@@ -154,3 +154,18 @@ async def test_attach_console_sink_passes_full_acl_and_include():
     )
     assert sink._full_acl is True
     assert "Number_Of_Completed_Packets" in sink._include
+
+
+def test_public_re_exports():
+    from pybluehost.core import (
+        ConsoleSink,
+        InvalidTraceSpec,
+        TraceSpec,
+        attach_console_sink,
+        parse_trace_spec,
+        trace_install,
+    )
+
+    assert ConsoleSink.__module__ == "pybluehost.core.trace_console"
+    assert callable(parse_trace_spec)
+    assert callable(trace_install)

@@ -26,6 +26,15 @@ from pybluehost.core.trace import (
     TraceEvent,
     TraceSystem,
 )
+from pybluehost.core.trace_console import ConsoleSink
+from pybluehost.core.trace_control import (
+    InvalidTraceSpec,
+    TraceSpec,
+    apply_logging_levels,
+    attach_console_sink,
+    parse_trace_spec,
+    trace_install,
+)
 from pybluehost.core.types import ConnectionRole, IOCapability, LinkType
 from pybluehost.core.gap_common import (
     Appearance,
@@ -76,4 +85,12 @@ __all__ = [
     "ClassOfDevice",
     "DeviceInfo",
     "FilterPolicy",
+    # trace_console / trace_control
+    "ConsoleSink",
+    "InvalidTraceSpec",
+    "TraceSpec",
+    "apply_logging_levels",
+    "attach_console_sink",
+    "parse_trace_spec",
+    "trace_install",
 ]
