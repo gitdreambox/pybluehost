@@ -92,3 +92,38 @@ def _apply_layer(spec: TraceSpec, token: str) -> None:
     if layer not in _KNOWN_LAYERS:
         raise InvalidTraceSpec(f"Unknown layer: {layer!r}")
     spec.layers[layer] = level
+
+
+import logging
+
+# Maps trace-spec layer names to their stdlib logger names.
+_LAYER_LOGGER: dict[str, str] = {
+    "hci": "pybluehost.hci",
+    "sm": "pybluehost.core.statemachine",
+    "transport": "pybluehost.transport",
+    "l2cap": "pybluehost.l2cap",
+    "att": "pybluehost.ble.att",
+    "gatt": "pybluehost.ble.gatt",
+    "smp": "pybluehost.ble.smp",
+    "sdp": "pybluehost.classic.sdp",
+    "rfcomm": "pybluehost.classic.rfcomm",
+    "gap": "pybluehost.classic.gap",
+}
+
+_LEVEL_TO_LOGGING: dict[str, int] = {
+    "info": logging.INFO,
+    "debug": logging.DEBUG,
+}
+
+
+def apply_logging_levels(spec: TraceSpec) -> None:
+    """Adjust stdlib logger levels per the spec.
+
+    Idempotent: calling with the same spec twice has the same effect.
+    Layers not mentioned in the spec are left untouched.
+    """
+    for layer, level in spec.layers.items():
+        logger_name = _LAYER_LOGGER.get(layer)
+        if logger_name is None:
+            continue  # parse_trace_spec already validated; defensive only
+        logging.getLogger(logger_name).setLevel(_LEVEL_TO_LOGGING[level])

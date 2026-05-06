@@ -73,3 +73,32 @@ def test_invalid_level_raises():
 def test_unknown_option_raises():
     with pytest.raises(InvalidTraceSpec, match="Unknown trace option"):
         parse_trace_spec("hci,extra=garbage")
+
+
+def test_apply_logging_levels_sets_layer_logger_to_info():
+    import logging
+
+    from pybluehost.core.trace_control import apply_logging_levels, parse_trace_spec
+
+    apply_logging_levels(parse_trace_spec("l2cap"))
+    assert logging.getLogger("pybluehost.l2cap").level == logging.INFO
+
+
+def test_apply_logging_levels_sets_layer_logger_to_debug():
+    import logging
+
+    from pybluehost.core.trace_control import apply_logging_levels, parse_trace_spec
+
+    apply_logging_levels(parse_trace_spec("smp=debug"))
+    assert logging.getLogger("pybluehost.ble.smp").level == logging.DEBUG
+
+
+def test_apply_logging_levels_empty_spec_does_not_change_levels():
+    import logging
+
+    from pybluehost.core.trace_control import apply_logging_levels, parse_trace_spec
+
+    logger = logging.getLogger("pybluehost.gatt")
+    logger.setLevel(logging.WARNING)
+    apply_logging_levels(parse_trace_spec(""))
+    assert logger.level == logging.WARNING
