@@ -27,13 +27,23 @@ def format_hci_packet(
     color: bool = False,
     expand: bool = False,
 ) -> str:
-    """Render an HCIPacket as a single line (or multi-line when expand=True)."""
+    """Render an HCIPacket as a single line (or multi-line when expand=True or auto-expansion triggers)."""
     dir_label = _DIR_LABELS.get(direction, "  HCI")
     type_label, name, params = _packet_summary(packet)
 
-    if expand:
+    if expand or _should_auto_expand(packet):
         return _format_expanded(dir_label, type_label, name, packet)
     return f"{dir_label} {type_label:<4} {name:<32} {params}".rstrip()
+
+
+def _should_auto_expand(packet: HCIPacket) -> bool:
+    """Auto-expand Command_Complete/Status when status != Success."""
+    if isinstance(packet, HCI_Command_Complete_Event):
+        if packet.return_parameters and packet.return_parameters[0] != 0x00:
+            return True
+    if isinstance(packet, HCI_Command_Status_Event) and packet.status != 0x00:
+        return True
+    return False
 
 
 def _packet_summary(packet: HCIPacket) -> tuple[str, str, str]:
@@ -86,5 +96,34 @@ def _le_meta_summary(packet: HCI_LE_Meta_Event) -> tuple[str, str]:
 
 
 def _format_expanded(dir_label: str, type_label: str, name: str, packet: HCIPacket) -> str:
-    # Placeholder for Task 4 — for now just append a summary line.
-    return f"{dir_label} {type_label:<4} {name}"
+    header = f"{dir_label} {type_label:<4} {name}"
+    fields = list(_packet_fields(packet))
+    if not fields:
+        return header
+    lines = [header]
+    indent = " " * (len(dir_label) + 1 + len(type_label) + 1 + 1)
+    last_idx = len(fields) - 1
+    for i, (key, value) in enumerate(fields):
+        prefix = "└─" if i == last_idx else "├─"
+        lines.append(f"{indent}{prefix} {key:<24} = {value}")
+    return "\n".join(lines)
+
+
+def _packet_fields(packet: HCIPacket) -> list[tuple[str, str]]:
+    """Return ordered (label, formatted_value) pairs for expanded rendering."""
+    if isinstance(packet, HCI_Command_Complete_Event):
+        params = packet.return_parameters or b""
+        rows: list[tuple[str, str]] = [
+            ("num_hci_command_packets", str(packet.num_hci_command_packets)),
+            ("command_opcode", f"0x{packet.command_opcode:04X}"),
+        ]
+        if params:
+            rows.append(("status", format_status(params[0])))
+        return rows
+    if isinstance(packet, HCI_Command_Status_Event):
+        return [
+            ("status", format_status(packet.status)),
+            ("num_hci_command_packets", str(packet.num_hci_command_packets)),
+            ("command_opcode", f"0x{packet.command_opcode:04X}"),
+        ]
+    return []

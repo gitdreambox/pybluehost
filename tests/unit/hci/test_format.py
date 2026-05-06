@@ -54,3 +54,30 @@ def test_compact_le_meta_advertising_report_summarizes():
     assert "LE_Advertising_Report" in out
     assert "01:02:03:04:05:06" in out
     assert "-55 dBm" in out
+
+
+def test_command_complete_with_failure_status_expands_when_requested():
+    # Command Complete with status 0x12 (Invalid_HCI_Command_Parameters).
+    raw = bytes([0x04, 0x0E, 0x04, 0x01, 0x03, 0x0C, 0x12])
+    pkt = decode_hci_packet(raw)
+    out = format_hci_packet(pkt, direction=Direction.UP, color=False, expand=True)
+    assert out.count("\n") >= 2
+    assert "Invalid_HCI_Command_Parameters" in out
+    assert "0x12" in out
+    assert "├─" in out or "└─" in out  # tree-style indent
+
+
+def test_command_complete_with_failure_auto_expands_in_compact_mode():
+    """status != Success on Command_Complete should auto-expand even when expand=False."""
+    raw = bytes([0x04, 0x0E, 0x04, 0x01, 0x03, 0x0C, 0x12])
+    pkt = decode_hci_packet(raw)
+    out = format_hci_packet(pkt, direction=Direction.UP, color=False, expand=False)
+    assert out.count("\n") >= 2
+    assert "Invalid_HCI_Command_Parameters" in out
+
+
+def test_compact_command_complete_success_does_not_auto_expand():
+    raw = bytes([0x04, 0x0E, 0x04, 0x01, 0x03, 0x0C, 0x00])
+    pkt = decode_hci_packet(raw)
+    out = format_hci_packet(pkt, direction=Direction.UP, color=False, expand=False)
+    assert out.count("\n") == 0
