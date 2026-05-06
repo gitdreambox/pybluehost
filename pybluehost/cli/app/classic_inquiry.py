@@ -17,7 +17,12 @@ def register_classic_inquiry_command(subparsers: argparse._SubParsersAction) -> 
     p.add_argument("-t", "--transport", required=True)
     add_trace_arguments(p)
     p.set_defaults(func=lambda args: asyncio.run(
-        run_app_command(args.transport, _classic_inquiry_main, **trace_kwargs_from_args(args))
+        run_app_command(
+            args.transport,
+            _classic_inquiry_main,
+            **trace_kwargs_from_args(args),
+            trace_spec=getattr(args, "_trace_spec", None),
+        )
     ))
 
 

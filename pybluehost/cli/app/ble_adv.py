@@ -25,6 +25,7 @@ def register_ble_adv_command(subparsers: argparse._SubParsersAction) -> None:
                 args.transport,
                 lambda s, e: _ble_adv_main(s, e, name=args.name),
                 **trace_kwargs_from_args(args),
+                trace_spec=getattr(args, "_trace_spec", None),
             )
         )
     )

@@ -49,6 +49,7 @@ async def run_app_command(
     *,
     hci_log: bool = False,
     btsnoop: str | Path | None = None,
+    trace_spec: Any = None,
 ) -> int:
     """Run a long-running app command with SIGINT/SIGTERM handling.
 
@@ -81,6 +82,9 @@ async def run_app_command(
         if btsnoop is not None:
             config.trace_sinks.append(BtsnoopSink(btsnoop))
         stack = await Stack._build(transport=transport, config=config)
+        if trace_spec is not None and not trace_spec.is_empty():
+            from pybluehost.core.trace_control import attach_console_sink
+            attach_console_sink(trace_spec, stack.trace)
     except Exception as e:
         logger.error("Error: %s", _format_cli_error(e))
         return 1

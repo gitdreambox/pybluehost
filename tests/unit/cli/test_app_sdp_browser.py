@@ -103,7 +103,7 @@ async def test_sdp_browser_uses_run_app_command(monkeypatch, capsys):
 
     async def run_app(transport_arg, main_coro, **kwargs):
         assert transport_arg == "usb:vendor=csr"
-        assert kwargs == {"hci_log": True, "btsnoop": Path("sdp.cfa")}
+        assert kwargs == {"hci_log": True, "btsnoop": Path("sdp.cfa"), "trace_spec": None}
         stack = FakeStack()
         await main_coro(stack, asyncio.Event())
         assert stack.encrypted is True

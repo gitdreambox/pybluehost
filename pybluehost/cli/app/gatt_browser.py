@@ -31,6 +31,7 @@ async def _gatt_browser_main(args: argparse.Namespace) -> int:
         args.transport,
         lambda stack, stop: _gatt_browser_run(stack, stop, addr),
         **trace_kwargs_from_args(args),
+        trace_spec=getattr(args, "_trace_spec", None),
     )
 
 

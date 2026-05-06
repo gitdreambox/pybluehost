@@ -19,7 +19,12 @@ def register_gatt_server_command(subparsers: argparse._SubParsersAction) -> None
     p.add_argument("-t", "--transport", required=True)
     add_trace_arguments(p)
     p.set_defaults(func=lambda args: asyncio.run(
-        run_app_command(args.transport, _gatt_server_main, **trace_kwargs_from_args(args))
+        run_app_command(
+            args.transport,
+            _gatt_server_main,
+            **trace_kwargs_from_args(args),
+            trace_spec=getattr(args, "_trace_spec", None),
+        )
     ))
 
 

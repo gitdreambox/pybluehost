@@ -119,6 +119,7 @@ async def _sdp_browser_main(args: argparse.Namespace) -> int:
             stack, stop, addr, service_uuid, sdp_timeout, max_attribute_bytes
         ),
         **trace_kwargs_from_args(args),
+        trace_spec=getattr(args, "_trace_spec", None),
     )
 
 

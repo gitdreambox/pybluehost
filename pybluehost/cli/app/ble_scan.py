@@ -21,6 +21,7 @@ def register_ble_scan_command(subparsers: argparse._SubParsersAction) -> None:
             args.transport,
             _ble_scan_main,
             **trace_kwargs_from_args(args),
+            trace_spec=getattr(args, "_trace_spec", None),
         )
     ))
 
