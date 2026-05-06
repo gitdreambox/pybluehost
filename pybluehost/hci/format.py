@@ -17,7 +17,8 @@ from pybluehost.hci.format_fields import (
     format_rssi,
 )
 
-_DIR_LABELS = {Direction.DOWN: "↓ HCI", Direction.UP: "↑ HCI"}
+DIR_LABELS = {Direction.DOWN: "↓ HCI", Direction.UP: "↑ HCI"}
+_DIR_LABELS = DIR_LABELS  # alias for any internal callers; will be removed in a future cleanup
 
 
 def format_hci_packet(
@@ -28,7 +29,7 @@ def format_hci_packet(
     expand: bool = False,
 ) -> str:
     """Render an HCIPacket as a single line (or multi-line when expand=True or auto-expansion triggers)."""
-    dir_label = _DIR_LABELS.get(direction, "  HCI")
+    dir_label = DIR_LABELS.get(direction, "  HCI")
     type_label, name, params = _packet_summary(packet)
 
     if expand or _should_auto_expand(packet):

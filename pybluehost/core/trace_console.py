@@ -27,6 +27,8 @@ _MAGENTA = "\x1b[35m"
 class ConsoleSink:
     """Writes one HCI trace line per event to stream (default stderr)."""
 
+    _DEFAULT_SUPPRESS = {"Number_Of_Completed_Packets"}
+
     def __init__(
         self,
         *,
@@ -34,11 +36,17 @@ class ConsoleSink:
         color: bool | None = None,
         layers: set[str] | None = None,
         level: str = "info",
+        include: set[str] | None = None,
+        full_acl: bool = False,
+        max_acl_payload: int = 24,
     ) -> None:
         self._stream = stream if stream is not None else sys.stderr
         self._color = self._resolve_color(color, self._stream)
         self._layers = layers
         self._level = level
+        self._include = include or set()
+        self._full_acl = full_acl
+        self._max_acl_payload = max_acl_payload
 
     @staticmethod
     def _resolve_color(value: bool | None, stream: IO[str]) -> bool:
@@ -63,12 +71,23 @@ class ConsoleSink:
             self._stream.write(line + "\n")
             self._stream.flush()
 
+    def _should_suppress(self, packet: object) -> bool:
+        name = type(packet).__name__.replace("HCI_", "").replace("_Event", "")
+        if name in self._include:
+            return False
+        return name in self._DEFAULT_SUPPRESS
+
     def _render(self, event: TraceEvent) -> str:
         packet = event.decoded
         if not isinstance(packet, HCIPacket):
             preview = event.raw_bytes.hex()[:40]
             ellipsis = "..." if len(event.raw_bytes) > 20 else ""
             return f"{event.direction.name:<4} HCI <undecoded {preview}{ellipsis}>"
+        if self._should_suppress(packet):
+            return ""
+        from pybluehost.hci.packets import HCIACLData
+        if isinstance(packet, HCIACLData):
+            return self._render_acl(event, packet)
         try:
             line = format_hci_packet(
                 packet,
@@ -78,6 +97,21 @@ class ConsoleSink:
             )
         except Exception as exc:
             return f"<format error: {exc}> raw={event.raw_bytes.hex()[:40]}"
+        if not self._color:
+            return line
+        return self._colorize(line, event.direction)
+
+    def _render_acl(self, event: TraceEvent, packet: "HCIACLData") -> str:
+        from pybluehost.hci.format import DIR_LABELS
+
+        plen = len(packet.data)
+        body = packet.data if self._full_acl else packet.data[: self._max_acl_payload]
+        truncated = "" if (self._full_acl or plen <= self._max_acl_payload) else " ..."
+        prefix = DIR_LABELS.get(event.direction, "  HCI")
+        line = (
+            f"{prefix} ACL  handle=0x{packet.handle:04X} len={plen} "
+            f"data={body.hex(' ')}{truncated}"
+        )
         if not self._color:
             return line
         return self._colorize(line, event.direction)

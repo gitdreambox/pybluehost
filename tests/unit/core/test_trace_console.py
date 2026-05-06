@@ -92,3 +92,59 @@ def test_force_color_env_var_forces_on(monkeypatch):
     monkeypatch.setenv("FORCE_COLOR", "1")
     sink = ConsoleSink()
     assert sink._color is True
+
+
+@pytest.mark.asyncio
+async def test_number_of_completed_packets_suppressed_by_default():
+    from pybluehost.hci.packets import HCI_Number_Of_Completed_Packets_Event
+
+    buf = io.StringIO()
+    sink = ConsoleSink(stream=buf, color=False)
+    event = HCI_Number_Of_Completed_Packets_Event(completed={0x40: 1})
+    await sink.on_trace(_make_event(event, direction=Direction.UP))
+    assert buf.getvalue() == ""
+
+
+@pytest.mark.asyncio
+async def test_number_of_completed_packets_shown_when_explicit_include():
+    from pybluehost.hci.packets import HCI_Number_Of_Completed_Packets_Event
+
+    buf = io.StringIO()
+    sink = ConsoleSink(
+        stream=buf, color=False, include={"Number_Of_Completed_Packets"},
+    )
+    event = HCI_Number_Of_Completed_Packets_Event(completed={0x40: 1})
+    await sink.on_trace(_make_event(event, direction=Direction.UP))
+    assert "Number_Of_Completed_Packets" in buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_acl_data_truncates_payload_at_default_24_bytes():
+    from pybluehost.hci.packets import HCIACLData
+
+    buf = io.StringIO()
+    sink = ConsoleSink(stream=buf, color=False)
+    payload = bytes(range(64))  # 64-byte payload
+    pkt = HCIACLData(handle=0x40, pb_flag=0, bc_flag=0, data=payload)
+    await sink.on_trace(_make_event(pkt))
+    out = buf.getvalue()
+    assert "handle=0x0040" in out
+    assert "len=64" in out
+    # First 24 bytes appear; later bytes do not.
+    truncated = payload[:24]
+    later = payload[40:]
+    assert (truncated.hex() in out.lower()) or (truncated.hex(' ') in out)
+    assert later.hex() not in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_acl_data_full_payload_when_full_acl_enabled():
+    from pybluehost.hci.packets import HCIACLData
+
+    buf = io.StringIO()
+    sink = ConsoleSink(stream=buf, color=False, full_acl=True)
+    payload = bytes(range(40))
+    pkt = HCIACLData(handle=0x40, pb_flag=0, bc_flag=0, data=payload)
+    await sink.on_trace(_make_event(pkt))
+    out = buf.getvalue()
+    assert (payload[24:].hex(" ") in out) or (payload[24:].hex() in out)
