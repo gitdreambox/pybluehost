@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import struct
 from dataclasses import dataclass
 from typing import Callable, Awaitable
+
+logger = logging.getLogger(__name__)
 
 from pybluehost.core.types import LinkType
 from pybluehost.hci.constants import ACL_PB_FIRST_AUTO_FLUSH
@@ -154,9 +157,17 @@ class L2CAPManager:
             )
             channels[CID_CLASSIC_SIGNALING] = signaling
         self._connections[handle] = channels
+        logger.info(
+            "L2CAP connection handle=0x%04X link_type=%s opened",
+            handle,
+            link_type.name if hasattr(link_type, "name") else link_type,
+        )
 
     async def on_disconnection(self, handle: int, reason: int) -> None:
         """Clean up all channels for a disconnected connection."""
+        logger.info(
+            "L2CAP connection handle=0x%04X closed (reason=0x%02X)", handle, reason
+        )
         channels = self._connections.pop(handle, None)
         if channels:
             for ch in channels.values():
@@ -325,6 +336,11 @@ class L2CAPManager:
                 )
                 return
             if result != 0:
+                logger.warning(
+                    "L2CAP CID=0x%04X configuration rejected (result=0x%04X)",
+                    pending.channel.cid,
+                    result,
+                )
                 pending.future.set_exception(
                     RuntimeError(f"L2CAP Configure Response failed: result=0x{result:04X}")
                 )
@@ -362,6 +378,9 @@ class L2CAPManager:
             hci=self._hci,
         )
         self.register_channel(handle, channel)
+        logger.info(
+            "L2CAP CID=0x%04X PSM=0x%04X opened", channel.cid, psm
+        )
         self._classic_inbound_pending[(handle, local_cid)] = _ClassicInboundPending(
             channel=channel,
             handler=handler,
@@ -421,4 +440,9 @@ class L2CAPManager:
             and not pending.future.done()
         ):
             pending.channel.open()
+            logger.info(
+                "L2CAP CID=0x%04X configured (MTU=%d)",
+                pending.channel.cid,
+                pending.channel.mtu,
+            )
             pending.future.set_result(pending.channel)

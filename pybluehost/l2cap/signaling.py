@@ -3,9 +3,12 @@
 Handles signaling PDUs on CID 0x0001 (Classic) and CID 0x0005 (LE).
 """
 from __future__ import annotations
+import logging
 import struct
 from dataclasses import dataclass
 from pybluehost.l2cap.constants import SignalingCode
+
+logger = logging.getLogger("pybluehost.l2cap.signaling")
 
 
 @dataclass
@@ -26,6 +29,7 @@ def decode_signaling(data: bytes) -> SignalingPacket:
     if len(data) < 4:
         raise ValueError(f"Signaling packet too short: {len(data)} bytes")
     code, ident, length = struct.unpack_from("<BBH", data)
+    logger.debug("L2CAP signaling code=0x%02X id=%d len=%d", code, ident, length)
     payload = data[4:4 + length]
     try:
         code = SignalingCode(code)
