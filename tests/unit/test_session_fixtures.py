@@ -8,6 +8,7 @@ import uuid
 import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from _pytest.outcomes import Exit
@@ -365,7 +366,11 @@ async def test_stack_fixture_exits_with_clear_transport_error(
 
     monkeypatch.setattr(project_conftest, "build_stack_from_spec", fake_build)
 
-    gen = project_conftest.stack.__wrapped__("usb:vendor=intel")
+    # Direct invocation of the wrapped fixture: synthesize a minimal request
+    # whose ``config`` has no _pybluehost_trace_spec attribute (the fixture
+    # uses ``getattr(..., None)`` and returns before checking it anyway).
+    fake_request = SimpleNamespace(config=SimpleNamespace())
+    gen = project_conftest.stack.__wrapped__("usb:vendor=intel", fake_request)
     with pytest.raises(Exit) as excinfo:
         await gen.__anext__()
 

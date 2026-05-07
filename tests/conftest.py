@@ -63,6 +63,28 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Print every detected Bluetooth transport adapter, then exit.",
     )
 
+    # pytest's built-in ``debugging`` plugin registers ``--trace`` as a
+    # boolean PDB shortcut. We want ``--trace=<spec>`` for HCI / protocol
+    # layer logging, so remove the existing action before re-registering.
+    # Users running ``pytest --trace=hci`` from the CLI must additionally
+    # pass ``-p no:debugging`` (or rely on this conftest's removal — which
+    # only fires after pytest's initial argparse pass). For programmatic
+    # invocation (the bulk of the test suite), the conftest path is enough.
+    optparser = parser.optparser
+    existing = optparser._option_string_actions.pop("--trace", None)
+    if existing is not None:
+        for group in (*optparser._action_groups, *optparser._mutually_exclusive_groups):
+            if existing in group._group_actions:
+                group._group_actions.remove(existing)
+        if existing in optparser._actions:
+            optparser._actions.remove(existing)
+    parser.addoption(
+        "--trace",
+        action="store",
+        default=None,
+        help="Trace spec for HCI / protocol layer logging (e.g. 'hci=debug,l2cap').",
+    )
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Register custom markers and handle ``--list-transports`` diagnostics."""
@@ -81,6 +103,19 @@ def pytest_configure(config: pytest.Config) -> None:
         "virtual_only: deterministic test, only valid on virtual controller",
     )
     config.addinivalue_line("markers", "slow: tests taking >5s")
+
+    from pybluehost.core.trace_control import (
+        InvalidTraceSpec,
+        apply_logging_levels,
+        parse_trace_spec,
+    )
+    trace_str = config.getoption("--trace") or os.environ.get("PYBLUEHOST_TRACE")
+    try:
+        trace_spec = parse_trace_spec(trace_str)
+    except InvalidTraceSpec as exc:
+        pytest.exit(f"Invalid --trace value: {exc}", returncode=4)
+    apply_logging_levels(trace_spec)
+    config._pybluehost_trace_spec = trace_spec
 
     if config.getoption("--list-transports"):
         from pybluehost.transport.usb import USBTransport
@@ -220,7 +255,7 @@ def transport_mode(selected_transport_spec: str) -> str:
 
 
 @pytest.fixture
-async def stack(selected_transport_spec: str):
+async def stack(selected_transport_spec: str, request: pytest.FixtureRequest):
     """Full Stack on the selected transport. Built and torn down per test."""
     try:
         s = await build_stack_from_spec(selected_transport_spec)
@@ -231,6 +266,10 @@ async def stack(selected_transport_spec: str):
         )
     if TRACKER.is_fallback():
         TRACKER.increment()
+    spec = getattr(request.config, "_pybluehost_trace_spec", None)
+    if spec is not None and not spec.is_empty():
+        from pybluehost.core.trace_control import attach_console_sink
+        attach_console_sink(spec, s.trace)
     try:
         yield s
     finally:
