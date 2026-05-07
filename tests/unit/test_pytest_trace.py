@@ -1,4 +1,4 @@
-"""pytest --trace option registration + propagation."""
+"""pytest --pybluehost-trace option registration + propagation."""
 from __future__ import annotations
 
 import pathlib
@@ -10,14 +10,12 @@ _PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def test_pytest_help_shows_trace_option():
-    # ``-p no:debugging`` disables pytest's built-in ``--trace`` PDB shortcut
-    # so our conftest can register ``--trace=<spec>`` for layer logging.
     r = subprocess.run(
-        [sys.executable, "-m", "pytest", "-p", "no:debugging", "--help"],
+        [sys.executable, "-m", "pytest", "--help"],
         capture_output=True, text=True,
         cwd=str(_PROJECT_ROOT),
     )
-    assert "--trace" in r.stdout
+    assert "--pybluehost-trace" in r.stdout
     # The PyBlueHost option accepts a spec; its help text should be visible.
     assert "Trace spec" in r.stdout
 
@@ -34,9 +32,8 @@ def test_pytest_invalid_trace_exits_nonzero(tmp_path):
         r = subprocess.run(
             [
                 sys.executable, "-m", "pytest",
-                "-p", "no:debugging",
                 str(test_file),
-                "--trace=invalid_layer",
+                "--pybluehost-trace=invalid_layer",
                 "-q",
             ],
             capture_output=True, text=True,

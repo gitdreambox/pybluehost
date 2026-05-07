@@ -65,24 +65,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
     # pytest's built-in ``debugging`` plugin registers ``--trace`` as a
     # boolean PDB shortcut. We want ``--trace=<spec>`` for HCI / protocol
-    # layer logging, so remove the existing action before re-registering.
-    # Users running ``pytest --trace=hci`` from the CLI must additionally
-    # pass ``-p no:debugging`` (or rely on this conftest's removal — which
-    # only fires after pytest's initial argparse pass). For programmatic
-    # invocation (the bulk of the test suite), the conftest path is enough.
-    optparser = parser.optparser
-    existing = optparser._option_string_actions.pop("--trace", None)
-    if existing is not None:
-        for group in (*optparser._action_groups, *optparser._mutually_exclusive_groups):
-            if existing in group._group_actions:
-                group._group_actions.remove(existing)
-        if existing in optparser._actions:
-            optparser._actions.remove(existing)
+    # layer logging. To avoid the collision we register under a pytest-only
+    # name; the equivalent CLI option (``pybluehost --trace=...``) is
+    # unaffected because the CLI runs in its own argparse parser.
     parser.addoption(
-        "--trace",
+        "--pybluehost-trace",
         action="store",
         default=None,
-        help="Trace spec for HCI / protocol layer logging (e.g. 'hci=debug,l2cap').",
+        help="Trace spec for HCI / protocol layer logging (e.g. 'hci=debug,l2cap'). "
+             "Same syntax as pybluehost CLI's --trace.",
     )
 
 
@@ -109,7 +100,7 @@ def pytest_configure(config: pytest.Config) -> None:
         apply_logging_levels,
         parse_trace_spec,
     )
-    trace_str = config.getoption("--trace") or os.environ.get("PYBLUEHOST_TRACE")
+    trace_str = config.getoption("--pybluehost-trace") or os.environ.get("PYBLUEHOST_TRACE")
     try:
         trace_spec = parse_trace_spec(trace_str)
     except InvalidTraceSpec as exc:
