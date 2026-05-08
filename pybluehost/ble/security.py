@@ -1,11 +1,29 @@
 """SecurityConfig and Cross-Transport Key Derivation (CTKD)."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
 
 from pybluehost.ble.smp import SMPCrypto
 from pybluehost.core.keys import LTK
+
+
+# SSP shares the SMP logger namespace per the trace/log plan.
+ssp_logger = logging.getLogger("pybluehost.ble.smp")
+
+
+def _log_ssp_user_confirmation(*, handle: int, numeric_value: int) -> None:
+    """Log an SSP user-confirmation request (numeric comparison)."""
+    ssp_logger.info(
+        "SSP user_confirmation handle=0x%04X numeric=%06d",
+        handle, numeric_value,
+    )
+
+
+def _log_ssp_phase(*, handle: int, phase: str) -> None:
+    """Log a transition into a particular SSP pairing phase."""
+    ssp_logger.info("SSP phase=%s on handle=0x%04X", phase, handle)
 
 
 @dataclass

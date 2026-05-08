@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import struct
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -28,6 +29,23 @@ from pybluehost.hci.constants import (
     HCI_WRITE_SCAN_ENABLE,
 )
 from pybluehost.hci.packets import HCICommand, HCIEvent
+
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Logging helpers
+# ---------------------------------------------------------------------------
+
+def _log_inquiry_started(*, duration_ms: int) -> None:
+    """Log that a Classic Inquiry has been started."""
+    logger.info("Classic Inquiry started (duration=%dms)", duration_ms)
+
+
+def _log_inquiry_complete(*, num_devices: int) -> None:
+    """Log completion of a Classic Inquiry, with the number of devices found."""
+    logger.info("Classic Inquiry complete: found %d devices", num_devices)
 
 
 # ---------------------------------------------------------------------------
@@ -86,19 +104,27 @@ class ClassicDiscovery:
         self._hci = hci
         self._handlers: list[Callable[[DeviceInfo], object]] = []
         self._active = False
+        self._device_count = 0
 
     def on_result(self, handler: Callable[[DeviceInfo], object]) -> None:
         self._handlers.append(handler)
 
     async def on_hci_event(self, event: HCIEvent) -> None:
-        if event.event_code != EventCode.INQUIRY_RESULT:
+        if event.event_code == EventCode.INQUIRY_RESULT:
+            await self._on_inquiry_result_event(event.parameters)
             return
-        await self._on_inquiry_result_event(event.parameters)
+        if event.event_code == EventCode.INQUIRY_COMPLETE:
+            _log_inquiry_complete(num_devices=self._device_count)
+            self._active = False
+            return
 
     async def start(self, config: InquiryConfig = InquiryConfig()) -> None:
         """Start inquiry."""
         lap_bytes = config.lap.to_bytes(3, "little")
         params = lap_bytes + bytes([config.duration, config.max_responses])
+        # duration field is in units of 1.28s
+        _log_inquiry_started(duration_ms=int(config.duration * 1280))
+        self._device_count = 0
         await self._hci.send_command(_make_cmd(HCI_INQUIRY, params))
         self._active = True
 
@@ -118,6 +144,7 @@ class ClassicDiscovery:
 
     async def _on_inquiry_result(self, info: DeviceInfo) -> None:
         """Called by HCI event router on inquiry result."""
+        self._device_count += 1
         for handler in self._handlers:
             handler(info)
 
