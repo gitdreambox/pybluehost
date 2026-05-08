@@ -129,12 +129,13 @@ class Stack:
         stack._mode = mode
         stack._config = cfg
 
-        # 1. Trace
+        # 1. Trace — always start the dispatch loop so sinks attached later
+        # (e.g. ConsoleSink via attach_console_sink in cli/_lifecycle) deliver
+        # events live instead of accumulating until stack.close().
         trace = TraceSystem()
         for sink in cfg.trace_sinks:
             trace.add_sink(sink)
-        if cfg.trace_sinks:
-            await trace.start()
+        await trace.start()
         stack._trace = trace
 
         # 2. HCI Controller
