@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import struct
 from dataclasses import dataclass, field
 from enum import IntFlag
@@ -20,6 +21,25 @@ from pybluehost.ble.att import (
     ATT_Handle_Value_Notification, ATT_Handle_Value_Indication,
     decode_att_pdu,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def _log_service_discovery_complete(*, handle: int, num_services: int) -> None:
+    """Log completion of GATT primary-service discovery on a connection."""
+    logger.info("GATT discovered %d services on handle=0x%04X", num_services, handle)
+
+
+def _log_cccd_subscribed(*, handle: int, char_handle: int, char_name: str | None) -> None:
+    """Log a successful CCCD subscription for a characteristic."""
+    suffix = f" ({char_name})" if char_name else ""
+    logger.info("GATT subscribed to handle=0x%04X%s via CCCD", char_handle, suffix)
+
+
+def _log_notification_received(*, handle: int, char_handle: int, length: int) -> None:
+    """Log inbound Handle_Value_Notification received on a connection."""
+    logger.debug("GATT notification handle=0x%04X char=0x%04X len=%d", handle, char_handle, length)
 
 
 # GATT UUIDs
