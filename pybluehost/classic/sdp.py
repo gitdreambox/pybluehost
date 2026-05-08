@@ -1,6 +1,7 @@
 """SDP (Service Discovery Protocol) — data model, codec, server, and client."""
 from __future__ import annotations
 
+import logging
 import struct
 import asyncio
 from dataclasses import dataclass, field
@@ -8,6 +9,23 @@ from enum import IntEnum
 from typing import Any
 
 from pybluehost.l2cap.channel import SimpleChannelEvents
+
+logger = logging.getLogger(__name__)
+
+
+def _log_service_search_complete(*, uuid: int, num_records: int) -> None:
+    """Log INFO when an SDP service search completes successfully."""
+    from pybluehost.hci.format_fields import format_uuid16_default
+    logger.info(
+        "SDP service search complete: %d records matching %s",
+        num_records, format_uuid16_default(uuid),
+    )
+
+
+def _log_service_search_timeout(*, uuid: int) -> None:
+    """Log WARN when an SDP service search times out."""
+    from pybluehost.hci.format_fields import format_uuid16_default
+    logger.warning("SDP service search timeout for %s", format_uuid16_default(uuid))
 
 
 # ---------------------------------------------------------------------------
@@ -486,20 +504,28 @@ class SDPClient:
         attr_id_list = encode_data_element(self._build_attr_id_list(attr_ids))
         max_count = max(0x0007, min(self._max_attribute_byte_count, 0xFFFF))
         params = search_pattern + struct.pack(">H", max_count) + attr_id_list + b"\x00"
-        response = await self._request(_SDPPDU.SERVICE_SEARCH_ATTRIBUTE_REQUEST, params)
+        try:
+            response = await self._request(_SDPPDU.SERVICE_SEARCH_ATTRIBUTE_REQUEST, params)
+        except TimeoutError:
+            _log_service_search_timeout(uuid=uuid)
+            raise
         if response[0] != _SDPPDU.SERVICE_SEARCH_ATTRIBUTE_RESPONSE:
+            _log_service_search_complete(uuid=uuid, num_records=0)
             return []
         param_len = struct.unpack_from(">H", response, 3)[0]
         params = response[5:5 + param_len]
         if len(params) < 3:
+            _log_service_search_complete(uuid=uuid, num_records=0)
             return []
         attr_byte_count = struct.unpack_from(">H", params)[0]
         attr_bytes = params[2:2 + attr_byte_count]
         if not attr_bytes:
+            _log_service_search_complete(uuid=uuid, num_records=0)
             return []
         attr_lists_de, _consumed = decode_data_element(attr_bytes)
         records: list[dict[int, DataElement]] = []
         if attr_lists_de.type != DataElementType.SEQUENCE:
+            _log_service_search_complete(uuid=uuid, num_records=0)
             return records
         for attr_list in attr_lists_de.value:
             if attr_list.type != DataElementType.SEQUENCE:
@@ -512,6 +538,7 @@ class SDPClient:
                 if attr_id_de.type == DataElementType.UINT:
                     record[attr_id_de.value] = attr_value_de
             records.append(record)
+        _log_service_search_complete(uuid=uuid, num_records=len(records))
         return records
 
     async def find_rfcomm_channel(
