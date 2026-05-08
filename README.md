@@ -336,6 +336,45 @@ uv run pybluehost tools usb diagnose
 
 ---
 
+## 调试与日志
+
+PyBlueHost 内置结构化 trace 系统，可在不影响默认零开销的前提下打开任意层的实时彩色日志。
+
+### CLI 用法
+
+```bash
+# 打开 HCI 层 trace（彩色单行,自动 TTY 探测,自动展开错误事件）
+pybluehost --trace=hci app gatt-browser --transport=virtual
+
+# 多层独立级别
+pybluehost --trace=hci=debug,l2cap app gatt-browser --transport=usb
+
+# 全部层 debug（最详细）
+pybluehost --trace=*=debug app gatt-browser --transport=virtual
+
+# ACL 不截断（默认 24 字节）
+pybluehost --trace=hci,full-acl app spp-echo --transport=usb
+
+# 把通常被静音的事件加回来
+pybluehost --trace=hci,include=Number_Of_Completed_Packets app ble-scan --transport=usb
+```
+
+### 环境变量
+
+`PYBLUEHOST_TRACE=hci pybluehost ...` —— 与 `--trace=...` 等价；CLI flag 优先。
+
+### 颜色控制
+
+- 默认：stderr 是 TTY 时上色；管道 / 文件自动关
+- `NO_COLOR=1` 强制关
+- `FORCE_COLOR=1` 强制开
+
+### Layer 名字
+
+`hci`, `sm`, `transport`, `l2cap`, `att`, `gatt`, `smp`, `sdp`, `rfcomm`, `gap`
+
+---
+
 ## 测试
 
 ### 选择 transport

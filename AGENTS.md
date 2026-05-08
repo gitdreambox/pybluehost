@@ -263,6 +263,11 @@ uv run pytest tests/ --transport=virtual            # 强制虚拟控制器
 uv run pytest tests/ --transport=usb                # 真硬件（自动检测）
 uv run pytest tests/ --transport=usb:vendor=intel   # 限定厂商
 uv run pytest --list-transports                     # 诊断
+
+# Trace / debug
+uv run --frozen pytest tests/ --pybluehost-trace=hci --transport=virtual    # pytest 内打开 HCI trace
+uv run --frozen pytest tests/ --pybluehost-trace=*=debug --transport=virtual # 全部层 debug
+PYBLUEHOST_TRACE=hci=debug uv run --frozen pytest tests/                    # 通过环境变量
 ```
 
 ---
