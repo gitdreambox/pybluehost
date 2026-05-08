@@ -2,12 +2,34 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import struct
 from dataclasses import dataclass
 from enum import IntEnum
 
 from pybluehost.l2cap.channel import SimpleChannelEvents
 from pybluehost.l2cap.constants import PSM_RFCOMM
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle log helpers
+# ---------------------------------------------------------------------------
+
+def _log_channel_opened(*, dlci: int, channel: int, mtu: int) -> None:
+    """Log INFO when an RFCOMM DLC has been successfully opened."""
+    logger.info("RFCOMM DLCI=0x%02X (channel %d) opened MTU=%d", dlci, channel, mtu)
+
+
+def _log_channel_closed(*, dlci: int) -> None:
+    """Log INFO when an RFCOMM DLC has been gracefully closed."""
+    logger.info("RFCOMM DLCI=0x%02X closed", dlci)
+
+
+def _log_channel_disconnect_abnormal(*, dlci: int, reason: str) -> None:
+    """Log WARN when an RFCOMM DLC disconnects abnormally."""
+    logger.warning("RFCOMM DLCI=0x%02X abnormal disconnect: %s", dlci, reason)
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +195,7 @@ class RFCOMMSession:
         await self._send_sabm_and_wait_ua(dlci=dlci)
         ch = RFCOMMChannel(dlci=dlci, session=self, max_frame_size=127)
         self._dlcs[dlci] = ch
+        _log_channel_opened(dlci=dlci, channel=server_channel, mtu=ch.max_frame_size)
         return ch
 
     async def close(self) -> None:
@@ -219,6 +242,11 @@ class RFCOMMSession:
                         max_frame_size=127,
                     )
                     self._dlcs[frame.dlci] = channel
+                    _log_channel_opened(
+                        dlci=frame.dlci,
+                        channel=server_channel,
+                        mtu=channel.max_frame_size,
+                    )
                     result = handler(channel)
                     if asyncio.iscoroutine(result):
                         task = asyncio.create_task(result)
@@ -343,6 +371,7 @@ class RFCOMMChannel:
             raise NotImplementedError("RFCOMM close requires an open L2CAP-backed session")
         frame = RFCOMMFrame(dlci=self._dlci, frame_type=RFCOMMFrameType.DISC, pf=True, data=b"")
         await self._session._l2cap_channel.send(encode_frame(frame))
+        _log_channel_closed(dlci=self._dlci)
 
     def on_data(self, handler: object) -> None:
         self._data_handler = handler
