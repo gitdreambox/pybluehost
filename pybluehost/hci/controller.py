@@ -10,8 +10,14 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import logging
 import time
 from typing import Callable, Awaitable
+
+# Connection-lifecycle sub-logger; distinct from any controller-wide logger so
+# users can isolate connection events via `--trace=hci=debug` (parent
+# `pybluehost.hci` level propagates to children unless overridden).
+connection_logger = logging.getLogger("pybluehost.hci.connection")
 
 from pybluehost.core.errors import CommandTimeoutError, TransportError
 from pybluehost.core.trace import Direction, TraceEvent, TraceSystem
@@ -319,3 +325,37 @@ class HCIController:
             result = self._on_hci_event(event)
             if asyncio.iscoroutine(result):
                 await result
+
+
+# ---------------------------------------------------------------------------
+# Connection-lifecycle log helpers
+# ---------------------------------------------------------------------------
+#
+# These helpers emit human-readable INFO logs at the two key connection
+# transitions (LE_Connection_Complete and Disconnection_Complete).  They are
+# intentionally standalone so they can be unit-tested without spinning up a
+# full HCIController.  Wiring into ``_handle_event`` is deferred until the
+# event-decoding path can supply the structured fields directly (Task 23
+# provides E2E coverage that exercises this end-to-end).
+
+
+def _log_le_connection_complete(
+    *, handle: int, peer_addr: str, role: int, interval_ms: float,
+) -> None:
+    """Emit an INFO log line for an LE Connection_Complete event."""
+    from pybluehost.hci.format_fields import format_role
+
+    connection_logger.info(
+        "HCI LE_Connection_Complete handle=0x%04X peer=%s role=%s interval=%.1fms",
+        handle, peer_addr, format_role(role), interval_ms,
+    )
+
+
+def _log_disconnection_complete(*, handle: int, reason: int) -> None:
+    """Emit an INFO log line for a Disconnection_Complete event."""
+    from pybluehost.hci.format_fields import format_status
+
+    connection_logger.info(
+        "HCI Disconnection_Complete handle=0x%04X reason=%s",
+        handle, format_status(reason),
+    )
