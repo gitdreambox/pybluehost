@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import struct
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -9,6 +10,48 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from pybluehost.core.address import BDAddress
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Pairing lifecycle logging helpers
+# ---------------------------------------------------------------------------
+
+_PAIRING_FAILURE_NAMES: dict[int, str] = {
+    0x01: "Passkey_Entry_Failed",
+    0x02: "Out_Of_Band",
+    0x03: "Authentication_Requirements",
+    0x04: "Confirm_Value_Failed",
+    0x05: "Pairing_Not_Supported",
+    0x06: "Encryption_Key_Size",
+    0x07: "Command_Not_Supported",
+    0x08: "Unspecified_Reason",
+    0x09: "Repeated_Attempts",
+}
+
+
+def _log_pairing_started(*, handle: int, io_caps: str, bonding: bool, mitm: bool) -> None:
+    logger.info(
+        "SMP pairing started handle=0x%04X io_caps=%s bonding=%s mitm=%s",
+        handle, io_caps, "YES" if bonding else "NO", "YES" if mitm else "NO",
+    )
+
+
+def _log_pairing_phase(*, handle: int, phase: str) -> None:
+    logger.info("SMP -> %s on handle=0x%04X", phase, handle)
+
+
+def _log_pairing_complete(*, handle: int, peer_addr: str, ltk_stored: bool) -> None:
+    logger.info(
+        "SMP paired with %s (handle=0x%04X) ltk_stored=%s",
+        peer_addr, handle, "YES" if ltk_stored else "NO",
+    )
+
+
+def _log_pairing_failed(*, handle: int, reason: int) -> None:
+    name = _PAIRING_FAILURE_NAMES.get(reason, f"0x{reason:02X}")
+    logger.warning("SMP pairing failed handle=0x%04X reason=%s", handle, name)
 
 
 # ---------------------------------------------------------------------------
