@@ -338,40 +338,92 @@ uv run pybluehost tools usb diagnose
 
 ## 调试与日志
 
-PyBlueHost 内置结构化 trace 系统，可在不影响默认零开销的前提下打开任意层的实时彩色日志。
+PyBlueHost 内置结构化 trace 系统：HCI 包按命令/事件名展开（含字段、SIG company name 等查表），按层独立可控，彩色实时输出到 stderr。默认零开销 —— 不指定 `--trace` 时不挂任何 sink。
 
-### CLI 用法
+### CLI 快速上手
 
 ```bash
-# 打开 HCI 层 trace（彩色单行,自动 TTY 探测,自动展开错误事件）
+# 打开 HCI 层 trace,实时彩色输出到 stderr
 pybluehost --trace=hci app gatt-browser --transport=virtual
 
-# 多层独立级别
+# 多层独立级别（HCI 详细、L2CAP 摘要）
 pybluehost --trace=hci=debug,l2cap app gatt-browser --transport=usb
 
-# 全部层 debug（最详细）
+# 所有层 debug 级别（最详细，调握手问题用）
 pybluehost --trace=*=debug app gatt-browser --transport=virtual
 
-# ACL 不截断（默认 24 字节）
+# ACL 不截断（默认 24 字节,适合调试 ATT 长 PDU）
 pybluehost --trace=hci,full-acl app spp-echo --transport=usb
 
-# 把通常被静音的事件加回来
+# 把默认被静音的事件加回来
 pybluehost --trace=hci,include=Number_Of_Completed_Packets app ble-scan --transport=usb
 ```
 
+### 输出样例
+
+```
+↓ HCI Cmd  HCI_LE_Set_Scan_Params
+↑ HCI Evt  Command_Complete                 op=0x200B status=Success
+↑ HCI Evt  LE_Advertising_Report            Random F8:1A:94:1D:5C:62 rssi=-67 dBm
+↑ HCI Evt  Command_Complete                 op=0x200C status=Invalid_HCI_Command_Parameters(0x12)
+                                            ├── num_hci_command_packets = 1
+                                            ├── command_opcode          = 0x200C
+                                            └── status                  = 0x12 (Invalid_HCI_Command_Parameters)
+```
+
+成功事件单行紧凑；`status != Success` 等异常自动展开为多行，每个字段一行带名字解析。
+
+### Spec 语法（`--trace` / `PYBLUEHOST_TRACE` 共用）
+
+| 形式 | 含义 |
+|------|------|
+| `<layer>` | 该层 INFO 级 |
+| `<layer>=info` / `<layer>=debug` | 显式级别 |
+| `*` / `*=debug` | 通配所有层 |
+| `<layer1>,<layer2>=debug,<layer3>` | 多层、各自级别，逗号分隔 |
+| `,full-acl` | ACL data 不截断 |
+| `,include=<EventName>` | 把默认静音的事件名加回来（如 `Number_Of_Completed_Packets`） |
+
+**层名字**：`hci`、`sm`（state machine）、`transport`、`l2cap`、`att`、`gatt`、`smp`、`sdp`、`rfcomm`、`gap`
+
 ### 环境变量
 
-`PYBLUEHOST_TRACE=hci pybluehost ...` —— 与 `--trace=...` 等价；CLI flag 优先。
+```bash
+PYBLUEHOST_TRACE=hci=debug pybluehost app gatt-browser --transport=virtual
+```
+
+与 `--trace=` 等价；`--trace` 优先级更高。
 
 ### 颜色控制
 
-- 默认：stderr 是 TTY 时上色；管道 / 文件自动关
-- `NO_COLOR=1` 强制关
-- `FORCE_COLOR=1` 强制开
+ANSI 颜色按业界惯例自动决定（与 `git`、`grep`、`bat` 一致）：
 
-### Layer 名字
+- **默认**：stderr 是 TTY 时上色；重定向到管道/文件自动关
+- `NO_COLOR=1` 强制关闭（便于 grep / 保存到文件后查看）
+- `FORCE_COLOR=1` 强制开启（CI 抓彩色日志用）
 
-`hci`, `sm`, `transport`, `l2cap`, `att`, `gatt`, `smp`, `sdp`, `rfcomm`, `gap`
+### 在 pytest 中使用
+
+pytest 内置 `--trace` 选项已被 PDB 调试器占用，所以 PyBlueHost 在 pytest 这一边用了不同的 flag 名：
+
+```bash
+uv run --frozen pytest tests/ --pybluehost-trace=hci --transport=virtual
+PYBLUEHOST_TRACE=hci=debug uv run --frozen pytest tests/         # env var 同样生效
+```
+
+### 防刷屏
+
+| 事件 | 默认行为 | 关闭抑制 |
+|------|---------|---------|
+| `Number_Of_Completed_Packets`（HCI flow control） | 完全静默 | `--trace=hci,include=Number_Of_Completed_Packets` |
+| `LE_Advertising_Report`（同地址重复） | 折叠为一行 | `--trace=hci,include=LE_Advertising_Report` |
+| ACL data 长 payload | 截断为前 24 字节 + `...` | `--trace=hci,full-acl` |
+
+### 协议层 logger
+
+L2CAP / ATT / GATT / SMP / SDP / RFCOMM / Classic GAP+SSP / HCI Connection 共约 40 个关键决策点会输出 INFO/WARN/DEBUG（连接开关、MTU exchange、Error_Response、pairing 阶段、inquiry 等）。它们走标准 Python `logging`，由 `--trace=<layer>=<level>` 调级别。
+
+输出会同时进 `pybluehost.log` 文件（受 `--log-file` / `--log-level` 控制）。
 
 ---
 
