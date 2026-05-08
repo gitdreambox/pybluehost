@@ -8,10 +8,13 @@ machinery over an L2CAP channel.
 from __future__ import annotations
 
 import asyncio
+import logging
 import struct
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Awaitable, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class ATTOpcode(IntEnum):
@@ -67,6 +70,26 @@ class ATT_Error_Response(ATTPdu):
     attribute_handle_in_error: int = 0
     error_code: int = 0
 
+    _ERROR_NAMES = {
+        0x01: "Invalid_Handle",
+        0x02: "Read_Not_Permitted",
+        0x03: "Write_Not_Permitted",
+        0x04: "Invalid_PDU",
+        0x05: "Insufficient_Authentication",
+        0x06: "Request_Not_Supported",
+        0x07: "Invalid_Offset",
+        0x08: "Insufficient_Authorization",
+        0x09: "Prepare_Queue_Full",
+        0x0A: "Attribute_Not_Found",
+        0x0B: "Attribute_Not_Long",
+        0x0C: "Insufficient_Encryption_Key_Size",
+        0x0D: "Invalid_Attribute_Value_Length",
+        0x0E: "Unlikely_Error",
+        0x0F: "Insufficient_Encryption",
+        0x10: "Unsupported_Group_Type",
+        0x11: "Insufficient_Resources",
+    }
+
     def to_bytes(self) -> bytes:
         return struct.pack(
             "<BBHB",
@@ -83,6 +106,15 @@ class ATT_Error_Response(ATTPdu):
             request_opcode_in_error=opcode_in_err,
             attribute_handle_in_error=handle,
             error_code=err,
+        )
+
+    def log_received(self) -> None:
+        """Emit a WARN log describing the received Error Response."""
+        name = self._ERROR_NAMES.get(self.error_code, f"0x{self.error_code:02X}")
+        logger.warning(
+            "ATT Error_Response handle=0x%04X error=%s",
+            self.attribute_handle_in_error,
+            name,
         )
 
 
@@ -110,6 +142,10 @@ class ATT_Exchange_MTU_Response(ATTPdu):
     def from_bytes(cls, data: bytes) -> ATT_Exchange_MTU_Response:
         (mtu,) = struct.unpack_from("<H", data, 1)
         return cls(server_rx_mtu=mtu)
+
+    def log_received(self) -> None:
+        """Emit an INFO log describing the negotiated MTU."""
+        logger.info("ATT MTU exchanged: %d", self.server_rx_mtu)
 
 
 @dataclass
@@ -586,6 +622,7 @@ def decode_att_pdu(data: bytes) -> ATTPdu:
     """Decode raw bytes into the appropriate ATT PDU object."""
     if not data:
         raise ValueError("Empty ATT PDU data")
+    logger.debug("ATT PDU opcode=0x%02X len=%d", data[0], len(data))
     opcode = data[0]
     pdu_cls = _OPCODE_MAP.get(opcode)
     if pdu_cls is None:
