@@ -35,6 +35,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Trace spec: e.g. 'hci', 'hci=debug,l2cap', '*=debug', 'hci,full-acl'.",
     )
+    parser.add_argument(
+        "--list-transports",
+        action="store_true",
+        default=False,
+        help="Print every detected Bluetooth USB adapter, then exit.",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     from pybluehost.cli.app import register_app_commands
@@ -44,6 +50,22 @@ def main(argv: list[str] | None = None) -> int:
     register_tools_commands(subparsers)
 
     args = parser.parse_args(argv)
+
+    if args.list_transports:
+        from pybluehost.transport.usb import USBTransport
+
+        candidates = USBTransport.list_devices()
+        if not candidates:
+            print("No Bluetooth USB adapters detected.")
+        else:
+            print("Detected Bluetooth USB adapters:")
+            for c in candidates:
+                spec = f"usb:vendor={c.vendor},bus={c.bus},address={c.address}"
+                print(
+                    f"  {c.vendor:8s} {c.name:10s} bus={c.bus} address={c.address}  ({spec})"
+                )
+        return 0
+
     if args.command is None:
         parser.print_help()
         return 0

@@ -2,16 +2,26 @@
 
 面向测试、仿真和协议教学的专业级 Python 蓝牙 Host 协议栈。
 
-PyBlueHost 用纯 Python 实现完整的 Bluetooth Host 协议栈：HCI、L2CAP、ATT/GATT、SMP、SDP、RFCOMM，以及 BLE 与 Classic 双模 GAP —— 全部基于 `asyncio` 构建。适用于快速原型开发、协议学习、无硬件集成测试，以及编写自定义 BLE/Classic profile 服务端与客户端。
+PyBlueHost 用纯 Python 实现完整的 Bluetooth Host 协议栈：HCI、L2CAP、ATT/GATT、SMP、SDP、RFCOMM，以及 BLE 与 Classic 双模 GAP —— 全部基于 `asyncio` 构建。  
+适用于快速原型开发、协议学习、无硬件集成测试，以及编写自定义 BLE/Classic profile 服务端与客户端。
 
 - **纯 Python 3.10+，asyncio 原生**
-- **无需真实硬件** —— 内置 `VirtualController`，可在单元测试中跑完整协议栈
+- **支持虚拟硬件** —— 内置 `VirtualController`，可在单元测试中跑完整协议栈
 - **多种 Transport** —— UART、USB（PyUSB）、TCP、UDP、btsnoop replay、Linux HCI user-channel
-- **9 个内置 BLE Profile** —— Battery、Heart Rate、DIS、GAP、GATT、Blood Pressure、HID、RSCS、CSCS
 - **YAML-driven service definitions** —— 声明式定义自定义服务，无需手写 handler 样板
 - **结构化 Trace** —— HCI 包按命令/事件名展开（带 SIG 查表），可彩色实时输出，也可录制为 btsnoop / JSON Lines
 
 ---
+
+## 我属于哪一类用户？
+
+PyBlueHost 服务三类不同需求的用户。先确定自己属于哪类，直接跳到对应章节：
+
+| 你的目标 | 你属于 | 跳到 |
+|---------|-------|------|
+| 验证适配器、抓 trace、跑 demo —— **不写代码** | 协议测试/分析用户 | [一、CLI 用户篇](#一cli-用户篇协议测试与分析) |
+| 写自己的 BLE/Classic 应用：自定义 GATT service、SPP 私有协议、自动化脚本 —— **`pip install pybluehost` 当依赖，不改 PyBlueHost 源码** | 应用开发用户 | [二、应用开发者篇](#二应用开发者篇基于-pybluehost-写蓝牙应用) |
+| 修协议 bug、加 LE Audio / A2DP、加新 vendor / 新 transport —— **git clone 后做二次开发** | 协议栈贡献者 | [三、协议栈贡献者篇](#三协议栈贡献者篇修改-pybluehost-源码) |
 
 ## 已测试硬件
 
@@ -23,9 +33,9 @@ CSR、Intel 系列芯片在代码中已支持但未在本仓库做完整回归�
 
 ---
 
-# 一、测试用户篇（pip 安装 + CLI 验证）
+# 一、CLI 用户篇（协议测试与分析）
 
-> 适合：拿到设备想验证一下蓝牙功能，或者用 PyBlueHost 当临时 host 跑各种测试场景的人。
+> 适合：拿到适配器想验证蓝牙功能、跑 demo、抓 trace、用 PyBlueHost 当临时 host 验证场景的人。
 > 全程不需要写代码，CLI 命令就够。
 
 ## 1.1 安装
@@ -48,43 +58,44 @@ pip install pybluehost      # 包含运行 CLI 所需的全部依赖
 ## 1.2 第一次跑：列出硬件 + 诊断
 
 ```bash
-# 列出所有检测到的 USB 蓝牙适配器
-pybluehost --list-transports
-# 或
-pytest --list-transports
-
 # USB 设备探测和驱动诊断（不打开设备，只读 USB 描述符）
 pybluehost tools usb probe
 pybluehost tools usb probe --verbose
 
-# 完整诊断（尝试打开设备，给出"为什么打不开"的具体原因）
+# 完整诊断（尝试打开设备/检查驱动/检查是否需要load fw/测试hci reset，给出"为什么打不开"的具体原因）
 pybluehost tools usb diagnose
 ```
 
-如果 `pybluehost --list-transports` 看不到任何适配器，看 §1.7 安装 / 硬件常见问题。
-
 ## 1.3 BLE 验证（CLI）
 
-`--transport` 接受 `virtual`、`usb`、`usb:vendor=intel|realtek|csr`、`uart:/dev/ttyUSB0[@921600]`。机器上多块适配器时建议固定厂商 (`usb:vendor=csr`) 避免选错。
+`--transport` 接受 `virtual`、`usb`、`usb:vendor=intel|realtek|csr`、`uart:/dev/ttyUSB0[@921600]`，机器上多块适配器时建议固定厂商 `usb:vendor=intel,bus=1,address=4` 避免选错。  
+`--btsnoop` 使用btsnoop格式记录hci log。  
+`--hci-log` 终端中实时显示hci raw log。 
 
 ```bash
 # 扫描周围 BLE 设备（长跑，Ctrl+C 结束）
 pybluehost app ble-scan --transport usb
+# 如果有多个usb适配器，可以指定使用
+pybluehost app ble-scan --transport usb:vendor=intel,bus=1,address=4
+# 添加 HCI btsnoop log
+pybluehost app ble-scan --transport usb --btsnoop btsnoop.cfa
+# 添加 HCI raw log
+pybluehost app ble-scan --transport usb --hci-log
 
 # 自己也广播让别的设备看到
 pybluehost app ble-adv --transport usb --name MyDevice
 
-# 一次性：浏览远端 GATT 数据库（services / characteristics / descriptors / properties）
-pybluehost app gatt-browser --transport usb:vendor=csr --addr A0:90:B5:10:40:82
-
 # 起一个 GATT server，让手机能连过来
-pybluehost app gatt-server --transport virtual
+pybluehost app gatt-server --transport usb
 
 # Heart Rate Sensor demo（带 notification 推送）
-pybluehost app hr-monitor --transport virtual
+pybluehost app hr-monitor --transport usb
+
+# 一次性：浏览远端 GATT 数据库（services / characteristics / descriptors / properties）
+# 地址格式：`A0:90:B5:10:40:82` 或 `A090B5104082` 都接受。
+pybluehost app gatt-browser --transport usb --addr A0:90:B5:10:40:82
 ```
 
-地址格式：`A0:90:B5:10:40:82` 或 `A090B5104082` 都接受。
 
 ## 1.4 Classic 蓝牙验证（CLI）
 
@@ -92,12 +103,12 @@ pybluehost app hr-monitor --transport virtual
 # 经典蓝牙设备发现
 pybluehost app classic-inquiry --transport usb
 
-# 一次性：浏览远端 SDP records
-pybluehost app sdp-browser --transport usb:vendor=csr --addr 1A:8D:8D:1B:F5:6B
-pybluehost app sdp-browser --transport usb:vendor=csr --addr 1A8D8D1BF56B --uuid 0x1101
-
 # SPP 服务（手机蓝牙串口终端连过来发字符串，会原样 echo 回去）
-pybluehost app spp-echo --transport usb:vendor=csr
+pybluehost app spp-echo --transport usb
+
+# 一次性：浏览远端 SDP records
+pybluehost app sdp-browser --transport usb --addr 1A:8D:8D:1B:F5:6B
+pybluehost app sdp-browser --transport usb --addr 1A8D8D1BF56B --uuid 0x1101
 ```
 
 ## 1.5 离线工具（不需要硬件）
@@ -116,16 +127,16 @@ pybluehost tools fw list
 pybluehost tools fw download <chip>
 ```
 
-## 1.6 出问题怎么调试
+## 1.6 出问题怎么调试（trace）
 
 最常用的三个命令：
 
 ```bash
 # 看 HCI 包的实时人读输出（彩色单行）
-pybluehost --trace=hci app gatt-browser --transport=usb --addr <bd>
+pybluehost --trace=hci app hr-monitor --transport=usb
 
 # 出现握手失败 / 配对失败时 → 全层 debug，看协议层每一步
-pybluehost --trace=*=debug app gatt-browser --transport=usb --addr <bd> 2> trace.log
+pybluehost --trace=*=debug app hr-monitor --transport=usb 2> trace.log
 
 # 给 maintainer 提 issue 时，附上的两个文件
 ls pybluehost.log     # 默认日志文件
@@ -144,9 +155,14 @@ ls trace.log          # 你刚才重定向的 trace
                                             └── status                  = 0x12 (Invalid_HCI_Command_Parameters)
 ```
 
-需要更细的控制（按层独立级别、ACL payload 不截断、把默认抑制的事件加回来）见 §2.7 「调试与日志（深度版）」。
+需要更细的控制（按层独立级别、ACL payload 不截断、把默认抑制的事件加回来）见 [§3.4](#34-trace-系统深度定制) 「Trace 系统深度定制」。
 
 ## 1.7 安装 / 硬件常见问题
+
+**Windows：必须装 WinUSB 驱动**
+
+USB transport 在 Windows 上需要把目标适配器替换为 WinUSB 驱动。`libusb-package` 解决了 DLL 查找问题，但驱动绑定无法绕过 —— 用 [Zadig](https://zadig.akeo.ie/) 替换。
+
 
 **Linux：USB 权限 `Operation not permitted`**
 
@@ -170,9 +186,6 @@ sudo systemctl disable bluetooth      # 长期（如果你只用 PyBlueHost）
 
 或者用 HCI user-channel transport 直接通过内核 socket 而不抢 BlueZ：见 `pybluehost.transport.hci_user_channel.HCIUserChannelTransport`。
 
-**Windows：必须装 WinUSB 驱动**
-
-USB transport 在 Windows 上需要把目标适配器替换为 WinUSB 驱动。`libusb-package` 解决了 DLL 查找问题，但驱动绑定无法绕过 —— 用 [Zadig](https://zadig.akeo.ie/) 替换。
 
 **macOS：Apple 的蓝牙栈占着内置控制器**
 
@@ -190,53 +203,19 @@ git submodule update --init
 
 ---
 
-# 二、开发者篇（基于协议栈做二次开发，不改协议栈核心）
+# 二、应用开发者篇（基于 PyBlueHost 写蓝牙应用）
 
-> 适合：想在 PyBlueHost 上加自定义 BLE profile / 起一个测试 server / 写自动化脚本但不想改协议栈代码的人。
-> 大部分情况下，你只需要在最上面那层（profile / 应用代码）写代码就够了。
+> 适合：在 PyBlueHost 上写自己的 BLE/Classic 应用 —— 自定义 GATT service、SPP 私有协议、自动化测试脚本。
+> `pip install pybluehost` 当依赖，**不改 PyBlueHost 源码**；大部分时候你只在最上层写代码。
 
-## 2.1 1 分钟看懂架构
-
-```
-┌─────────────────── Profiles (Battery, HRS, HID, ...) ───────────────────┐
-│  ↑ 你写的代码大多数时候在这一层                                          │
-├──── GAP (BLE + Classic 统一入口) ──┬── GATT ────┬── SDP ─── RFCOMM ─────┤
-│                                     │            │                       │
-│           ATT ─ SMP                 │            │                       │
-├─────────────────────────── L2CAP ───────────────────────────────────────┤
-├─────────────────────── HCI（命令、事件、ACL、流控）──────────────────────┤
-└─────────────── Transport (UART, USB, TCP, UDP, btsnoop, virtual) ───────┘
-```
-
-调用方向：你的代码调 `stack.gap` / `stack.gatt_server` / `stack.sdp` / `stack.rfcomm`，下层一直传到 transport；事件反向上来，HCI controller 解码后通过 callback / channel 上送到对应层。
-
-二次开发常见入口：
-
-| 我想做的事 | 看哪儿 |
-|-----------|------|
-| 加一个新 BLE Service / Profile | `pybluehost/profiles/ble/`（参考 `battery.py` / `heart_rate.py` 这些短文件） |
-| 写自动化测试脚本 | `pybluehost/cli/app/*.py`（每个 CLI 命令的真实实现都是单独的 .py，可读） |
-| 自定义事件 callback / 录制 trace | `pybluehost.core.trace.TraceSystem` + sink，详见 §2.7 |
-| 加一种新 transport | `pybluehost.transport.base.Transport` 接口（参考 `udp.py` 最短） |
-| 改 HCI 命令处理 / vendor 命令 | `pybluehost/hci/`（不属于二次开发，慎重） |
-
-## 2.2 安装（开发模式）
-
-PyBlueHost 用 [`uv`](https://github.com/astral-sh/uv) 管理依赖。
+## 2.1 安装 + 第一行代码
 
 ```bash
-git clone https://github.com/gitdreambox/pybluehost.git
-cd pybluehost
-git submodule update --init   # SIG assigned-numbers 数据库
-
-uv sync --extra dev           # 包含 pytest、pytest-asyncio、pytest-cov
-
-uv run pytest tests/ --transport=virtual    # 验证开发环境
+pip install pybluehost
 ```
 
-## 2.3 启动协议栈
-
 ```python
+# hello_pybluehost.py
 import asyncio
 from pybluehost import Stack
 
@@ -248,18 +227,29 @@ async def main():
 asyncio.run(main())
 ```
 
-`Stack.virtual()` 基于 `VirtualController` 构建一个完整协议栈 —— 不需要任何蓝牙硬件，所有 HCI 命令都在进程内仿真器中流转。
+```bash
+python hello_pybluehost.py
+# Local address: AA:BB:CC:XX:YY:ZZ
+```
 
-接真实硬件：
+`Stack.virtual()` 基于 `VirtualController` 构建一个完整协议栈 —— 不需要任何蓝牙硬件，所有 HCI 命令都在进程内仿真器中流转，方便起步和写自动化测试。
+
+## 2.2 启动协议栈（virtual / 真硬件）
 
 ```python
 from pybluehost import Stack
 
+# 虚拟环境（无硬件）—— 写测试 / 起步首选
+async with await Stack.virtual() as stack:
+    ...
+
 # USB 自动探测（按 vendor 过滤可避免多块适配器选错）
-stack = await Stack.from_usb(vendor="intel")
+async with await Stack.from_usb(vendor="intel") as stack:
+    ...
 
 # UART
-stack = await Stack.from_uart(port="/dev/ttyUSB0", baudrate=921600)
+async with await Stack.from_uart(port="/dev/ttyUSB0", baudrate=921600) as stack:
+    ...
 ```
 
 `StackConfig` 控制设备级默认值：
@@ -271,19 +261,33 @@ from pybluehost.ble.security import SecurityConfig
 
 config = StackConfig(
     device_name="MyDevice",
-    appearance=0x0341,                          # Heart Rate Sensor
+    appearance=0x0341, # Heart Rate Sensor
     le_io_capability=IOCapability.DISPLAY_YES_NO,
     security=SecurityConfig(
         bondable=True, mitm_required=True, secure_connections=True,
     ),
     command_timeout=5.0,
 )
-stack = await Stack.virtual(config=config)
+async with await Stack.virtual(config=config) as stack:
+    ...
 ```
 
-## 2.4 写一个 BLE GATT Server
+**你写代码主要用到的 stack 入口**：
 
-用装饰器驱动的 profile 框架（最小可运行版本，省略 imports）：
+| 属性 | 干什么的 |
+|------|---------|
+| `stack.gap` | BLE + Classic 统一 GAP（广播/扫描/inquiry/连接/可发现性/SSP） |
+| `stack.gatt_server` | 注册自定义 GATT service / 内置 profile |
+| `stack.gatt_client` | 服务发现 / 读写 / 订阅 notification |
+| `stack.sdp` | Classic SDP records 注册 + 查询 |
+| `stack.rfcomm` | RFCOMM channel listen / connect（SPP 基础） |
+| `stack.l2cap` | L2CAP CoC（应用一般不直接用） |
+| `stack.trace` | 挂自定义 sink 录 trace（见 §2.6） |
+| `stack.local_address` | 本机 BD_ADDR |
+
+## 2.3 写一个 BLE GATT Server
+
+**自定义 service**（用装饰器驱动的 profile 框架，省略 imports）：
 
 ```python
 from pybluehost.core.uuid import UUID16
@@ -313,7 +317,7 @@ service = MyTemperatureService()
 await service.register(stack.gatt_server)
 ```
 
-用现成的内置 profile：
+**用现成的内置 profile**：
 
 ```python
 from pybluehost.profiles.ble import BatteryServer, HeartRateServer
@@ -328,9 +332,9 @@ await hrs.update_measurement(bpm=72)   # 推送一次 notification
 
 可用的内置 Profile：`BatteryServer`/`Client`、`HeartRateServer`/`Client`、`DeviceInformationServer`/`Client`、`BloodPressureServer`、`HIDServer`、`RSCServer`、`CSCServer`、`GAPServiceServer`、`GATTServiceServer`。
 
-参考真实代码：`pybluehost/profiles/ble/battery.py`、`heart_rate.py`、`hids.py`（每个文件 < 50 行）。
+参考真实代码：`pybluehost/profiles/ble/battery.py`、`heart_rate.py`、`hids.py`（每个文件 < 50 行，照抄改造即可）。
 
-## 2.5 写一个 BLE 客户端
+## 2.4 写一个 BLE 客户端
 
 `pybluehost/cli/app/gatt_browser.py` 是完整可运行的客户端示例（约 100 行）—— 扫描、连接、发现 services、按字段格式化打印。下面是缩微版：
 
@@ -347,7 +351,7 @@ async with await Stack.virtual() as stack:
     print(f"Remote battery: {level}%")
 ```
 
-## 2.6 写一个 Classic 应用（SDP/RFCOMM/SPP）
+## 2.5 写一个 Classic 应用（SDP/RFCOMM/SPP）
 
 ```python
 from pybluehost.classic.gap import InquiryConfig
@@ -366,13 +370,9 @@ async with await Stack.virtual() as stack:
 
 完整 SPP echo server 示例：`pybluehost/cli/app/spp_echo.py`。
 
-## 2.7 自定义 Trace Sink + 录制 / 回放（调试与日志深度版）
+## 2.6 在自己的代码里挂 trace
 
-PyBlueHost 内置结构化 trace 系统：HCI 包按命令/事件名展开（含字段、SIG company name 等查表），按层独立可控，彩色实时输出到 stderr。默认零开销 —— 不指定 `--trace` / 不挂 sink 时不做任何额外工作。
-
-### 录制到文件
-
-所有 HCI/L2CAP 包都流经 `stack.trace`。挂接 sink 即可录制：
+PyBlueHost 内置结构化 trace 系统，所有 HCI/L2CAP 包都流经 `stack.trace`。挂接 sink 即可录制成文件：
 
 ```python
 from pybluehost import Stack, StackConfig
@@ -381,7 +381,7 @@ from pybluehost.core.trace import BtsnoopSink, JsonSink
 config = StackConfig(
     trace_sinks=[
         BtsnoopSink("session.btsnoop"),   # Wireshark 兼容
-        JsonSink("session.jsonl"),         # 每行一个 JSON 对象
+        JsonSink("session.jsonl"),        # 每行一个 JSON 对象
     ],
 )
 async with await Stack.virtual(config=config) as stack:
@@ -389,7 +389,7 @@ async with await Stack.virtual(config=config) as stack:
     pass  # close() 会自动 flush 所有 sink
 ```
 
-### 回放已抓取的 btsnoop
+**回放已抓取的 btsnoop**：
 
 ```python
 from pybluehost.transport.btsnoop import BtsnoopTransport
@@ -397,6 +397,183 @@ from pybluehost.transport.btsnoop import BtsnoopTransport
 transport = BtsnoopTransport(path="capture.btsnoop", realtime=False)
 # 与普通 transport 一样使用 —— 包从文件中按序注入
 ```
+
+需要更深的定制（自定义 sink、按层级别精细控制、防刷屏配置）见 [§3.4](#34-trace-系统深度定制)。
+
+## 2.7 给自己的应用写测试
+
+应用开发者最常用 `Stack.virtual()` 写无硬件单元测试。基本模板：
+
+```python
+# tests/test_my_app.py
+import pytest
+from pybluehost import Stack
+from my_app import MyTemperatureService
+
+@pytest.mark.asyncio
+async def test_temperature_service_reads_correctly():
+    async with await Stack.virtual() as stack:
+        svc = MyTemperatureService()
+        await svc.register(stack.gatt_server)
+
+        # 通过 stack.gatt_server.db 直接查 attribute（白盒）
+        # 或起 peer_stack 真连过来读（端到端）
+        ...
+```
+
+```bash
+pip install pytest pytest-asyncio
+pytest tests/
+```
+
+**配置**（你自己 `pyproject.toml`）：
+
+```toml
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+```
+
+## 2.8 应用开发常见入口速查
+
+| 我想做的事 | 看这里 |
+|-----------|------|
+| 加一个新 BLE Service / Profile | `pybluehost/profiles/ble/`（参考 `battery.py` / `heart_rate.py` 这些短文件） |
+| 写一个客户端浏览远端 GATT | `pybluehost/cli/app/gatt_browser.py`（约 100 行，完整可运行） |
+| 起 SPP echo server | `pybluehost/cli/app/spp_echo.py` |
+| 起 Heart Rate notification 服务 | `pybluehost/cli/app/hr_monitor.py` |
+| 自定义事件 callback / 录 trace | [§2.6 在自己的代码里挂 trace](#26-在自己的代码里挂-trace) |
+| 想改协议栈本身（HCI / L2CAP / GATT 内部） | 你不属于这一篇，去看 [三、协议栈贡献者篇](#三协议栈贡献者篇修改-pybluehost-源码) |
+
+---
+
+# 三、协议栈贡献者篇（修改 PyBlueHost 源码）
+
+> 适合：修协议 bug、加 LE Audio / A2DP、加新 vendor / 新 transport、加 SMP 高级特性等需要改 PyBlueHost 源码的人。
+> 全程在 git clone 出来的源码树里干活，跑测试用 `uv run pytest`。
+
+## 3.1 开发环境安装
+
+PyBlueHost 用 [`uv`](https://github.com/astral-sh/uv) 管理依赖。
+
+```bash
+# 1. 克隆仓库 + 拉 submodule
+git clone https://github.com/gitdreambox/pybluehost.git
+cd pybluehost
+git submodule update --init   # SIG assigned-numbers 数据库
+
+# 2. 安装开发依赖（含 pytest、pytest-asyncio、pytest-cov）
+uv sync --extra dev
+
+# 3. 验证开发环境
+uv run pytest tests/ --transport=virtual
+```
+
+## 3.2 架构与代码导航
+
+### 分层
+
+```
+┌─────────────────── Profiles (Battery, HRS, HID, ...) ───────────────────┐
+│  ↑ 应用开发用户的代码大多在这一层                                         │
+├──── GAP (BLE + Classic 统一入口) ──┬── GATT ────┬── SDP ─── RFCOMM ─────┤
+│                                     │            │                       │
+│           ATT ─ SMP                 │            │                       │
+├─────────────────────────── L2CAP ───────────────────────────────────────┤
+├─────────────────────── HCI（命令、事件、ACL、流控）──────────────────────┤
+└─────────────── Transport (UART, USB, TCP, UDP, btsnoop, virtual) ───────┘
+```
+
+调用方向：应用代码调 `stack.gap` / `stack.gatt_server` / `stack.sdp` / `stack.rfcomm`，下层一直传到 transport；事件反向上来，HCI controller 解码后通过 callback / channel 上送到对应层。
+
+### 目录树
+
+```
+pybluehost/
+├── core/             # 通用基础：address、UUID、errors、状态机、trace、SIG DB
+├── transport/        # UART / USB / TCP / UDP / btsnoop / HCI user-channel
+├── hci/              # HCI packet codec、流控、controller、virtual controller、vendor
+│   ├── format.py     # HCI 包人读字符串渲染
+│   └── format_fields.py
+├── l2cap/            # SAR、固定/CoC channel、ERTM、信令
+├── ble/              # ATT / GATT / SMP / SecurityConfig
+├── classic/          # SDP / RFCOMM / SPP / Classic GAP
+├── gap.py            # BLE + Classic 统一 GAP 入口
+├── profiles/ble/     # 9 个内置 profile + 装饰器框架
+├── stack.py          # Stack 工厂 / 生命周期 / TraceSystem 启动
+└── cli/
+    ├── app/          # 8 个 BT 功能命令（每个一文件，~50-150 行，可读）
+    └── tools/        # 4 个离线工具（decode / rpa / fw / usb）
+```
+
+### 二次开发常见入口
+
+| 我想做的事 | 看哪儿 |
+|-----------|------|
+| 改 HCI 命令处理 / vendor 命令 | `pybluehost/hci/` |
+| 加新 transport（BlueZ 内核 socket、TCP-over-WebSocket 等） | `pybluehost.transport.base.Transport` 接口（参考 `udp.py` 最短） |
+| 加新 vendor 固件加载流程 | `pybluehost/transport/usb.py`（已有 Intel / Realtek / CSR 三家可参考） |
+| L2CAP 改 ERTM / Streaming mode | `pybluehost/l2cap/` |
+| ATT/GATT 协议变化（spec 更新） | `pybluehost/ble/att.py` / `gatt.py` |
+| SMP 新加密算法 / Secure Connections 变体 | `pybluehost/ble/smp/` |
+| Classic 加 A2DP / AVRCP / HFP profile | 新建 `pybluehost/classic/<profile>.py` + `pybluehost/profiles/classic/` |
+
+### 详细文档
+
+- [docs/PRD.md](docs/PRD.md) —— 产品需求与设计取舍
+- [docs/architecture/](docs/architecture/) —— 逐层设计文档
+- [docs/superpowers/STATUS.md](docs/superpowers/STATUS.md) —— 实现进度 / 各 plan 状态
+- [docs/superpowers/specs/](docs/superpowers/specs/) —— 已批准的功能 spec
+- [docs/superpowers/plans/](docs/superpowers/plans/) —— 实施 plan（任务级粒度）
+
+## 3.3 跑测试套件（完整版）
+
+测试默认自动检测 USB 蓝牙适配器；找不到时回落到 virtual（软件仿真）。
+
+```bash
+# 全套（默认自动检测）
+uv run pytest tests/
+
+# 强制 virtual（CI 用）
+uv run pytest tests/ --transport=virtual
+
+# 指定子目录
+uv run pytest tests/unit/ble/ -v
+uv run pytest tests/unit/profiles/ -v
+
+# 仅 btsnoop 回放测试
+uv run pytest -m btsnoop
+
+# 带覆盖率
+uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-report=term-missing
+
+# 真硬件（按 vendor 过滤）
+uv run pytest tests/ --transport=usb
+uv run pytest tests/ --transport=usb:vendor=intel
+uv run pytest tests/ --transport=usb:vendor=intel,bus=1,address=4
+
+# UART
+uv run pytest tests/ --transport=uart:/dev/ttyUSB0@921600
+
+# 双适配器测试（peer 自动找第二块；找不到则跳过）
+uv run pytest tests/ --transport=usb --transport-peer=usb:vendor=intel,bus=2,address=5
+
+# pytest 内打开 trace（注意：pytest 选项叫 --pybluehost-trace 不叫 --trace）
+uv run pytest tests/ --pybluehost-trace=hci --transport=virtual
+
+# 通过环境变量
+PYBLUEHOST_TEST_TRANSPORT=usb uv run pytest tests/
+
+# 列出所有检测到的适配器
+uv run pytest --list-transports
+```
+
+测试可以用 `@pytest.mark.real_hardware_only` 或 `@pytest.mark.virtual_only` 限制运行环境。Marker 分组：`unit` / `integration` / `e2e` / `btsnoop` / `slow` / `real_hardware_only` / `virtual_only`。
+
+## 3.4 Trace 系统深度定制
+
+PyBlueHost 内置结构化 trace 系统：HCI 包按命令/事件名展开（含字段、SIG company name 等查表），按层独立可控，彩色实时输出到 stderr。默认零开销 —— 不指定 `--trace` / 不挂 sink 时不做任何额外工作。
+
+应用开发用户的基本用法见 [§2.6](#26-在自己的代码里挂-trace)；本节是协议栈贡献者级别的深定制。
 
 ### CLI / 环境变量控制
 
@@ -458,77 +635,38 @@ spec = parse_trace_spec("hci=debug,l2cap")
 trace_install(spec, stack.trace)        # 给该 stack 挂 ConsoleSink + 调 logger 级别
 ```
 
-## 2.8 跑测试套件
+### 写自定义 sink
 
-测试默认自动检测 USB 蓝牙适配器；找不到时回落到 virtual（软件仿真）。
+实现 `pybluehost.core.trace.TraceSink` 协议（一个 `async def consume(event: TraceEvent)` 方法）：
+
+```python
+from pybluehost.core.trace import TraceSink, TraceEvent
+
+class MyMetricsSink(TraceSink):
+    async def consume(self, event: TraceEvent) -> None:
+        # 把每个 HCI 包统计到 prometheus / push 到 Kafka 等等
+        if event.layer == "hci":
+            metrics.counter(f"hci.{event.kind}").inc()
+
+config = StackConfig(trace_sinks=[MyMetricsSink()])
+```
+
+## 3.5 Plan 驱动开发流程
+
+PyBlueHost 用 plan 驱动的实施模式：每个新功能先写 spec → 评审 → 写 plan → 一个 task 一个 task 跑 → 状态更新到 `STATUS.md`。
+
+完整流程见 [CLAUDE.md](CLAUDE.md)。关键文件：
+
+- [CLAUDE.md](CLAUDE.md) —— 协作流程、commit 规范、状态更新协议
+- [docs/superpowers/STATUS.md](docs/superpowers/STATUS.md) —— 任务看板（哪些 plan 进行中、谁在做、卡在哪）
+- [docs/superpowers/specs/](docs/superpowers/specs/) —— 已批准的设计 spec
+- [docs/superpowers/plans/](docs/superpowers/plans/) —— 实施 plan（带 checkbox 的 task 列表）
+
+提 PR 前最少跑：
 
 ```bash
-# 全套（默认自动检测）
-uv run pytest tests/
-
-# 强制 virtual（CI 用）
-uv run pytest tests/ --transport=virtual
-
-# 指定子目录
-uv run pytest tests/unit/ble/ -v
-uv run pytest tests/unit/profiles/ -v
-
-# 仅 btsnoop 回放测试
-uv run pytest -m btsnoop
-
-# 带覆盖率
-uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-report=term-missing
-
-# 真硬件（按 vendor 过滤）
-uv run pytest tests/ --transport=usb
-uv run pytest tests/ --transport=usb:vendor=intel
-uv run pytest tests/ --transport=usb:vendor=intel,bus=1,address=4
-
-# UART
-uv run pytest tests/ --transport=uart:/dev/ttyUSB0@921600
-
-# 双适配器测试（peer 自动找第二块；找不到则跳过）
-uv run pytest tests/ --transport=usb --transport-peer=usb:vendor=intel,bus=2,address=5
-
-# pytest 内打开 trace（注意：pytest 选项叫 --pybluehost-trace 不叫 --trace）
-uv run pytest tests/ --pybluehost-trace=hci --transport=virtual
-
-# 通过环境变量
-PYBLUEHOST_TEST_TRANSPORT=usb uv run pytest tests/
-
-# 列出所有检测到的适配器
-uv run pytest --list-transports
+uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-fail-under=85
 ```
-
-测试可以用 `@pytest.mark.real_hardware_only` 或 `@pytest.mark.virtual_only` 限制运行环境。Marker 分组：`unit` / `integration` / `e2e` / `btsnoop` / `slow` / `real_hardware_only` / `virtual_only`。
-
-## 2.9 协议栈代码导航
-
-```
-pybluehost/
-├── core/             # 通用基础：address、UUID、errors、状态机、trace、SIG DB
-├── transport/        # UART / USB / TCP / UDP / btsnoop / HCI user-channel
-├── hci/              # HCI packet codec、流控、controller、virtual controller、vendor
-│   ├── format.py     # HCI 包人读字符串渲染
-│   └── format_fields.py
-├── l2cap/            # SAR、固定/CoC channel、ERTM、信令
-├── ble/              # ATT / GATT / SMP / SecurityConfig
-├── classic/          # SDP / RFCOMM / SPP / Classic GAP
-├── gap.py            # BLE + Classic 统一 GAP 入口
-├── profiles/ble/     # 9 个内置 profile + 装饰器框架
-├── stack.py          # Stack 工厂 / 生命周期 / TraceSystem 启动
-└── cli/
-    ├── app/          # 8 个 BT 功能命令（每个一文件，~50-150 行，可读）
-    └── tools/        # 4 个离线工具（decode / rpa / fw / usb）
-```
-
-详细文档：
-
-- [docs/PRD.md](docs/PRD.md) —— 产品需求与设计取舍
-- [docs/architecture/](docs/architecture/) —— 逐层设计文档
-- [docs/superpowers/STATUS.md](docs/superpowers/STATUS.md) —— 实现进度 / 各 plan 状态
-- [docs/superpowers/specs/](docs/superpowers/specs/) —— 已批准的功能 spec（trace 系统等）
-- [docs/superpowers/plans/](docs/superpowers/plans/) —— 实施 plan（任务级粒度）
 
 ---
 

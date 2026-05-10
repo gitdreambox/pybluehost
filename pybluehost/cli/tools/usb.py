@@ -158,7 +158,7 @@ def _cmd_usb_probe(args: argparse.Namespace) -> int:
             )
         names = dev.get("transport_names") or dev.get("bumble_transport_names") or []
         if names:
-            _log_probe_field("Bumble Transport Names", " or ".join(names), "name", use_color)
+            _log_probe_field("Transport Names", " or ".join(names), "name", use_color)
         _log_probe_field(
             "Bus/Device",
             f"{int(dev.get('bus') or 0):03d}/{int(dev.get('address') or 0):03d}",

@@ -180,10 +180,10 @@ def test_cmd_probe_returns_0_with_devices(mock_probe, capsys):
     out = capsys.readouterr().out
     assert "BE200" in out
     assert "ID 8087:0036" in out
-    assert "Bumble Transport Names:" in out
+    assert "Transport Names:" in out
     assert "usb:8087:0036" in out
     assert "ID 8087:0036" in out
-    assert "Bumble Transport Names: usb:8087:0036" in out
+    assert "Transport Names: usb:8087:0036" in out
     assert "Bus/Device:             001/023" in out
     assert "Class:                  Wireless Controller" in out
     assert "Subclass/Protocol:      RF Controller / Bluetooth Programming Interface" in out
