@@ -40,6 +40,27 @@ async def test_run_app_command_invalid_transport():
     assert code == 1
 
 
+async def test_run_app_command_converts_cancellation_to_sigint_exit_code():
+    started = asyncio.Event()
+    cleaned = asyncio.Event()
+
+    async def main(stack, stop):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cleaned.set()
+
+    task = asyncio.create_task(run_app_command("virtual", main))
+    await started.wait()
+
+    task.cancel()
+    code = await asyncio.wait_for(task, timeout=2.0)
+
+    assert code == 130
+    assert cleaned.is_set()
+
+
 async def test_run_app_command_hci_log_prints_trace_events(capsys):
     async def main(stack, stop):
         stack.trace.emit(

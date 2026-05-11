@@ -89,6 +89,8 @@ async def run_app_command(
         logger.error("Error: %s", _format_cli_error(e))
         return 1
 
+    main_task: asyncio.Task[None] | None = None
+    stop_task: asyncio.Task[bool] | None = None
     try:
         main_task = asyncio.create_task(main_coro(stack, stop_event))
         stop_task = asyncio.create_task(stop_event.wait())
@@ -110,5 +112,16 @@ async def run_app_command(
             logger.error("Error: %s", _format_cli_error(exc))
             return 1
         return 0
+    except asyncio.CancelledError:
+        stop_event.set()
+        if main_task is not None:
+            main_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await main_task
+        if stop_task is not None:
+            stop_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await stop_task
+        return 130
     finally:
         await stack.close()

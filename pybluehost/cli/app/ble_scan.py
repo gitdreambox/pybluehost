@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 
 from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
@@ -43,4 +44,5 @@ async def _ble_scan_main(stack: Stack, stop: asyncio.Event) -> None:
     try:
         await stop.wait()
     finally:
-        await stack.gap.ble_scanner.stop()
+        with contextlib.suppress(Exception):
+            await stack.gap.ble_scanner.stop()
