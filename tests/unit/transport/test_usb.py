@@ -61,6 +61,14 @@ def test_known_chips_CSR8510():
     assert csr.vendor == "csr"
 
 
+def test_known_chips_barrot_bt60():
+    barrot = next((c for c in KNOWN_CHIPS if c.vid == 0x33FA and c.pid == 0x0012), None)
+    assert barrot is not None
+    assert barrot.name == "BT6.0"
+    assert barrot.vendor == "barrot"
+    assert barrot.transport_class is USBTransport
+
+
 def test_chip_info_dataclass():
     chip = ChipInfo(
         vendor="intel",
@@ -151,6 +159,24 @@ def test_auto_detect_vendor_filter_selects_csr(mock_usb):
     mock_usb.core.find.return_value = [intel_device, csr_device]
     transport = USBTransport.auto_detect(vendor="csr")
     assert isinstance(transport, CSRUSBTransport)
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_auto_detect_vendor_filter_selects_barrot(mock_usb):
+    intel_device = MagicMock()
+    intel_device.idVendor = 0x8087
+    intel_device.idProduct = 0x0032
+
+    barrot_device = MagicMock()
+    barrot_device.idVendor = 0x33FA
+    barrot_device.idProduct = 0x0012
+
+    mock_usb.core.find.return_value = [intel_device, barrot_device]
+    transport = USBTransport.auto_detect(vendor="barrot")
+    assert isinstance(transport, USBTransport)
+    assert transport._device is barrot_device
+    assert transport._chip_info is not None
+    assert transport._chip_info.vendor == "barrot"
 
 
 @patch("pybluehost.transport.usb.usb")

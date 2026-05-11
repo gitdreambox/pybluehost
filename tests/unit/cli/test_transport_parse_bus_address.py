@@ -35,6 +35,19 @@ async def test_parse_usb_vendor_without_bus_address_passes_none():
 
 
 @pytest.mark.asyncio
+async def test_parse_usb_barrot_vendor_passes_none_location():
+    fake_transport = MagicMock()
+    with patch(
+        "pybluehost.transport.usb.USBTransport.auto_detect",
+        return_value=fake_transport,
+    ) as auto_detect:
+        result = await parse_transport_arg("usb:vendor=barrot")
+
+    assert result is fake_transport
+    auto_detect.assert_called_once_with(vendor="barrot", bus=None, address=None)
+
+
+@pytest.mark.asyncio
 async def test_parse_usb_strips_key_and_value_whitespace():
     fake_transport = MagicMock()
     with patch(

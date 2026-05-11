@@ -284,6 +284,11 @@ def known_chip_for(dev: Any) -> ChipInfo | None:
     )
 
 
+def known_usb_vendors() -> frozenset[str]:
+    """Return supported USB vendor filters derived from ``KNOWN_CHIPS``."""
+    return frozenset(chip.vendor for chip in KNOWN_CHIPS)
+
+
 def usb_class_tuple(obj: Any, prefix: str) -> tuple[int, int, int]:
     return (
         int(getattr(obj, f"{prefix}Class", 0) or 0),
@@ -586,10 +591,11 @@ class USBTransport(Transport):
             )
 
         selected_vendor = vendor.lower() if vendor is not None else None
-        if selected_vendor is not None and selected_vendor not in {"intel", "realtek", "csr"}:
+        supported_vendors = sorted(known_usb_vendors())
+        if selected_vendor is not None and selected_vendor not in supported_vendors:
             raise ValueError(
                 "Unsupported USB vendor filter: "
-                f"{vendor!r}. Expected one of: intel, realtek, csr."
+                f"{vendor!r}. Expected one of: {', '.join(supported_vendors)}."
             )
 
         backend = cls._get_usb_backend()
@@ -2466,4 +2472,6 @@ KNOWN_CHIPS: list[ChipInfo] = [
     ChipInfo("realtek", "RTL8723DE", 0x0BDA, 0xB009, "rtl8723d_fw.bin", RealtekUSBTransport),
     # CSR
     ChipInfo("csr", "CSR8510", 0x0A12, 0x0001, "", CSRUSBTransport),
+    # BARROT
+    ChipInfo("barrot", "BT6.0", 0x33FA, 0x0012, "", USBTransport),
 ]

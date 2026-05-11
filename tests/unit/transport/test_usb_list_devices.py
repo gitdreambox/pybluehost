@@ -57,6 +57,22 @@ def test_list_devices_returns_known_chips_only():
     assert cand.chip_info.name == "AX210"
 
 
+def test_list_devices_returns_barrot_candidate():
+    barrot = _make_dev(0x33FA, 0x0012, bus=1, address=16)
+
+    with patch("pybluehost.transport.usb.usb") as usb_mod:
+        usb_mod.core.find.return_value = [barrot]
+        with patch.object(USBTransport, "_get_usb_backend", return_value=None):
+            candidates = USBTransport.list_devices()
+
+    assert len(candidates) == 1
+    cand = candidates[0]
+    assert cand.vendor == "barrot"
+    assert cand.name == "BT6.0"
+    assert cand.bus == 1
+    assert cand.address == 16
+
+
 def test_list_devices_returns_empty_when_no_devices():
     with patch("pybluehost.transport.usb.usb") as usb_mod:
         usb_mod.core.find.return_value = []

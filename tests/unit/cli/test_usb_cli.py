@@ -71,6 +71,17 @@ def test_probe_finds_known_realtek_chip(mock_usb):
 
 
 @patch("pybluehost.transport.usb.usb")
+def test_probe_finds_known_barrot_chip(mock_usb):
+    mock_usb.core.find.return_value = [_mock_usb_device(0x33FA, 0x0012)]
+    devices = probe_usb_devices()
+    assert len(devices) == 1
+    assert devices[0]["vendor"] == "barrot"
+    assert devices[0]["chip_name"] == "BT6.0"
+    assert devices[0]["vid_pid"] == "33fa:0012"
+    assert devices[0]["transport_names"] == ["usb:33FA:0012"]
+
+
+@patch("pybluehost.transport.usb.usb")
 def test_probe_unknown_bt_class_device(mock_usb):
     """Unknown VID/PID but Bluetooth device class → included as Unknown."""
     mock_usb.core.find.return_value = [
@@ -183,7 +194,7 @@ def test_cmd_probe_returns_0_with_devices(mock_probe, capsys):
     assert "Transport Names:" in out
     assert "usb:8087:0036" in out
     assert "ID 8087:0036" in out
-    assert "Transport Names: usb:8087:0036" in out
+    assert "Transport Names:        usb:8087:0036" in out
     assert "Bus/Device:             001/023" in out
     assert "Class:                  Wireless Controller" in out
     assert "Subclass/Protocol:      RF Controller / Bluetooth Programming Interface" in out

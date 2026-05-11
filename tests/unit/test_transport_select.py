@@ -1,6 +1,7 @@
 """Unit tests for the test-transport selection helper module."""
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,10 +36,21 @@ def test_parse_spec_accepts_supported_forms():
         "usb",
         {"vendor": "intel", "bus": "1", "address": "4"},
     )
+    assert parse_spec("usb:vendor=barrot,bus=1,address=16") == (
+        "usb",
+        {"vendor": "barrot", "bus": "1", "address": "16"},
+    )
     assert parse_spec("uart:/dev/ttyUSB0@921600") == (
         "uart",
         {"raw": "/dev/ttyUSB0@921600"},
     )
+
+
+def test_transport_spec_does_not_keep_separate_usb_vendor_registry():
+    source = Path("pybluehost/transport/spec.py").read_text(encoding="utf-8")
+
+    assert "_VALID_VENDORS" not in source
+    assert "known_usb_vendors" in source
 
 
 def test_parse_spec_rejects_garbage():
@@ -235,4 +247,5 @@ def test_vendor_of_extracts_vendor_from_usb_spec():
     assert vendor_of("uart:/dev/ttyUSB0") is None
     assert vendor_of("usb:vendor=intel") == "intel"
     assert vendor_of("usb:vendor=Intel,bus=1,address=4") == "intel"
+    assert vendor_of("usb:vendor=BARROT,bus=1,address=16") == "barrot"
     assert vendor_of("usb:bus=1,address=4") is None

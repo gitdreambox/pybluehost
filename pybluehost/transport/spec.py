@@ -18,7 +18,6 @@ class SameFamilyError(ValueError):
     """Raised when peer transport family does not match primary."""
 
 
-_VALID_VENDORS = {"intel", "realtek", "csr"}
 _USB_KEYS = {"vendor", "bus", "address"}
 
 UART_SPEC_FORMAT = "uart:<port>[@baud]"
@@ -99,7 +98,7 @@ def uart_spec_port_baud(spec: str) -> tuple[str, int]:
 
 
 def vendor_of(spec: str) -> str | None:
-    """Return ``"intel"`` / ``"realtek"`` / ``"csr"`` for usb specs with vendor=, else None."""
+    """Return the normalized USB vendor from a spec, or ``None`` when absent."""
     family, params = parse_spec(spec)
     if family != "usb":
         return None
@@ -147,7 +146,7 @@ def _parse_usb_params(raw: str) -> dict[str, str]:
 
         if key == "vendor":
             vendor = value.lower()
-            if vendor not in _VALID_VENDORS:
+            if vendor not in _known_usb_vendors():
                 raise InvalidSpec(f"Unsupported vendor: {value!r}")
             params[key] = vendor
         elif key in {"bus", "address"}:
@@ -172,3 +171,9 @@ def _optional_int(params: dict[str, str], key: str) -> int | None:
     if value is None:
         return None
     return _validate_usb_int(key, value)
+
+
+def _known_usb_vendors() -> frozenset[str]:
+    from pybluehost.transport.usb import known_usb_vendors
+
+    return known_usb_vendors()

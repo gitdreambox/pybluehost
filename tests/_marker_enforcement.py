@@ -10,7 +10,6 @@ from __future__ import annotations
 import pytest
 
 _VALID_TRANSPORTS = {"usb", "uart"}
-_VALID_VENDORS = {"intel", "realtek", "csr"}
 
 
 def real_hw_skip_reason(
@@ -36,7 +35,7 @@ def real_hw_skip_reason(
     if required_vendor is not None:
         vendors = _marker_values(required_vendor)
         for vendor in vendors:
-            if vendor not in _VALID_VENDORS:
+            if vendor not in _known_usb_vendors():
                 return f"real_hardware_only marker error: unsupported vendor {vendor!r}"
         if required_transport != "usb":
             return "real_hardware_only marker error: vendor= requires transport='usb'"
@@ -66,3 +65,9 @@ def _marker_values(value: object) -> tuple[object, ...]:
     if isinstance(value, (tuple, list)):
         return tuple(value)
     return (value,)
+
+
+def _known_usb_vendors() -> frozenset[str]:
+    from pybluehost.transport.usb import known_usb_vendors
+
+    return known_usb_vendors()

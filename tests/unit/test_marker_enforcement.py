@@ -190,6 +190,26 @@ def test_invalid_vendor_value_is_marker_error():
     assert "unsupported vendor" in out
 
 
+def test_barrot_vendor_value_is_accepted_by_marker_validation():
+    marker = _Marker(transport="usb", vendor="barrot")
+
+    assert (
+        project_conftest.real_hw_skip_reason(
+            marker,
+            fam="usb",
+            current_vendor="intel",
+        )
+        == "requires vendor in ('barrot',), got 'intel'"
+    )
+
+
+def test_marker_enforcement_does_not_keep_separate_usb_vendor_registry():
+    source = (ROOT / "tests" / "_marker_enforcement.py").read_text(encoding="utf-8")
+
+    assert "_VALID_VENDORS" not in source
+    assert "known_usb_vendors" in source
+
+
 def test_virtual_only_skip_reason_on_non_virtual_family():
     assert (
         project_conftest.virtual_only_skip_reason("usb")

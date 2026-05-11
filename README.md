@@ -25,9 +25,13 @@ PyBlueHost 服务三类不同需求的用户。先确定自己属于哪类，直
 
 ## 已测试硬件
 
-| 芯片型号 | VID | PID | Transport | 协议版本 | 类型 | 固件名称 |
+| 芯片型号 | VID | PID | Transport | 协议版本 | 类型 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Realtek RTL8852BE | `0x0BDA` | `0x4853` | USB | 5.2 | BR/EDR + BLE | `rtl8852bu_fw.bin` |
+| RTL8852BE    | `0x0BDA` | `0x4853` | USB  | 5.2 | BR/EDR + BLE | `rtl8852bu_fw.bin` |
+| CSR8510      | `0x0A12` | `0x0001` | USB  | 4.0 | BR/EDR + BLE | 只支持BT 4.0 |
+| Intel BE200  | `0x8087` | `0x0036` | USB  | 5.4 | BR/EDR + BLE | `ibt-0291-0291.sfi` |
+| BARROT BT6.0 | `0x33FA` | `0x0012` | USB  | 6.0 | BR/EDR + BLE | UGREEN BT6.0 Adapter |
+| nRF52840     | `0x1915` | `0x521F` | UART | 5.4 | BLE          | PTS FW |
 
 CSR、Intel 系列芯片在代码中已支持但未在本仓库做完整回归。欢迎提 PR 补 hardware 矩阵。
 
@@ -58,6 +62,9 @@ pip install pybluehost      # 包含运行 CLI 所需的全部依赖
 ## 1.2 第一次跑：列出硬件 + 诊断
 
 ```bash
+# 列出所以的USB transport(仅USB transport, 不包括UART/TCP/UDP...)
+pybluehost --list-transport
+
 # USB 设备探测和驱动诊断（不打开设备，只读 USB 描述符）
 pybluehost tools usb probe
 pybluehost tools usb probe --verbose
@@ -68,7 +75,7 @@ pybluehost tools usb diagnose
 
 ## 1.3 BLE 验证（CLI）
 
-`--transport` 接受 `virtual`、`usb`、`usb:vendor=intel|realtek|csr`、`uart:/dev/ttyUSB0[@921600]`，机器上多块适配器时建议固定厂商 `usb:vendor=intel,bus=1,address=4` 避免选错。  
+`--transport` 接受 `virtual`、`usb`、`usb:vendor=intel|realtek|csr|barrot`、`uart:COM5[@115200]`、`uart:/dev/ttyUSB0[@921600]`，机器上多块适配器时建议固定厂商 `usb:vendor=intel,bus=1,address=4` 避免选错。
 `--btsnoop` 使用btsnoop格式记录hci log。  
 `--hci-log` 终端中实时显示hci raw log。 
 
@@ -77,6 +84,7 @@ pybluehost tools usb diagnose
 pybluehost app ble-scan --transport usb
 # 如果有多个usb适配器，可以指定使用
 pybluehost app ble-scan --transport usb:vendor=intel,bus=1,address=4
+pybluehost app ble-scan --transport uart:COM5@115200
 # 添加 HCI btsnoop log
 pybluehost app ble-scan --transport usb --btsnoop btsnoop.cfa
 # 添加 HCI raw log
