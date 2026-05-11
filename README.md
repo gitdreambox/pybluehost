@@ -111,7 +111,13 @@ pybluehost app sdp-browser --transport usb --addr 1A:8D:8D:1B:F5:6B
 pybluehost app sdp-browser --transport usb --addr 1A8D8D1BF56B --uuid 0x1101
 ```
 
-## 1.5 离线工具（不需要硬件）
+## 1.5 本地 UART/USB HCI transport 转接成网络 TCP/UDP H4 前端
+pybluehost app bridge --transport usb:vendor=intel --btsnoop test.cfa
+pybluehost app bridge --transport uart:/dev/ttyUSB0@921600 --protocol udp --port 57123
+
+UART 使用统一 transport 规则 `uart:<port>[@baud]`；Windows 串口可写作 `uart:COM5@921600`。
+
+## 1.6 离线工具（不需要硬件）
 
 ```bash
 # HCI 包十六进制 → 解码后的命令/事件
@@ -127,7 +133,7 @@ pybluehost tools fw list
 pybluehost tools fw download <chip>
 ```
 
-## 1.6 出问题怎么调试（trace）
+## 1.7 出问题怎么调试（trace）
 
 最常用的三个命令：
 
@@ -157,7 +163,7 @@ ls trace.log          # 你刚才重定向的 trace
 
 需要更细的控制（按层独立级别、ACL payload 不截断、把默认抑制的事件加回来）见 [§3.4](#34-trace-系统深度定制) 「Trace 系统深度定制」。
 
-## 1.7 安装 / 硬件常见问题
+## 1.8 安装 / 硬件常见问题
 
 **Windows：必须装 WinUSB 驱动**
 

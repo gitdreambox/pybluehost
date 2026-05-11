@@ -21,6 +21,10 @@ class SameFamilyError(ValueError):
 _VALID_VENDORS = {"intel", "realtek", "csr"}
 _USB_KEYS = {"vendor", "bus", "address"}
 
+UART_SPEC_FORMAT = "uart:<port>[@baud]"
+USB_SPEC_FORMAT = "usb[:vendor=...,bus=N,address=M]"
+TRANSPORT_SPEC_FORMAT = f"virtual | {USB_SPEC_FORMAT} | {UART_SPEC_FORMAT}"
+
 
 def parse_spec(spec: str) -> tuple[str, dict[str, str]]:
     """Validate spec syntax and return ``(family, params)``.
