@@ -11,10 +11,10 @@ from pybluehost.transport.spec import (
     SameFamilyError,
     enforce_same_family,
     family_of,
-    format_usb_candidate_spec,
     parse_spec,
     uart_spec_port_baud,
     usb_spec_bus_address,
+    usb_spec_identity,
     vendor_of,
 )
 
@@ -53,25 +53,25 @@ def autodetect_usb_candidates() -> list[str]:
 
 
 def find_second_usb_adapter(
-    primary_bus: int | None,
-    primary_address: int | None,
+    primary_spec: str,
 ) -> str | None:
     """Return a usb:... spec for a USB adapter other than the primary, or None."""
-    if primary_bus is None or primary_address is None:
+    vid, pid, _serial, occurrence = usb_spec_identity(primary_spec)
+    if vid is None or pid is None or occurrence is None:
         return None
 
     from pybluehost.transport.usb import USBTransport
 
     for cand in USBTransport.list_devices():
-        if cand.bus == primary_bus and cand.address == primary_address:
+        spec = _usb_candidate_spec(cand)
+        if spec == primary_spec:
             continue
-        return _usb_candidate_spec(cand)
+        return spec
     return None
 
 
 def _usb_candidate_spec(candidate: object) -> str:
-    return format_usb_candidate_spec(
-        vendor=candidate.vendor,
-        bus=candidate.bus,
-        address=candidate.address,
-    )
+    name = getattr(candidate, "transport_name", None)
+    if isinstance(name, str) and name:
+        return name
+    raise InvalidSpec("USB candidate does not expose a canonical transport name")

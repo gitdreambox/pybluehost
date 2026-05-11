@@ -54,15 +54,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_transports:
         from pybluehost.transport.usb import USBTransport
 
-        candidates = USBTransport.list_devices()
-        if not candidates:
+        devices = USBTransport.probe_devices()
+        if not devices:
             print("No Bluetooth USB adapters detected.")
         else:
             print("Detected Bluetooth USB adapters:")
-            for c in candidates:
-                spec = f"usb:vendor={c.vendor},bus={c.bus},address={c.address}"
+            for device in devices:
+                names = device.get("transport_names") or []
+                spec = " or ".join(names) if names else "<no transport name>"
                 print(
-                    f"  {c.vendor:8s} {c.name:10s} bus={c.bus} address={c.address}  ({spec})"
+                    f"  {device.get('vendor', 'unknown'):8s} "
+                    f"{device.get('chip_name', 'Unknown BT Device'):18s} {spec}"
                 )
         return 0
 

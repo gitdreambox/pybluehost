@@ -207,12 +207,24 @@ class Stack:
         vendor: str | None = None,
         bus: int | None = None,
         address: int | None = None,
+        vid: int | None = None,
+        pid: int | None = None,
+        serial: str | None = None,
+        occurrence: int | None = None,
         config: StackConfig | None = None,
     ) -> Stack:
         """Build a live Stack on a USB Bluetooth adapter."""
         from pybluehost.transport.usb import USBTransport
 
-        transport = USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
+        transport = USBTransport.auto_detect(
+            vendor=vendor,
+            bus=bus,
+            address=address,
+            vid=vid,
+            pid=pid,
+            serial=serial,
+            occurrence=occurrence,
+        )
         await transport.open()
         try:
             return await cls._build(transport, config, StackMode.LIVE)

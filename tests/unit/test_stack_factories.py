@@ -25,9 +25,44 @@ async def test_from_usb_calls_auto_detect_with_filters():
         ) as build:
             await Stack.from_usb(vendor="intel", bus=1, address=4, config=config)
 
-    auto_detect.assert_called_once_with(vendor="intel", bus=1, address=4)
+    auto_detect.assert_called_once_with(
+        vendor="intel",
+        bus=1,
+        address=4,
+        vid=None,
+        pid=None,
+        serial=None,
+        occurrence=None,
+    )
     fake_transport.open.assert_awaited_once()
     build.assert_awaited_once_with(fake_transport, config, StackMode.LIVE)
+
+
+@pytest.mark.asyncio
+async def test_from_usb_calls_auto_detect_with_transport_name_identity():
+    fake_transport = MagicMock()
+    fake_transport.open = AsyncMock()
+
+    with patch(
+        "pybluehost.transport.usb.USBTransport.auto_detect",
+        return_value=fake_transport,
+    ) as auto_detect:
+        with patch.object(
+            Stack,
+            "_build",
+            new=AsyncMock(return_value=MagicMock(spec=Stack)),
+        ):
+            await Stack.from_usb(vid=0x0A12, pid=0x0001, occurrence=2)
+
+    auto_detect.assert_called_once_with(
+        vendor=None,
+        bus=None,
+        address=None,
+        vid=0x0A12,
+        pid=0x0001,
+        serial=None,
+        occurrence=2,
+    )
 
 
 @pytest.mark.asyncio

@@ -33,6 +33,7 @@ class _Candidate:
     vendor: str
     bus: int
     address: int
+    transport_name: str
 
 
 class _Config:
@@ -196,7 +197,7 @@ def test_autodetected_usb_falls_back_to_virtual_when_probe_fails(
     monkeypatch.setattr(
         _transport_resolve,
         "autodetect_usb_candidates",
-        lambda: ["usb:vendor=intel,bus=1,address=4"],
+        lambda: ["usb:8087:0032#1"],
     )
     monkeypatch.setattr(
         _transport_resolve,
@@ -214,7 +215,7 @@ def test_autodetected_usb_keeps_hardware_when_probe_passes(
     monkeypatch.setattr(
         _transport_resolve,
         "autodetect_usb_candidates",
-        lambda: ["usb:vendor=intel,bus=1,address=4"],
+        lambda: ["usb:8087:0032#1"],
     )
     monkeypatch.setattr(
         _transport_resolve,
@@ -224,7 +225,7 @@ def test_autodetected_usb_keeps_hardware_when_probe_passes(
 
     assert (
         project_conftest.resolve_primary_spec(_Config())
-        == "usb:vendor=intel,bus=1,address=4"
+        == "usb:8087:0032#1"
     )
 
 
@@ -232,14 +233,14 @@ def test_autodetected_usb_tries_next_candidate_when_first_probe_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     candidates = [
-        "usb:vendor=intel,bus=1,address=4",
-        "usb:vendor=csr,bus=2,address=5",
+        "usb:8087:0032#1",
+        "usb:0A12:0001#1",
     ]
     seen: list[str] = []
 
     def fake_probe(spec: str) -> bool:
         seen.append(spec)
-        return spec.endswith("address=5")
+        return spec == "usb:0A12:0001#1"
 
     monkeypatch.delenv("PYBLUEHOST_TEST_TRANSPORT", raising=False)
     monkeypatch.setattr(_transport_resolve, "autodetect_usb_candidates", lambda: candidates)
@@ -247,7 +248,7 @@ def test_autodetected_usb_tries_next_candidate_when_first_probe_fails(
 
     assert (
         project_conftest.resolve_primary_spec(_Config())
-        == "usb:vendor=csr,bus=2,address=5"
+        == "usb:0A12:0001#1"
     )
     assert seen == candidates
 
@@ -265,7 +266,7 @@ def test_first_usable_autodetected_spec_returns_virtual_when_all_probes_fail(
 
     assert (
         _transport_resolve._first_usable_autodetected_spec(
-            ["usb:vendor=intel,bus=1,address=4"]
+            ["usb:8087:0032#1"]
         )
         == "virtual"
     )
@@ -277,8 +278,8 @@ def test_explicit_usb_primary_normalizes_to_concrete_adapter_and_peer_second(
     from pybluehost.transport.usb import USBTransport
 
     candidates = [
-        _Candidate(vendor="intel", bus=1, address=4),
-        _Candidate(vendor="realtek", bus=2, address=5),
+        _Candidate(vendor="intel", bus=1, address=4, transport_name="usb:8087:0032#1"),
+        _Candidate(vendor="realtek", bus=2, address=5, transport_name="usb:0BDA:8771#1"),
     ]
     seen_auto_detect: list[tuple[str | None, int | None, int | None]] = []
 
@@ -300,8 +301,8 @@ def test_explicit_usb_primary_normalizes_to_concrete_adapter_and_peer_second(
     primary = project_conftest.resolve_primary_spec(config)
     peer = project_conftest.resolve_peer_spec(config, primary)
 
-    assert primary == "usb:vendor=intel,bus=1,address=4"
-    assert peer == "usb:vendor=realtek,bus=2,address=5"
+    assert primary == "usb:8087:0032#1"
+    assert peer == "usb:0BDA:8771#1"
     assert seen_auto_detect == [(None, None, None)]
 
 
@@ -311,8 +312,8 @@ def test_vendor_filtered_usb_primary_normalizes_to_matching_candidate(
     from pybluehost.transport.usb import USBTransport
 
     candidates = [
-        _Candidate(vendor="realtek", bus=1, address=4),
-        _Candidate(vendor="intel", bus=2, address=5),
+        _Candidate(vendor="realtek", bus=1, address=4, transport_name="usb:0BDA:8771#1"),
+        _Candidate(vendor="intel", bus=2, address=5, transport_name="usb:8087:0032#1"),
     ]
     seen_auto_detect: list[tuple[str | None, int | None, int | None]] = []
 
@@ -331,7 +332,7 @@ def test_vendor_filtered_usb_primary_normalizes_to_matching_candidate(
 
     primary = project_conftest.resolve_primary_spec(_Config(transport="usb:vendor=intel"))
 
-    assert primary == "usb:vendor=intel,bus=2,address=5"
+    assert primary == "usb:8087:0032#1"
     assert seen_auto_detect == [("intel", None, None)]
 
 
@@ -344,6 +345,31 @@ def test_generic_usb_fallback_keeps_original_when_no_known_candidate(
     monkeypatch.setattr(USBTransport, "list_devices", classmethod(lambda cls: []))
 
     assert project_conftest.resolve_primary_spec(_Config(transport="usb")) == "usb"
+
+
+@pytest.mark.asyncio
+async def test_build_stack_from_vid_pid_occurrence_spec(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pybluehost.stack import Stack
+
+    seen: dict[str, object] = {}
+
+    async def fake_from_usb(**kwargs: object) -> object:
+        seen.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(Stack, "from_usb", fake_from_usb)
+
+    await _transport_resolve.build_stack_from_spec("usb:0A12:0001#2")
+
+    assert seen == {
+        "vendor": None,
+        "bus": None,
+        "address": None,
+        "vid": 0x0A12,
+        "pid": 0x0001,
+        "serial": None,
+        "occurrence": 2,
+    }
 
 
 @pytest.mark.asyncio

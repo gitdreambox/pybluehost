@@ -15,8 +15,6 @@ import os
 
 import pytest
 
-from pybluehost.transport.spec import format_usb_candidate_spec
-
 from tests._fallback_tracker import TRACKER
 from tests._marker_enforcement import (
     real_hw_skip_reason,
@@ -30,7 +28,6 @@ from tests._transport_resolve import (
 from tests._transport_select import (
     family_of,
     parse_spec,
-    usb_spec_bus_address,
     vendor_of,
 )
 
@@ -48,7 +45,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--transport",
         action="store",
         default=None,
-        help="Primary transport spec: virtual | usb[:vendor=...,bus=N,address=M] | uart:/dev/...",
+        help="Primary transport spec: virtual | usb[:VID:PID#N] | uart:/dev/...",
     )
     parser.addoption(
         "--transport-peer",
@@ -111,23 +108,18 @@ def pytest_configure(config: pytest.Config) -> None:
     if config.getoption("--list-transports"):
         from pybluehost.transport.usb import USBTransport
 
-        candidates = USBTransport.list_devices()
-        if not candidates:
+        devices = USBTransport.probe_devices()
+        if not devices:
             logger.warning("[pybluehost-tests] No Bluetooth USB adapters detected.")
         else:
             logger.warning("[pybluehost-tests] Detected Bluetooth USB adapters:")
-            for candidate in candidates:
-                spec = format_usb_candidate_spec(
-                    vendor=candidate.vendor,
-                    bus=candidate.bus,
-                    address=candidate.address,
-                )
+            for device in devices:
+                names = device.get("transport_names") or []
+                spec = " or ".join(names) if names else "<no transport name>"
                 logger.warning(
-                    "  %-8s %-10s bus=%s address=%s  (%s)",
-                    candidate.vendor,
-                    candidate.name,
-                    candidate.bus,
-                    candidate.address,
+                    "  %-8s %-18s %s",
+                    device.get("vendor", "unknown"),
+                    device.get("chip_name", "Unknown BT Device"),
                     spec,
                 )
         pytest.exit("--list-transports done", returncode=0)
@@ -160,19 +152,6 @@ def _peer_header_source_label(config: pytest.Config) -> str:
 def _format_header_spec(spec: str) -> str:
     """Return a readable transport spec for pytest's report header."""
     family, _params = parse_spec(spec)
-    if family != "usb":
-        return spec
-
-    bus, address = usb_spec_bus_address(spec)
-    if bus is None or address is None:
-        return spec
-
-    from pybluehost.transport.usb import USBTransport
-
-    for candidate in USBTransport.list_devices():
-        if candidate.bus == bus and candidate.address == address:
-            name = getattr(candidate, "name", "") or candidate.vendor.title()
-            return f"usb ({name}, bus={bus} address={address})"
     return spec
 
 
@@ -214,7 +193,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
             f"⚠  Auto-detect found no hardware. {n} tests ran on virtual."
         )
     terminalreporter.write_line(
-        "   Set --transport=usb (or PYBLUEHOST_TEST_TRANSPORT=usb) to validate"
+        "   Set --transport=usb:VID:PID#N (or PYBLUEHOST_TEST_TRANSPORT=usb:VID:PID#N) to validate"
     )
     terminalreporter.write_line("   against real hardware.")
     terminalreporter.write_sep("=")

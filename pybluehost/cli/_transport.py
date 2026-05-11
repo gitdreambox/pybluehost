@@ -8,6 +8,7 @@ from pybluehost.transport.spec import (
     parse_spec,
     uart_spec_port_baud,
     usb_spec_bus_address,
+    usb_spec_identity,
 )
 
 
@@ -17,9 +18,7 @@ async def parse_transport_arg(s: str) -> Transport:
     Formats:
         virtual                        -> VirtualController transport
         usb                            -> USBTransport.auto_detect()
-        usb:vendor=intel               -> USBTransport.auto_detect(vendor="intel")
-        usb:vendor=intel,bus=1,address=4
-                                       -> auto_detect with bus/address filter
+        usb:33FA:0012#1                -> auto_detect with VID/PID/occurrence filter
         uart:/dev/ttyUSB0              -> UARTTransport(port=..., baudrate=115200)
         uart:/dev/ttyUSB0@921600       -> UARTTransport(port=..., baudrate=921600)
     """
@@ -38,6 +37,17 @@ async def parse_transport_arg(s: str) -> Transport:
         from pybluehost.transport.usb import USBTransport
 
         bus, address = usb_spec_bus_address(s)
+        vid, pid, serial, occurrence = usb_spec_identity(s)
+        if vid is not None or pid is not None:
+            return USBTransport.auto_detect(
+                vendor=params.get("vendor"),
+                bus=bus,
+                address=address,
+                vid=vid,
+                pid=pid,
+                serial=serial,
+                occurrence=occurrence,
+            )
         return USBTransport.auto_detect(
             vendor=params.get("vendor"),
             bus=bus,

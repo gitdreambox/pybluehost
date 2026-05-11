@@ -62,7 +62,7 @@ pip install pybluehost      # 包含运行 CLI 所需的全部依赖
 ## 1.2 第一次跑：列出硬件 + 诊断
 
 ```bash
-# 列出所以的USB transport(仅USB transport, 不包括UART/TCP/UDP...)
+# 列出所有的USB transport(仅USB transport, 不包括UART/TCP/UDP...)
 pybluehost --list-transport
 
 # USB 设备探测和驱动诊断（不打开设备，只读 USB 描述符）
@@ -75,15 +75,14 @@ pybluehost tools usb diagnose
 
 ## 1.3 BLE 验证（CLI）
 
-`--transport` 接受 `virtual`、`usb`、`usb:vendor=intel|realtek|csr|barrot`、`uart:COM5[@115200]`、`uart:/dev/ttyUSB0[@921600]`，机器上多块适配器时建议固定厂商 `usb:vendor=intel,bus=1,address=4` 避免选错。
+`--transport` 接受 `virtual`、`usb:VID:PID`、`uart:COM5[@115200]`、`uart:/dev/ttyUSB0[@921600]`。USB 请直接使用 `pybluehost tools usb probe` 输出的 Transport Names，例如 `usb:33FA:0012`；同一电脑上有两个相同 VID/PID 设备时使用 `#1`、`#2` 区分,例如 `usb:8087:0036#1`。
 `--btsnoop` 使用btsnoop格式记录hci log。  
 `--hci-log` 终端中实时显示hci raw log。 
 
 ```bash
 # 扫描周围 BLE 设备（长跑，Ctrl+C 结束）
 pybluehost app ble-scan --transport usb
-# 如果有多个usb适配器，可以指定使用
-pybluehost app ble-scan --transport usb:vendor=intel,bus=1,address=4
+pybluehost app ble-scan --transport usb:8087:0036#1
 pybluehost app ble-scan --transport uart:COM5@115200
 # 添加 HCI btsnoop log
 pybluehost app ble-scan --transport usb --btsnoop btsnoop.cfa
@@ -120,7 +119,7 @@ pybluehost app sdp-browser --transport usb --addr 1A8D8D1BF56B --uuid 0x1101
 ```
 
 ## 1.5 本地 UART/USB HCI transport 转接成网络 TCP/UDP H4 前端
-pybluehost app bridge --transport usb:vendor=intel --btsnoop test.cfa
+pybluehost app bridge --transport usb --btsnoop test.cfa
 pybluehost app bridge --transport uart:/dev/ttyUSB0@921600 --protocol udp --port 57123
 
 UART 使用统一 transport 规则 `uart:<port>[@baud]`；Windows 串口可写作 `uart:COM5@921600`。
@@ -561,21 +560,19 @@ uv run pytest -m btsnoop
 uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-report=term-missing
 
 # 真硬件（按 vendor 过滤）
-uv run pytest tests/ --transport=usb
-uv run pytest tests/ --transport=usb:vendor=intel
-uv run pytest tests/ --transport=usb:vendor=intel,bus=1,address=4
+uv run pytest tests/ --transport=usb:0A12:0001#1
 
 # UART
 uv run pytest tests/ --transport=uart:/dev/ttyUSB0@921600
 
 # 双适配器测试（peer 自动找第二块；找不到则跳过）
-uv run pytest tests/ --transport=usb --transport-peer=usb:vendor=intel,bus=2,address=5
+uv run pytest tests/ --transport=usb:0A12:0001#1 --transport-peer=usb:0A12:0001#2
 
 # pytest 内打开 trace（注意：pytest 选项叫 --pybluehost-trace 不叫 --trace）
 uv run pytest tests/ --pybluehost-trace=hci --transport=virtual
 
 # 通过环境变量
-PYBLUEHOST_TEST_TRANSPORT=usb uv run pytest tests/
+PYBLUEHOST_TEST_TRANSPORT=usb:0A12:0001#1 uv run pytest tests/
 
 # 列出所有检测到的适配器
 uv run pytest --list-transports

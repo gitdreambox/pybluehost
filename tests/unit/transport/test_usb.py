@@ -62,7 +62,7 @@ def test_known_chips_CSR8510():
 
 
 def test_known_chips_barrot_bt60():
-    barrot = next((c for c in KNOWN_CHIPS if c.vid == 0x33FA and c.pid == 0x0012), None)
+    barrot = next((c for c in KNOWN_CHIPS if c.vid == 0x33FA and c.pid == 0x0011), None)
     assert barrot is not None
     assert barrot.name == "BT6.0"
     assert barrot.vendor == "barrot"
@@ -169,7 +169,7 @@ def test_auto_detect_vendor_filter_selects_barrot(mock_usb):
 
     barrot_device = MagicMock()
     barrot_device.idVendor = 0x33FA
-    barrot_device.idProduct = 0x0012
+    barrot_device.idProduct = 0x0011
 
     mock_usb.core.find.return_value = [intel_device, barrot_device]
     transport = USBTransport.auto_detect(vendor="barrot")
@@ -194,8 +194,7 @@ def test_auto_detect_unknown_bt_device_class(mock_usb):
     mock_device.bDeviceClass = 0xE0
     mock_device.bDeviceSubClass = 0x01
     mock_device.bDeviceProtocol = 0x01
-    # First find (known chips) returns no match; second find (by class) returns device
-    mock_usb.core.find.side_effect = [[], [mock_device]]
+    mock_usb.core.find.return_value = [mock_device]
     transport = USBTransport.auto_detect()
     assert isinstance(transport, USBTransport)
     assert not isinstance(transport, (IntelUSBTransport, RealtekUSBTransport))
@@ -204,7 +203,7 @@ def test_auto_detect_unknown_bt_device_class(mock_usb):
 @patch("pybluehost.transport.usb.usb")
 def test_auto_detect_nothing_at_all(mock_usb):
     """No known chips and no BT class device → NoBluetoothDeviceError."""
-    mock_usb.core.find.side_effect = [[], []]
+    mock_usb.core.find.return_value = []
     with pytest.raises(NoBluetoothDeviceError):
         USBTransport.auto_detect()
 

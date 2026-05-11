@@ -17,7 +17,6 @@ import os
 import pytest
 
 from tests._fallback_tracker import TRACKER
-from pybluehost.transport.spec import format_usb_candidate_spec
 
 from tests._transport_select import (
     InvalidSpec,
@@ -29,6 +28,7 @@ from tests._transport_select import (
     parse_spec,
     uart_spec_port_baud,
     usb_spec_bus_address,
+    usb_spec_identity,
 )
 
 _PRIMARY_CACHE_ATTR = "_pybluehost_selected_transport_spec"
@@ -107,8 +107,7 @@ def resolve_peer_spec(config: pytest.Config, primary: str) -> str | None:
     if fam == "virtual":
         peer = "virtual"
     elif fam == "usb":
-        bus, address = usb_spec_bus_address(primary)
-        peer = find_second_usb_adapter(primary_bus=bus, primary_address=address)
+        peer = find_second_usb_adapter(primary_spec=primary)
     else:
         peer = None
 
@@ -125,10 +124,15 @@ async def build_stack_from_spec(spec: str):
         return await Stack.virtual()
     if family == "usb":
         bus, address = usb_spec_bus_address(spec)
+        vid, pid, serial, occurrence = usb_spec_identity(spec)
         return await Stack.from_usb(
             vendor=params.get("vendor"),
             bus=bus,
             address=address,
+            vid=vid,
+            pid=pid,
+            serial=serial,
+            occurrence=occurrence,
         )
     if family == "uart":
         port, baudrate = uart_spec_port_baud(spec)
@@ -176,9 +180,18 @@ def _verify_spec_available(spec: str) -> str | None:
         from pybluehost.transport.usb import USBTransport
 
         bus, address = usb_spec_bus_address(spec)
+        vid, pid, serial, occurrence = usb_spec_identity(spec)
         vendor = params.get("vendor")
         try:
-            USBTransport.auto_detect(vendor=vendor, bus=bus, address=address)
+            USBTransport.auto_detect(
+                vendor=vendor,
+                bus=bus,
+                address=address,
+                vid=vid,
+                pid=pid,
+                serial=serial,
+                occurrence=occurrence,
+            )
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
         return _known_usb_candidate_spec(
@@ -186,6 +199,9 @@ def _verify_spec_available(spec: str) -> str | None:
             vendor=vendor,
             bus=bus,
             address=address,
+            vid=vid,
+            pid=pid,
+            occurrence=occurrence,
         )
     elif family == "uart":
         port, _baudrate = uart_spec_port_baud(spec)
@@ -200,6 +216,9 @@ def _known_usb_candidate_spec(
     vendor: str | None,
     bus: int | None,
     address: int | None,
+    vid: int | None,
+    pid: int | None,
+    occurrence: int | None,
 ) -> str | None:
     """Return the first known USB candidate matching the selected filters."""
     for candidate in candidates:
@@ -209,9 +228,14 @@ def _known_usb_candidate_spec(
             continue
         if address is not None and candidate.address != address:
             continue
-        return format_usb_candidate_spec(
-            vendor=candidate.vendor,
-            bus=candidate.bus,
-            address=candidate.address,
-        )
+        chip = getattr(candidate, "chip_info", None)
+        if vid is not None and (chip is None or chip.vid != vid):
+            continue
+        if pid is not None and (chip is None or chip.pid != pid):
+            continue
+        if occurrence is not None and getattr(candidate, "occurrence", None) != occurrence:
+            continue
+        name = getattr(candidate, "transport_name", None)
+        if isinstance(name, str) and name:
+            return name
     return None

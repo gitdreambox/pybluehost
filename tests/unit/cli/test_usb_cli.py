@@ -55,9 +55,9 @@ def test_probe_finds_known_intel_chip(mock_usb):
     assert devices[0]["vendor"] == "intel"
     assert devices[0]["chip_name"] == "BE200"
     assert devices[0]["vid_pid"] == "8087:0036"
-    assert devices[0]["bumble_transport_names"] == ["usb:8087:0036"]
+    assert devices[0]["bumble_transport_names"] == ["usb:8087:0036#1"]
     assert devices[0]["id"] == "8087:0036"
-    assert devices[0]["transport_names"] == ["usb:8087:0036"]
+    assert devices[0]["transport_names"] == ["usb:8087:0036#1"]
     assert devices[0]["class_name"] == "Wireless Controller"
 
 
@@ -72,25 +72,26 @@ def test_probe_finds_known_realtek_chip(mock_usb):
 
 @patch("pybluehost.transport.usb.usb")
 def test_probe_finds_known_barrot_chip(mock_usb):
-    mock_usb.core.find.return_value = [_mock_usb_device(0x33FA, 0x0012)]
+    mock_usb.core.find.return_value = [_mock_usb_device(0x33FA, 0x0011)]
     devices = probe_usb_devices()
     assert len(devices) == 1
     assert devices[0]["vendor"] == "barrot"
     assert devices[0]["chip_name"] == "BT6.0"
-    assert devices[0]["vid_pid"] == "33fa:0012"
-    assert devices[0]["transport_names"] == ["usb:33FA:0012"]
+    assert devices[0]["vid_pid"] == "33fa:0011"
+    assert devices[0]["transport_names"] == ["usb:33FA:0011#1"]
 
 
 @patch("pybluehost.transport.usb.usb")
 def test_probe_unknown_bt_class_device(mock_usb):
     """Unknown VID/PID but Bluetooth device class → included as Unknown."""
     mock_usb.core.find.return_value = [
-        _mock_usb_device(0x9999, 0x0001, dev_class=0xE0, sub=0x01, proto=0x01)
+        _mock_usb_device(0x33FA, 0x0012, dev_class=0xE0, sub=0x01, proto=0x01)
     ]
     devices = probe_usb_devices()
     assert len(devices) == 1
     assert devices[0]["vendor"] == "unknown"
     assert devices[0]["chip_name"] == "Unknown BT Device"
+    assert devices[0]["transport_names"] == ["usb:33FA:0012#1"]
 
 
 @patch("pybluehost.transport.usb.usb")
@@ -133,7 +134,20 @@ def test_probe_multiple_devices(mock_usb):
 
 
 @patch("pybluehost.transport.usb.usb")
-def test_probe_includes_descriptor_strings_and_bumble_serial_name(mock_usb):
+def test_probe_duplicate_vid_pid_uses_occurrence_suffix(mock_usb):
+    mock_usb.core.find.return_value = [
+        _mock_usb_device(0x0A12, 0x0001, bus=1, addr=4),
+        _mock_usb_device(0x0A12, 0x0001, bus=1, addr=5),
+    ]
+
+    devices = probe_usb_devices()
+
+    assert devices[0]["transport_names"] == ["usb:0A12:0001#1"]
+    assert devices[1]["transport_names"] == ["usb:0A12:0001#2"]
+
+
+@patch("pybluehost.transport.usb.usb")
+def test_probe_includes_descriptor_strings_and_canonical_occurrence_name(mock_usb):
     dev = _mock_usb_device(0x0E8D, 0x0808, bus=1, addr=9)
     dev.serial_number = "0000000000000000"
     dev.manufacturer = "MediaTek Inc"
@@ -145,10 +159,7 @@ def test_probe_includes_descriptor_strings_and_bumble_serial_name(mock_usb):
     assert devices[0]["serial"] == "0000000000000000"
     assert devices[0]["manufacturer"] == "MediaTek Inc"
     assert devices[0]["product"] == "Airoha Dongle Enterprise"
-    assert devices[0]["bumble_transport_names"] == [
-        "usb:0E8D:0808",
-        "usb:0E8D:0808/0000000000000000",
-    ]
+    assert devices[0]["bumble_transport_names"] == ["usb:0E8D:0808#1"]
 
 
 def test_probe_pyusb_not_installed():
@@ -173,11 +184,11 @@ def test_cmd_probe_returns_0_with_devices(mock_probe, capsys):
             "device_class": "e0:01:01",
             "device_class_name": "Wireless Controller (e0:01:01)",
             "subclass_protocol": "1/1",
-            "bumble_transport_names": ["usb:8087:0036"],
+            "bumble_transport_names": ["usb:8087:0036#1"],
             "class_name": "Wireless Controller",
             "subclass_name": "RF Controller",
             "protocol_name": "Bluetooth Programming Interface",
-            "transport_names": ["usb:8087:0036"],
+            "transport_names": ["usb:8087:0036#1"],
             "serial": None,
             "manufacturer": "Intel",
             "product": "Bluetooth Adapter",
@@ -192,9 +203,9 @@ def test_cmd_probe_returns_0_with_devices(mock_probe, capsys):
     assert "BE200" in out
     assert "ID 8087:0036" in out
     assert "Transport Names:" in out
-    assert "usb:8087:0036" in out
+    assert "usb:8087:0036#1" in out
     assert "ID 8087:0036" in out
-    assert "Transport Names:        usb:8087:0036" in out
+    assert "Transport Names:        usb:8087:0036#1" in out
     assert "Bus/Device:             001/023" in out
     assert "Class:                  Wireless Controller" in out
     assert "Subclass/Protocol:      RF Controller / Bluetooth Programming Interface" in out
@@ -217,7 +228,7 @@ def test_cmd_probe_formats_serial_transport_name_and_color(mock_probe, capsys):
             "class_name": "Device",
             "subclass_name": "0",
             "protocol_name": "0",
-            "transport_names": ["usb:0E8D:0808", "usb:0E8D:0808/0000000000000000"],
+            "transport_names": ["usb:0E8D:0808#1"],
             "serial": "0000000000000000",
             "manufacturer": "MediaTek Inc",
             "product": "Airoha Dongle Enterprise",
@@ -234,7 +245,7 @@ def test_cmd_probe_formats_serial_transport_name_and_color(mock_probe, capsys):
     out = capsys.readouterr().out
     assert "ID \x1b[" in out
     assert "0E8D:0808" in out
-    assert "usb:0E8D:0808 or usb:0E8D:0808/0000000000000000" in out
+    assert "usb:0E8D:0808#1" in out
     assert "Serial:" in out
     assert "0000000000000000" in out
 

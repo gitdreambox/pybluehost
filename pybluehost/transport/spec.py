@@ -1,6 +1,7 @@
 """Transport spec string parser.
 
-Single source of truth for the ``virtual | usb[:vendor=,bus=,address=] | uart:...``
+Single source of truth for the
+``virtual | usb[:VID:PID#N] | uart:...``
 spec string format. Used by both the test infrastructure (``--transport`` /
 ``--transport-peer`` pytest options) and the CLI (``parse_transport_arg``) so
 the parsing rules and error messages stay consistent.
@@ -21,7 +22,7 @@ class SameFamilyError(ValueError):
 _USB_KEYS = {"vendor", "bus", "address"}
 
 UART_SPEC_FORMAT = "uart:<port>[@baud]"
-USB_SPEC_FORMAT = "usb[:vendor=...,bus=N,address=M]"
+USB_SPEC_FORMAT = "usb[:VID:PID#N]"
 TRANSPORT_SPEC_FORMAT = f"virtual | {USB_SPEC_FORMAT} | {UART_SPEC_FORMAT}"
 
 
@@ -66,6 +67,20 @@ def usb_spec_bus_address(spec: str) -> tuple[int | None, int | None]:
     return (bus, address)
 
 
+def usb_spec_identity(
+    spec: str,
+) -> tuple[int | None, int | None, str | None, int | None]:
+    """Extract ``(vid, pid, serial, occurrence)`` from a Bumble-style usb spec."""
+    family, params = parse_spec(spec)
+    if family != "usb":
+        return (None, None, None, None)
+
+    vid = _optional_hex(params, "vid")
+    pid = _optional_hex(params, "pid")
+    occurrence = _optional_int(params, "occurrence")
+    return (vid, pid, params.get("serial"), occurrence)
+
+
 def uart_spec_port_baud(spec: str) -> tuple[str, int]:
     """Extract ``(port, baudrate)`` from a uart spec.
 
@@ -105,9 +120,11 @@ def vendor_of(spec: str) -> str | None:
     return params.get("vendor")
 
 
-def format_usb_candidate_spec(vendor: str, bus: int, address: int) -> str:
-    """Render a concrete usb spec string for a known-vendor adapter location."""
-    return f"usb:vendor={vendor},bus={bus},address={address}"
+def format_usb_transport_name(vid: int, pid: int, occurrence: int) -> str:
+    """Render the canonical USB transport name printed by ``tools usb probe``."""
+    if occurrence <= 0:
+        raise ValueError("USB occurrence must be greater than zero")
+    return f"usb:{vid:04X}:{pid:04X}#{occurrence}"
 
 
 def enforce_same_family(primary: str, peer: str) -> None:
@@ -123,6 +140,9 @@ def enforce_same_family(primary: str, peer: str) -> None:
 def _parse_usb_params(raw: str) -> dict[str, str]:
     if not raw:
         raise InvalidSpec("USB spec is missing parameters")
+
+    if "=" not in raw:
+        return _parse_usb_transport_name(raw)
 
     params: dict[str, str] = {}
     for token in raw.split(","):
@@ -156,6 +176,47 @@ def _parse_usb_params(raw: str) -> dict[str, str]:
     return params
 
 
+def _parse_usb_transport_name(raw: str) -> dict[str, str]:
+    body = raw.strip()
+    occurrence: str | None = None
+    if "/" in body:
+        raise InvalidSpec("USB transport name must use usb:VID:PID#N")
+
+    if "#" in body:
+        body, occurrence = body.rsplit("#", 1)
+        occurrence = occurrence.strip()
+        if not occurrence:
+            raise InvalidSpec(f"Invalid usb occurrence value: {raw!r}")
+        parsed_occurrence = _validate_usb_int("occurrence", occurrence)
+        if parsed_occurrence <= 0:
+            raise InvalidSpec(f"Invalid usb occurrence value: {occurrence!r}")
+    else:
+        raise InvalidSpec("USB transport name must include occurrence suffix '#N'")
+
+    parts = body.split(":")
+    if len(parts) != 2:
+        raise InvalidSpec(f"Malformed usb VID/PID spec: {raw!r}")
+
+    params = {
+        "vid": _normalize_usb_hex("vid", parts[0]),
+        "pid": _normalize_usb_hex("pid", parts[1]),
+    }
+    if occurrence is not None:
+        params["occurrence"] = occurrence
+    return params
+
+
+def _normalize_usb_hex(key: str, value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) != 4:
+        raise InvalidSpec(f"Invalid usb {key} value: {value!r}")
+    try:
+        parsed = int(stripped, 16)
+    except ValueError as exc:
+        raise InvalidSpec(f"Invalid usb {key} value: {value!r}") from exc
+    return f"{parsed:04x}"
+
+
 def _validate_usb_int(key: str, value: str) -> int:
     try:
         parsed = int(value)
@@ -171,6 +232,13 @@ def _optional_int(params: dict[str, str], key: str) -> int | None:
     if value is None:
         return None
     return _validate_usb_int(key, value)
+
+
+def _optional_hex(params: dict[str, str], key: str) -> int | None:
+    value = params.get(key)
+    if value is None:
+        return None
+    return int(_normalize_usb_hex(key, value), 16)
 
 
 def _known_usb_vendors() -> frozenset[str]:

@@ -35,6 +35,7 @@ def test_device_candidate_exposes_chip_metadata_and_is_frozen():
     assert candidate.name == "AX210"
     assert candidate.bus == 1
     assert candidate.address == 4
+    assert candidate.transport_name == "usb:8087:0032#1"
     with pytest.raises(FrozenInstanceError):
         candidate.bus = 9
 
@@ -58,7 +59,7 @@ def test_list_devices_returns_known_chips_only():
 
 
 def test_list_devices_returns_barrot_candidate():
-    barrot = _make_dev(0x33FA, 0x0012, bus=1, address=16)
+    barrot = _make_dev(0x33FA, 0x0011, bus=1, address=16)
 
     with patch("pybluehost.transport.usb.usb") as usb_mod:
         usb_mod.core.find.return_value = [barrot]
@@ -71,6 +72,22 @@ def test_list_devices_returns_barrot_candidate():
     assert cand.name == "BT6.0"
     assert cand.bus == 1
     assert cand.address == 16
+    assert cand.transport_name == "usb:33FA:0011#1"
+
+
+def test_list_devices_suffixes_duplicate_vid_pid_candidates():
+    first = _make_dev(0x0A12, 0x0001, bus=1, address=4)
+    second = _make_dev(0x0A12, 0x0001, bus=1, address=5)
+
+    with patch("pybluehost.transport.usb.usb") as usb_mod:
+        usb_mod.core.find.return_value = [first, second]
+        with patch.object(USBTransport, "_get_usb_backend", return_value=None):
+            candidates = USBTransport.list_devices()
+
+    assert [candidate.transport_name for candidate in candidates] == [
+        "usb:0A12:0001#1",
+        "usb:0A12:0001#2",
+    ]
 
 
 def test_list_devices_returns_empty_when_no_devices():
@@ -116,16 +133,77 @@ def test_auto_detect_bus_address_no_match_raises_with_location():
     assert "bus=9 address=9" in str(exc_info.value)
 
 
-def test_auto_detect_disables_generic_fallback_when_location_filter_is_set():
+def test_auto_detect_disables_generic_fallback_when_vendor_filter_is_set():
     bt_device = _make_dev(0x9999, 0x0001, bus=3, address=7)
     bt_device.bDeviceClass = 0xE0
     bt_device.bDeviceSubClass = 0x01
     bt_device.bDeviceProtocol = 0x01
 
     with patch("pybluehost.transport.usb.usb") as usb_mod:
-        usb_mod.core.find.side_effect = [[], [bt_device]]
+        usb_mod.core.find.return_value = [bt_device]
         with patch.object(USBTransport, "_get_usb_backend", return_value=None):
             with pytest.raises(NoBluetoothDeviceError):
-                USBTransport.auto_detect(bus=3)
+                USBTransport.auto_detect(vendor="intel", bus=3)
 
     assert usb_mod.core.find.call_count == 1
+
+
+def test_auto_detect_vid_pid_filter_accepts_unknown_bluetooth_class_device():
+    bt_device = _make_dev(0x33FA, 0x0012, bus=3, address=7)
+    bt_device.bDeviceClass = 0xE0
+    bt_device.bDeviceSubClass = 0x01
+    bt_device.bDeviceProtocol = 0x01
+
+    with patch("pybluehost.transport.usb.usb") as usb_mod:
+        usb_mod.core.find.return_value = [bt_device]
+        with patch.object(USBTransport, "_get_usb_backend", return_value=None):
+            t = USBTransport.auto_detect(vid=0x33FA, pid=0x0012, occurrence=1)
+
+    assert isinstance(t, USBTransport)
+    assert t._device is bt_device
+    assert t._chip_info is None
+
+
+def test_auto_detect_location_filter_accepts_unknown_bluetooth_class_device():
+    bt_device = _make_dev(0x1234, 0x5678, bus=3, address=7)
+    bt_device.bDeviceClass = 0xE0
+    bt_device.bDeviceSubClass = 0x01
+    bt_device.bDeviceProtocol = 0x01
+
+    with patch("pybluehost.transport.usb.usb") as usb_mod:
+        usb_mod.core.find.return_value = [bt_device]
+        with patch.object(USBTransport, "_get_usb_backend", return_value=None):
+            t = USBTransport.auto_detect(bus=3, address=7)
+
+    assert t._device is bt_device
+    assert t._chip_info is None
+
+
+def test_auto_detect_vid_pid_occurrence_selects_duplicate_unknown_device():
+    first = _make_dev(0x1234, 0x5678, bus=3, address=7)
+    second = _make_dev(0x1234, 0x5678, bus=3, address=8)
+    for dev in (first, second):
+        dev.bDeviceClass = 0xE0
+        dev.bDeviceSubClass = 0x01
+        dev.bDeviceProtocol = 0x01
+
+    with patch("pybluehost.transport.usb.usb") as usb_mod:
+        usb_mod.core.find.return_value = [first, second]
+        with patch.object(USBTransport, "_get_usb_backend", return_value=None):
+            t = USBTransport.auto_detect(vid=0x1234, pid=0x5678, occurrence=2)
+
+    assert t._device is second
+    assert t._chip_info is None
+
+
+def test_auto_detect_vid_pid_filter_rejects_non_bluetooth_usb_device():
+    other = _make_dev(0x1234, 0x5678, bus=3, address=7)
+    other.bDeviceClass = 0x08
+    other.bDeviceSubClass = 0x06
+    other.bDeviceProtocol = 0x50
+
+    with patch("pybluehost.transport.usb.usb") as usb_mod:
+        usb_mod.core.find.return_value = [other]
+        with patch.object(USBTransport, "_get_usb_backend", return_value=None):
+            with pytest.raises(NoBluetoothDeviceError):
+                USBTransport.auto_detect(vid=0x1234, pid=0x5678)

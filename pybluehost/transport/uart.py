@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-
+import logging
 import serial_asyncio
 
 from pybluehost.transport.base import Transport, TransportInfo
 from pybluehost.transport.h4 import H4Framer
 
+logger = logging.getLogger(__name__)
 
 class UARTTransport(Transport):
     """H4 HCI framing over a serial port (pyserial-asyncio backend)."""
@@ -21,6 +22,7 @@ class UARTTransport(Transport):
         self._framer = H4Framer()
 
     async def open(self) -> None:
+        logger.info(f"Opening UARTTransport on port {self._port} at {self._baudrate} baud")
         self._reader, self._writer = await serial_asyncio.open_serial_connection(
             url=self._port, baudrate=self._baudrate
         )

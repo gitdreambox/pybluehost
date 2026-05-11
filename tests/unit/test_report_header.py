@@ -30,6 +30,7 @@ class _Candidate:
     name: str
     bus: int
     address: int
+    transport_name: str
 
 
 class _Config:
@@ -167,14 +168,20 @@ def test_format_header_spec_uses_friendly_usb_candidate(
         "list_devices",
         classmethod(
             lambda cls: [
-                _Candidate(vendor="intel", name="Intel AX210", bus=1, address=4),
+                _Candidate(
+                    vendor="intel",
+                    name="Intel AX210",
+                    bus=1,
+                    address=4,
+                    transport_name="usb:8087:0032#1",
+                ),
             ]
         ),
     )
 
     assert project_conftest._format_header_spec(
-        "usb:vendor=intel,bus=1,address=4",
-    ) == "usb (Intel AX210, bus=1 address=4)"
+        "usb:8087:0032#1",
+    ) == "usb:8087:0032#1"
 
 
 def test_no_fallback_summary_when_explicit_virtual_stack_fixture_used():
@@ -230,7 +237,7 @@ def test_fallback_summary_uses_stack_fixture_count(monkeypatch: pytest.MonkeyPat
     assert terminal.lines == [
         "pybluehost transport summary",
         "⚠  Auto-detect found no hardware. 2 tests ran on virtual.",
-        "   Set --transport=usb (or PYBLUEHOST_TEST_TRANSPORT=usb) to validate",
+        "   Set --transport=usb:VID:PID#N (or PYBLUEHOST_TEST_TRANSPORT=usb:VID:PID#N) to validate",
         "   against real hardware.",
         "=",
     ]

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from pybluehost.core.errors import USBAccessDeniedError
 from pybluehost.transport.base import Transport, TransportInfo
 from pybluehost.transport.firmware import FirmwareManager, FirmwarePolicy
+from pybluehost.transport.spec import format_usb_transport_name
 
 if TYPE_CHECKING:
     pass
@@ -49,6 +50,7 @@ class DeviceCandidate:
     chip_info: ChipInfo
     bus: int
     address: int
+    occurrence: int = 1
 
     @property
     def vendor(self) -> str:
@@ -57,6 +59,14 @@ class DeviceCandidate:
     @property
     def name(self) -> str:
         return self.chip_info.name
+
+    @property
+    def transport_name(self) -> str:
+        return format_usb_transport_name(
+            self.chip_info.vid,
+            self.chip_info.pid,
+            self.occurrence,
+        )
 
 
 @dataclass(frozen=True)
@@ -348,6 +358,44 @@ def _descriptor_string(dev: Any, attr: str) -> str | None:
     return None
 
 
+def _bluetooth_usb_occurrence_indexes(devices: list[Any]) -> dict[int, int]:
+    indexes: dict[int, int] = {}
+    counts: dict[tuple[int, int], int] = {}
+    for dev in devices:
+        if not is_bluetooth_usb_device(dev):
+            continue
+        key = (int(dev.idVendor), int(dev.idProduct))
+        counts[key] = counts.get(key, 0) + 1
+        indexes[id(dev)] = counts[key]
+    return indexes
+
+
+def _matches_usb_selection(
+    dev: Any,
+    *,
+    bus: int | None,
+    address: int | None,
+    vid: int | None,
+    pid: int | None,
+    serial: str | None,
+    occurrence: int | None,
+    occurrence_index: int | None,
+) -> bool:
+    if bus is not None and int(getattr(dev, "bus", 0) or 0) != bus:
+        return False
+    if address is not None and int(getattr(dev, "address", 0) or 0) != address:
+        return False
+    if vid is not None and int(dev.idVendor) != vid:
+        return False
+    if pid is not None and int(dev.idProduct) != pid:
+        return False
+    if serial is not None and _descriptor_string(dev, "serial_number") != serial:
+        return False
+    if occurrence is not None and occurrence_index != occurrence:
+        return False
+    return True
+
+
 def get_usb_endpoints(dev: Any) -> list[dict[str, str]]:
     """Extract endpoint info from USB HCI interface 0."""
     endpoints = []
@@ -381,14 +429,13 @@ def get_usb_endpoints(dev: Any) -> list[dict[str, str]]:
 
 
 def _bumble_transport_names(dev: Any, occurrence: int | None = None) -> list[str]:
-    vid_pid = f"{int(dev.idVendor):04X}:{int(dev.idProduct):04X}"
-    base = f"usb:{vid_pid}"
-    serial = _descriptor_string(dev, "serial_number")
-    if serial:
-        return [base, f"{base}/{serial}"]
-    if occurrence and occurrence > 1:
-        return [f"{base}#{occurrence}"]
-    return [base]
+    return [
+        format_usb_transport_name(
+            int(dev.idVendor),
+            int(dev.idProduct),
+            occurrence or 1,
+        )
+    ]
 
 
 def parse_hci_reset_status(event: bytes) -> int | None:
@@ -583,12 +630,24 @@ class USBTransport(Transport):
         vendor: str | None = None,
         bus: int | None = None,
         address: int | None = None,
+        vid: int | None = None,
+        pid: int | None = None,
+        serial: str | None = None,
+        occurrence: int | None = None,
     ) -> "USBTransport":
         """Enumerate USB devices, match KNOWN_CHIPS, return correct subclass instance."""
         if usb is None:
             raise RuntimeError(
                 "pyusb not installed. Run: pip install pyusb"
             )
+        if (vid is None) != (pid is None):
+            raise ValueError("USB VID/PID filters must be provided together")
+        if occurrence is not None and occurrence <= 0:
+            raise ValueError("USB occurrence filter must be greater than zero")
+        if occurrence is not None and (vid is None or pid is None):
+            raise ValueError("USB occurrence filter requires VID/PID filters")
+        if serial is not None and not serial:
+            raise ValueError("USB serial filter cannot be empty")
 
         selected_vendor = vendor.lower() if vendor is not None else None
         supported_vendors = sorted(known_usb_vendors())
@@ -606,10 +665,18 @@ class USBTransport(Transport):
 
         # 1. Search known chips by VID/PID
         all_devices = list(usb.core.find(find_all=True, backend=backend))
+        occurrence_indexes = _bluetooth_usb_occurrence_indexes(all_devices)
         for dev in all_devices:
-            if bus is not None and int(getattr(dev, "bus", 0) or 0) != bus:
-                continue
-            if address is not None and int(getattr(dev, "address", 0) or 0) != address:
+            if not _matches_usb_selection(
+                dev,
+                bus=bus,
+                address=address,
+                vid=vid,
+                pid=pid,
+                serial=serial,
+                occurrence=occurrence,
+                occurrence_index=occurrence_indexes.get(id(dev)),
+            ):
                 continue
             for chip in chips:
                 if dev.idVendor == chip.vid and dev.idProduct == chip.pid:
@@ -620,27 +687,40 @@ class USBTransport(Transport):
                         firmware_policy=firmware_policy,
                     )
 
-        # 2. Fallback: look for a generic Bluetooth USB device only when no vendor
-        # filter is requested. A vendor-specific call should not silently return
-        # a different adapter type.
-        if selected_vendor is None and bus is None and address is None:
-            bt_devices = list(
-                usb.core.find(
-                    find_all=True,
-                    backend=backend,
-                    bDeviceClass=0xE0,
-                    bDeviceSubClass=0x01,
-                    bDeviceProtocol=0x01,
-                )
-            )
-            if bt_devices:
-                dev = bt_devices[0]
-                return cls(device=dev, firmware_policy=firmware_policy)
+        # 2. Generic fallback for Bluetooth-class adapters that are not in
+        # KNOWN_CHIPS. Vendor-specific calls should not silently return a
+        # different adapter type.
+        if selected_vendor is None:
+            for dev in all_devices:
+                if not _matches_usb_selection(
+                    dev,
+                    bus=bus,
+                    address=address,
+                    vid=vid,
+                    pid=pid,
+                    serial=serial,
+                    occurrence=occurrence,
+                    occurrence_index=occurrence_indexes.get(id(dev)),
+                ):
+                    continue
+                if is_bluetooth_usb_device(dev):
+                    return cls(
+                        device=dev,
+                        chip_info=None,
+                        firmware_policy=firmware_policy,
+                    )
 
         target = f" {selected_vendor}" if selected_vendor is not None else ""
-        loc = ""
+        loc_parts: list[str] = []
+        if vid is not None and pid is not None:
+            loc_parts.append(f"vid={vid:04x} pid={pid:04x}")
+        if serial is not None:
+            loc_parts.append(f"serial={serial}")
+        if occurrence is not None:
+            loc_parts.append(f"occurrence={occurrence}")
         if bus is not None or address is not None:
-            loc = f" at bus={bus} address={address}"
+            loc_parts.append(f"bus={bus} address={address}")
+        loc = f" at {', '.join(loc_parts)}" if loc_parts else ""
         raise NoBluetoothDeviceError(
             f"No supported{target} Bluetooth USB device found{loc}. "
             "Ensure your adapter is plugged in and (on Windows) has the WinUSB driver."
@@ -658,6 +738,7 @@ class USBTransport(Transport):
             return []
 
         result: list[DeviceCandidate] = []
+        occurrence_indexes = _bluetooth_usb_occurrence_indexes(all_devices)
         for dev in all_devices:
             for chip in KNOWN_CHIPS:
                 if dev.idVendor == chip.vid and dev.idProduct == chip.pid:
@@ -666,6 +747,7 @@ class USBTransport(Transport):
                             chip_info=chip,
                             bus=int(getattr(dev, "bus", 0) or 0),
                             address=int(getattr(dev, "address", 0) or 0),
+                            occurrence=occurrence_indexes.get(id(dev), 1),
                         )
                     )
                     break
@@ -1089,6 +1171,7 @@ class USBTransport(Transport):
 
     async def _initialize(self) -> None:
         """Override in subclasses for firmware loading. Default: no-op."""
+        logger.info("Generic USBTransport initialized")
 
     async def _send_hci_command(self, opcode: int, params: bytes = b"") -> bytes:
         """Send a standard HCI command and wait for its Command Complete event."""
@@ -1276,6 +1359,7 @@ class IntelUSBTransport(USBTransport):
         returns TLV data, routes to the new-gen path. Otherwise falls back to
         the legacy fixed-format protocol.
         """
+        logger.info("Intel USBTransport initialized")
         reset_status = await self._try_initial_hci_reset()
         if reset_status == 0x00:
             logger.info("Intel: initial HCI Reset status=0x00")
@@ -2015,6 +2099,7 @@ class RealtekUSBTransport(USBTransport):
 
     async def _initialize(self) -> None:
         """Realtek 5-step firmware loading sequence."""
+        logger.info("Realtek USBTransport initialized")
         reset_status = await self._try_initial_hci_reset()
         if reset_status == 0x00:
             logger.info("Realtek: initial HCI Reset status=0x00")
@@ -2473,5 +2558,5 @@ KNOWN_CHIPS: list[ChipInfo] = [
     # CSR
     ChipInfo("csr", "CSR8510", 0x0A12, 0x0001, "", CSRUSBTransport),
     # BARROT
-    ChipInfo("barrot", "BT6.0", 0x33FA, 0x0012, "", USBTransport),
+    ChipInfo("barrot", "BT6.0", 0x33FA, 0x0011, "", USBTransport),
 ]

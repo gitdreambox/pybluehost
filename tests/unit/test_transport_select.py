@@ -40,6 +40,14 @@ def test_parse_spec_accepts_supported_forms():
         "usb",
         {"vendor": "barrot", "bus": "1", "address": "16"},
     )
+    assert parse_spec("usb:33FA:0012#1") == (
+        "usb",
+        {"vid": "33fa", "pid": "0012", "occurrence": "1"},
+    )
+    assert parse_spec("usb:0A12:0001#2") == (
+        "usb",
+        {"vid": "0a12", "pid": "0001", "occurrence": "2"},
+    )
     assert parse_spec("uart:/dev/ttyUSB0@921600") == (
         "uart",
         {"raw": "/dev/ttyUSB0@921600"},
@@ -58,6 +66,14 @@ def test_parse_spec_rejects_garbage():
         parse_spec("garbage")
     with pytest.raises(InvalidSpec):
         parse_spec("usb:vendor=qualcomm")
+    with pytest.raises(InvalidSpec):
+        parse_spec("usb:1234")
+    with pytest.raises(InvalidSpec):
+        parse_spec("usb:1234:5678")
+    with pytest.raises(InvalidSpec):
+        parse_spec("usb:0E8D:0808/0000000000000000")
+    with pytest.raises(InvalidSpec):
+        parse_spec("usb:1234:5678#0")
 
 
 @pytest.mark.parametrize(
@@ -101,8 +117,9 @@ def test_autodetect_returns_usb_spec_with_bus_address():
     cand.vendor = "intel"
     cand.bus = 1
     cand.address = 4
+    cand.transport_name = "usb:8087:0032#1"
     with patch("pybluehost.transport.usb.USBTransport.list_devices", return_value=[cand]):
-        assert autodetect_primary() == "usb:vendor=intel,bus=1,address=4"
+        assert autodetect_primary() == "usb:8087:0032#1"
 
 
 def test_autodetect_usb_candidates_returns_all_concrete_specs():
@@ -110,15 +127,17 @@ def test_autodetect_usb_candidates_returns_all_concrete_specs():
     a.vendor = "intel"
     a.bus = 1
     a.address = 4
+    a.transport_name = "usb:8087:0032#1"
     b = MagicMock()
     b.vendor = "csr"
     b.bus = 2
     b.address = 5
+    b.transport_name = "usb:0A12:0001#1"
 
     with patch("pybluehost.transport.usb.USBTransport.list_devices", return_value=[a, b]):
         assert autodetect_usb_candidates() == [
-            "usb:vendor=intel,bus=1,address=4",
-            "usb:vendor=csr,bus=2,address=5",
+            "usb:8087:0032#1",
+            "usb:0A12:0001#1",
         ]
 
 
@@ -136,13 +155,15 @@ def test_find_second_usb_adapter_excludes_primary():
     a.vendor = "intel"
     a.bus = 1
     a.address = 4
+    a.transport_name = "usb:0A12:0001#1"
     b = MagicMock()
     b.vendor = "intel"
     b.bus = 2
     b.address = 5
+    b.transport_name = "usb:0A12:0001#2"
     with patch("pybluehost.transport.usb.USBTransport.list_devices", return_value=[a, b]):
-        peer = find_second_usb_adapter(primary_bus=1, primary_address=4)
-    assert peer == "usb:vendor=intel,bus=2,address=5"
+        peer = find_second_usb_adapter(primary_spec="usb:0A12:0001#1")
+    assert peer == "usb:0A12:0001#2"
 
 
 def test_find_second_usb_adapter_returns_none_when_only_primary():
@@ -150,29 +171,14 @@ def test_find_second_usb_adapter_returns_none_when_only_primary():
     a.vendor = "intel"
     a.bus = 1
     a.address = 4
+    a.transport_name = "usb:0A12:0001#1"
     with patch("pybluehost.transport.usb.USBTransport.list_devices", return_value=[a]):
-        assert find_second_usb_adapter(primary_bus=1, primary_address=4) is None
+        assert find_second_usb_adapter(primary_spec="usb:0A12:0001#1") is None
 
 
-@pytest.mark.parametrize(
-    ("primary_bus", "primary_address"),
-    [
-        (None, 4),
-        (1, None),
-        (None, None),
-    ],
-)
-def test_find_second_usb_adapter_returns_none_when_primary_identity_unknown(
-    primary_bus, primary_address
-):
+def test_find_second_usb_adapter_returns_none_when_primary_identity_unknown():
     with patch("pybluehost.transport.usb.USBTransport.list_devices") as list_devices:
-        assert (
-            find_second_usb_adapter(
-                primary_bus=primary_bus,
-                primary_address=primary_address,
-            )
-            is None
-        )
+        assert find_second_usb_adapter(primary_spec="usb") is None
 
     list_devices.assert_not_called()
 

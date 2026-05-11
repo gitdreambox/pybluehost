@@ -65,7 +65,7 @@ def test_main_list_transports_no_devices(capsys, monkeypatch):
     """--list-transports prints the no-device message and returns 0 when nothing is plugged in."""
     from pybluehost.transport import usb as usb_mod
 
-    monkeypatch.setattr(usb_mod.USBTransport, "list_devices", classmethod(lambda cls: []))
+    monkeypatch.setattr(usb_mod.USBTransport, "probe_devices", classmethod(lambda cls: []))
     rc = main(["--list-transports"])
     captured = capsys.readouterr()
     assert rc == 0
@@ -75,16 +75,15 @@ def test_main_list_transports_no_devices(capsys, monkeypatch):
 def test_main_list_transports_with_devices(capsys, monkeypatch):
     """--list-transports prints each detected adapter as a usb: spec line."""
     from pybluehost.transport import usb as usb_mod
-    from pybluehost.transport.usb import ChipInfo, DeviceCandidate
 
-    chip = ChipInfo(
-        vendor="intel", name="AX210", vid=0x8087, pid=0x0032,
-        firmware_pattern="ibt-0040-*", transport_class=None,
-    )
-    candidate = DeviceCandidate(chip_info=chip, bus=1, address=4)
+    device = {
+        "vendor": "intel",
+        "chip_name": "AX210",
+        "transport_names": ["usb:8087:0032#1"],
+    }
 
     monkeypatch.setattr(
-        usb_mod.USBTransport, "list_devices", classmethod(lambda cls: [candidate])
+        usb_mod.USBTransport, "probe_devices", classmethod(lambda cls: [device])
     )
     rc = main(["--list-transports"])
     captured = capsys.readouterr()
@@ -92,7 +91,7 @@ def test_main_list_transports_with_devices(capsys, monkeypatch):
     assert "Detected Bluetooth USB adapters:" in captured.out
     assert "intel" in captured.out
     assert "AX210" in captured.out
-    assert "usb:vendor=intel,bus=1,address=4" in captured.out
+    assert "usb:8087:0032#1" in captured.out
 
 
 def test_main_dunder_main_block(monkeypatch):
