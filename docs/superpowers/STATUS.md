@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：PRD 1.0 收尾 — ✅ 全部完成
-**下一步**：选择下一个 Plan（完整 SMP 配对状态机 / HCI 容错初始化 / 断线重连闭环 / transport/usb 拆包 / e2e 覆盖）
+**当前进行中**：transport/usb 拆包 — ✅ 全部完成
+**下一步**：选择下一个 Plan（完整 SMP 配对状态机 / HCI 容错初始化 / 断线重连闭环 / e2e 覆盖）
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -43,8 +43,9 @@
 | Pytest Transport Selection | pytest transport 选择机制 | ✅ 已完成 | [pytest-transport-selection](plans/pytest-transport-selection.md) | `tests/conftest.py`, `tests/_transport_select.py`, `pybluehost/stack.py` |
 | Trace / Log Structured Output | HCI 结构化彩色 trace + 协议层 logger 注入 | ✅ 已完成 | [trace-log-system](plans/trace-log-system.md) | `pybluehost/hci/format.py`, `pybluehost/hci/format_fields.py`, `pybluehost/core/trace_console.py`, `pybluehost/core/trace_control.py`, 9 protocol-layer files |
 | PRD 1.0 收尾 | PcapngSink + Stack 工厂补全 + SMP 装配 + RFCOMM dispatch fix + bond_storage | ✅ 完成 | [2026-05-12-prd-v1-closure](plans/2026-05-12-prd-v1-closure.md) | `core/trace.py`, `core/errors.py`, `stack.py`, `l2cap/manager.py`, `ble/smp.py`, `gap.py`, `classic/rfcomm.py` |
+| transport/usb 拆包 | 2562 行 god module 拆成 8 个职责清晰的 sibling 模块 | ✅ 完成 | [2026-05-12-transport-usb-split](plans/2026-05-12-transport-usb-split.md) | `pybluehost/transport/usb/{__init__,chips,errors,discovery,diagnostics,base,intel,realtek,csr}.py` |
 
-**总计：19 个 Plan（原 18 个 + PRD 1.0 收尾）**
+**总计：20 个 Plan（原 19 个 + transport/usb 拆包）**
 
 ---
 
@@ -210,6 +211,18 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 已知遗留：4 个 pre-existing 失败（USB diagnostics × 3 + RFCOMM inbound handler × 1）与本计划无关，不在本计划范围内修复
 - 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS（coverage 86.32%）
 
+### ✅ transport/usb 拆包
+- 完成时间：2026-05-12
+- Plan 文档：[2026-05-12-transport-usb-split.md](plans/2026-05-12-transport-usb-split.md)
+- 关键变化：纯结构重构、零行为变更
+  - `transport/usb.py`（2562 行）→ `transport/usb/` package（8 模块）
+  - 拆分映射：chips（ChipInfo）/ errors（异常类型）/ discovery（13 个 device-discovery helper）/ diagnostics（USBDeviceDiagnostics + 直接 USB 探针）/ base（USBTransport + parse_hci_reset_status）/ intel（IntelUSBTransport + _BootParams）/ realtek（RealtekUSBTransport + RealtekLocalVersion）/ csr（CSRUSBTransport）
+  - `__init__.py` 仅 ~110 行：re-export + KNOWN_CHIPS 表
+  - `base.py` 引入 `_usb()` 帮助函数：tests 仍可通过 patch `pybluehost.transport.usb.usb` 影响子模块代码路径
+  - 外部 import 路径完全不变（`from pybluehost.transport.usb import X` 全部仍工作，25 个公共符号）
+- 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
+- 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS
+
 ### ✅ PRD 1.0 收尾
 - 完成时间：2026-05-12
 - Plan 文档：[2026-05-12-prd-v1-closure.md](plans/2026-05-12-prd-v1-closure.md)
@@ -252,6 +265,7 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 | 2026-04-27 | Pytest Transport Selection Task 2 | full-suite `uv run pytest tests/ -q` / `-m "not hardware"` verification was blocked because old hardware tests still ran Intel BE200 USB timeout paths | Later marker migration and autodetect usability probe now isolate/fallback hardware paths; final `uv run --frozen pytest tests/ -q` passes | ✅ 已解决 |
 | 2026-04-28 | CLI Demo 功能闭环 Task 4/5 | CSR 硬件上 `sdp-browser` 已完成 ACL、SSP、authentication、encryption、L2CAP outbound/inbound SDP，但目标设备不返回本机主动发出的 SDP `ServiceSearchAttributeRequest` | 已修复地址线序、L2CAP Pending、SSP 事件、Link Key Request、CLI 错误格式、本地 SDP listener、inbound L2CAP configure；剩余现象需用其他目标设备或外部抓包对比远端 SDP server 行为 | ⚠️ 待确认 |
 | 2026-05-12 | Plan 10（PcapngSink 声明回滚） | Plan 10 STATUS 误声明 "PcapngSink + 回放" 已实装，实际 `core/trace.py` 没有 PcapngSink；同样 Stack `from_tcp` / `from_btsnoop` / `build` / `loopback` 4 个工厂未实现 | 本 Plan（2026-05-12 PRD 1.0 收尾）补齐 PcapngSink、4 个工厂、REPLAY 守卫、bond_storage 字段、SMP 装配、RFCOMM dispatch fix | ✅ 已解决 |
+| 2026-05-12 | transport/usb 拆包 | usb.py 2562 行 god module 影响新加 vendor 的可维护性 | 按职责拆成 8 个 sibling 模块，__init__ 仅做 re-export；外部 import API 不变 | ✅ 已解决 |
 
 ---
 
