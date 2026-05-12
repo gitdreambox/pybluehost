@@ -437,3 +437,31 @@ async def test_stack_accepts_incoming_classic_connection_request(monkeypatch):
     assert str(accepted[0][0]) == "20:E8:A5:6B:6F:38"
     assert accepted[0][1] == 0x01
     await stack.close()
+
+
+async def test_replay_mode_rejects_connect_gatt():
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.errors import ReplayModeError
+    from pybluehost.stack import Stack, StackMode
+
+    stack = Stack()
+    stack._mode = StackMode.REPLAY
+    stack._gap = object()
+    stack._l2cap = object()
+
+    with pytest.raises(ReplayModeError):
+        await stack.connect_gatt(BDAddress(b"\x01\x02\x03\x04\x05\x06"))
+
+
+async def test_replay_mode_rejects_connect_classic():
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.errors import ReplayModeError
+    from pybluehost.stack import Stack, StackMode
+
+    stack = Stack()
+    stack._mode = StackMode.REPLAY
+    stack._gap = object()
+    stack._l2cap = object()
+
+    with pytest.raises(ReplayModeError):
+        await stack.connect_classic(BDAddress(b"\x01\x02\x03\x04\x05\x06"))

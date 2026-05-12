@@ -217,3 +217,27 @@ async def test_from_tcp_closes_transport_when_build_fails(monkeypatch):
     with pytest.raises(RuntimeError, match="init failed"):
         await Stack.from_tcp("localhost", 9000)
     assert closed["value"] is True
+
+
+@pytest.mark.asyncio
+async def test_from_btsnoop_sets_replay_mode(tmp_path, monkeypatch):
+    from pybluehost.stack import Stack, StackMode
+
+    # minimal valid btsnoop file (header only, no records)
+    snoop_path = tmp_path / "trace.cfa"
+    snoop_path.write_bytes(b"btsnoop\x00" + b"\x00" * 8)
+
+    captured = {}
+
+    async def fake_build(cls, transport, config, mode):
+        captured["mode"] = mode
+        captured["transport"] = transport
+        stack = Stack()
+        stack._mode = mode
+        return stack
+
+    monkeypatch.setattr(Stack, "_build", classmethod(fake_build))
+
+    stack = await Stack.from_btsnoop(str(snoop_path))
+    assert captured["mode"] == StackMode.REPLAY
+    assert stack.mode == StackMode.REPLAY

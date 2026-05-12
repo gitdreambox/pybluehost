@@ -275,6 +275,32 @@ class Stack:
             raise
 
     @classmethod
+    async def from_btsnoop(
+        cls,
+        path: str,
+        *,
+        realtime: bool = False,
+        config: StackConfig | None = None,
+    ) -> Stack:
+        """Build a REPLAY-mode Stack that consumes a btsnoop capture file.
+
+        Write operations (advertising, scanning, connecting, sending) raise
+        :class:`ReplayModeError`. Use for offline reproduction of recorded
+        sessions (PRD §3 P1, §9 acceptance indicator).
+        """
+        from pybluehost.transport.btsnoop import BtsnoopTransport
+
+        transport = BtsnoopTransport(path, realtime=realtime)
+        await transport.open()
+        try:
+            return await cls._build(transport, config, StackMode.REPLAY)
+        except Exception:
+            close = getattr(transport, "close", None)
+            if close is not None:
+                await close()
+            raise
+
+    @classmethod
     async def virtual(
         cls,
         config: StackConfig | None = None,
@@ -508,6 +534,15 @@ class Stack:
         for handler in list(self._connection_event_handlers):
             handler(event)
 
+    def _check_writable(self) -> None:
+        """Raise ReplayModeError if Stack is in REPLAY mode."""
+        if self._mode == StackMode.REPLAY:
+            from pybluehost.core.errors import ReplayModeError
+            raise ReplayModeError(
+                f"Operation not permitted in REPLAY mode (transport: "
+                f"{type(self._transport).__name__})"
+            )
+
     async def connect_gatt(
         self,
         target: BDAddress,
@@ -515,6 +550,7 @@ class Stack:
         timeout: float = 10.0,
     ) -> Any:
         """Connect to a BLE peer and return a GATT client bound to ATT CID."""
+        self._check_writable()
         if self._gap is None or self._l2cap is None:
             raise RuntimeError("Stack is not initialized")
 
@@ -550,6 +586,7 @@ class Stack:
         timeout: float = 10.0,
     ) -> int:
         """Connect to a Classic BR/EDR peer and return the ACL handle."""
+        self._check_writable()
         if self._gap is None or self._l2cap is None:
             raise RuntimeError("Stack is not initialized")
 
@@ -572,6 +609,7 @@ class Stack:
         timeout: float = 10.0,
     ) -> None:
         """Authenticate an existing Classic ACL link and wait for completion."""
+        self._check_writable()
         if self._gap is None:
             raise RuntimeError("Stack is not initialized")
 
@@ -598,6 +636,7 @@ class Stack:
         timeout: float = 10.0,
     ) -> None:
         """Enable encryption on an existing Classic ACL link and wait for completion."""
+        self._check_writable()
         if self._gap is None:
             raise RuntimeError("Stack is not initialized")
 
