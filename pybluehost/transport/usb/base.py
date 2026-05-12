@@ -64,7 +64,6 @@ def _usb():
     Tests patch ``pybluehost.transport.usb.usb``; accessing via the parent
     package ensures this module sees the same (potentially patched) reference.
     """
-    import sys
     pkg = sys.modules.get("pybluehost.transport.usb")
     if pkg is not None:
         return getattr(pkg, "usb", usb)

@@ -59,8 +59,6 @@ from pybluehost.transport.usb.diagnostics import (
     _diagnose_realtek_version_direct,
     _diagnostic_report_checks,
     _find_interrupt_in_endpoint,
-    _flush_interrupt_endpoint,
-    _send_hci_command_direct,
 )
 
 
