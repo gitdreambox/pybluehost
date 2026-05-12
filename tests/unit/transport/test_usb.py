@@ -24,7 +24,7 @@ def test_known_chips_not_empty():
 
 
 def test_usb_transport_does_not_depend_on_cli_tools():
-    source = Path("pybluehost/transport/usb.py").read_text(encoding="utf-8")
+    source = Path("pybluehost/transport/usb/__init__.py").read_text(encoding="utf-8")
     assert "pybluehost.cli" not in source
 
 
