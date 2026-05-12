@@ -123,3 +123,31 @@ async def test_from_uart_closes_transport_when_build_fails():
 
     fake_transport.open.assert_awaited_once()
     fake_transport.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_loopback_is_alias_for_virtual():
+    """PRD §5.7 reserves the name Stack.loopback(); virtual() is the impl."""
+    from pybluehost.stack import Stack, StackMode
+
+    stack = await Stack.loopback()
+    try:
+        assert stack.mode == StackMode.VIRTUAL
+        assert stack.is_powered is True
+    finally:
+        await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_build_factory_uses_provided_transport():
+    """Stack.build(transport) wires arbitrary transport through _build."""
+    from pybluehost.hci.virtual import VirtualController
+    from pybluehost.stack import Stack, StackMode
+
+    vc, host_transport = await VirtualController.create()
+    stack = await Stack.build(host_transport, mode=StackMode.VIRTUAL)
+    try:
+        assert stack.mode == StackMode.VIRTUAL
+        assert stack._transport is host_transport
+    finally:
+        await stack.close()

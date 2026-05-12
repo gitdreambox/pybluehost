@@ -277,6 +277,31 @@ class Stack:
         stack._local_address = vc._address
         return stack
 
+    @classmethod
+    async def loopback(cls, config: StackConfig | None = None) -> Stack:
+        """PRD §5.7-compatible alias for :meth:`virtual`.
+
+        Provided so user code following PRD documentation (Stack.loopback())
+        continues to work after the internal rename to virtual().
+        """
+        return await cls.virtual(config=config)
+
+    @classmethod
+    async def build(
+        cls,
+        transport: Any,
+        *,
+        config: StackConfig | None = None,
+        mode: StackMode = StackMode.LIVE,
+    ) -> Stack:
+        """Generic factory: assemble a Stack on a caller-provided transport.
+
+        The transport must already be opened. On build failure the transport
+        is left open (the caller owns it). For one-shot use prefer
+        ``from_usb`` / ``from_uart`` / ``from_tcp`` / ``from_btsnoop``.
+        """
+        return await cls._build(transport, config, mode)
+
     async def _on_hci_event(self, event: Any) -> None:
         if self._l2cap is not None:
             await self._l2cap.on_hci_event(event)
