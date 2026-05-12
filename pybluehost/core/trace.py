@@ -227,6 +227,96 @@ class BtsnoopSink:
             self._file.close()
 
 
+# ---------------------------------------------------------------------------
+# PcapngSink — pcapng (PCAP-NG v1.0) format, LinkType BLUETOOTH_HCI_H4_WITH_PHDR
+# ---------------------------------------------------------------------------
+
+# pcapng block types
+_PCAPNG_SHB = 0x0A0D0D0A   # Section Header Block
+_PCAPNG_IDB = 0x00000001   # Interface Description Block
+_PCAPNG_EPB = 0x00000006   # Enhanced Packet Block
+# LinkType: see https://www.tcpdump.org/linktypes.html
+_PCAPNG_LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR = 201
+# pcapng EPB timestamp resolution is microseconds (if_tsresol option absent → 10^-6)
+
+
+class PcapngSink:
+    """pcapng file sink — Wireshark-native format, complements BtsnoopSink."""
+
+    _HCI_LAYERS = {"transport", "hci"}
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+        self._file = open(self._path, "wb")
+        self._write_shb()
+        self._write_idb()
+
+    def _write_shb(self) -> None:
+        # Section Header Block: type + total_length + byte_order_magic
+        # + major_version + minor_version + section_length (-1) + total_length(end)
+        body = _struct.pack("<IHHq", 0x1A2B3C4D, 1, 0, -1)
+        total_length = 8 + len(body) + 4
+        self._file.write(_struct.pack("<II", _PCAPNG_SHB, total_length))
+        self._file.write(body)
+        self._file.write(_struct.pack("<I", total_length))
+
+    def _write_idb(self) -> None:
+        # Interface Description Block: type + total_length + linktype + reserved
+        # + snaplen + (no options) + total_length(end)
+        body = _struct.pack(
+            "<HHI",
+            _PCAPNG_LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
+            0,           # reserved
+            0,           # snaplen 0 = no limit
+        )
+        total_length = 8 + len(body) + 4
+        self._file.write(_struct.pack("<II", _PCAPNG_IDB, total_length))
+        self._file.write(body)
+        self._file.write(_struct.pack("<I", total_length))
+
+    async def on_trace(self, event: TraceEvent) -> None:
+        if event.source_layer not in self._HCI_LAYERS:
+            return
+        if not event.raw_bytes:
+            return
+
+        # Per LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR: 4-byte pseudo-header
+        # (big-endian uint32: 0=sent, 1=received) followed by H4 packet.
+        direction_flag = 1 if event.direction == Direction.UP else 0
+        phdr = _struct.pack(">I", direction_flag)
+        payload = phdr + event.raw_bytes
+        captured_len = len(payload)
+        original_len = captured_len
+
+        # pad payload to 4-byte boundary
+        pad = (-captured_len) % 4
+        payload_padded = payload + b"\x00" * pad
+
+        # Timestamp in microseconds since epoch, split into high/low 32-bit words
+        ts_us = int(event.wall_clock.timestamp() * 1_000_000)
+        ts_high = (ts_us >> 32) & 0xFFFFFFFF
+        ts_low = ts_us & 0xFFFFFFFF
+
+        body = (
+            _struct.pack("<IIIII", 0, ts_high, ts_low, captured_len, original_len)
+            + payload_padded
+        )
+        total_length = 8 + len(body) + 4
+
+        self._file.write(_struct.pack("<II", _PCAPNG_EPB, total_length))
+        self._file.write(body)
+        self._file.write(_struct.pack("<I", total_length))
+        self._file.flush()
+
+    async def flush(self) -> None:
+        if not self._file.closed:
+            self._file.flush()
+
+    async def close(self) -> None:
+        if not self._file.closed:
+            self._file.close()
+
+
 class StateMachineTraceBridge:
     """Bridges StateMachine observer events into the TraceSystem."""
 
