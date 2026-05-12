@@ -273,6 +273,7 @@ class PcapngSink:
         self._file.write(_struct.pack("<II", _PCAPNG_IDB, total_length))
         self._file.write(body)
         self._file.write(_struct.pack("<I", total_length))
+        self._file.flush()
 
     async def on_trace(self, event: TraceEvent) -> None:
         if event.source_layer not in self._HCI_LAYERS:
@@ -297,8 +298,9 @@ class PcapngSink:
         ts_high = (ts_us >> 32) & 0xFFFFFFFF
         ts_low = ts_us & 0xFFFFFFFF
 
+        interface_id = 0  # only one IDB in this file (single HCI interface)
         body = (
-            _struct.pack("<IIIII", 0, ts_high, ts_low, captured_len, original_len)
+            _struct.pack("<IIIII", interface_id, ts_high, ts_low, captured_len, original_len)
             + payload_padded
         )
         total_length = 8 + len(body) + 4

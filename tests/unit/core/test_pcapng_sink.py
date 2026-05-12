@@ -5,8 +5,6 @@ import struct
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
 from pybluehost.core import Direction, PcapngSink, TraceEvent
 
 
@@ -76,3 +74,28 @@ async def test_pcapng_sink_skips_empty_raw_bytes(tmp_path: Path) -> None:
 
     data = path.read_bytes()
     assert data.count(struct.pack("<I", 0x00000006)) == 0
+
+
+async def test_pcapng_sink_writes_direction_pseudo_header(tmp_path: Path) -> None:
+    """The 4-byte big-endian pseudo-header is 0 for DOWN (sent), 1 for UP (received)."""
+    path = tmp_path / "trace.pcapng"
+    sink = PcapngSink(path)
+    await sink.on_trace(_evt("hci", Direction.DOWN, b"\xAA\xBB\xCC\xDD"))
+    await sink.on_trace(_evt("hci", Direction.UP, b"\x11\x22\x33\x44"))
+    await sink.close()
+
+    data = path.read_bytes()
+
+    # Skip SHB (28 bytes) + IDB (20 bytes) = 48 bytes
+    # First EPB starts at offset 48
+    epb1_offset = 48
+    epb1_type, epb1_total_len = struct.unpack_from("<II", data, epb1_offset)
+    assert epb1_type == 0x00000006
+    # EPB body starts after 8-byte header; pseudo-header is the 17th-20th bytes
+    # of the body (after interface_id, ts_high, ts_low, captured_len, original_len = 20 bytes).
+    epb1_phdr = data[epb1_offset + 8 + 20 : epb1_offset + 8 + 20 + 4]
+    assert epb1_phdr == b"\x00\x00\x00\x00"  # DOWN
+
+    epb2_offset = epb1_offset + epb1_total_len
+    epb2_phdr = data[epb2_offset + 8 + 20 : epb2_offset + 8 + 20 + 4]
+    assert epb2_phdr == b"\x00\x00\x00\x01"  # UP
