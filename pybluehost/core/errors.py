@@ -57,6 +57,10 @@ class TimeoutError(PyBlueHostError):
         self.timeout = timeout
 
 
+class ReplayModeError(PyBlueHostError):
+    """Raised when a write/transmit operation is attempted on a REPLAY-mode Stack."""
+
+
 class CommandTimeoutError(HCIError):
     """Raised when an HCI command does not receive a response within the timeout."""
 
