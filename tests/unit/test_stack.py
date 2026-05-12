@@ -465,3 +465,19 @@ async def test_replay_mode_rejects_connect_classic():
 
     with pytest.raises(ReplayModeError):
         await stack.connect_classic(BDAddress(b"\x01\x02\x03\x04\x05\x06"))
+
+
+async def test_stack_config_accepts_bond_storage():
+    from pybluehost.ble.smp import JsonBondStorage
+    from pybluehost.stack import StackConfig
+
+    storage = JsonBondStorage(path=":memory:")
+    cfg = StackConfig(bond_storage=storage)
+    assert cfg.bond_storage is storage
+
+
+async def test_stack_config_bond_storage_defaults_to_none():
+    from pybluehost.stack import StackConfig
+
+    cfg = StackConfig()
+    assert cfg.bond_storage is None

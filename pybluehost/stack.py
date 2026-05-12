@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, Callable
 
 from pybluehost.ble.security import SecurityConfig
+from pybluehost.ble.smp import BondStorage
 from pybluehost.core.address import BDAddress
 from pybluehost.core.types import IOCapability
 
@@ -40,6 +41,9 @@ class StackConfig:
 
     # Trace
     trace_sinks: list = field(default_factory=list)
+
+    # Bond persistence — pluggable backend (PRD §5.4)
+    bond_storage: BondStorage | None = None
 
 
 @dataclass(frozen=True)
