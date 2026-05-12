@@ -255,6 +255,26 @@ class Stack:
             raise
 
     @classmethod
+    async def from_tcp(
+        cls,
+        host: str,
+        port: int,
+        config: StackConfig | None = None,
+    ) -> Stack:
+        """Build a live Stack on a TCP HCI link (commonly btvirt/QEMU)."""
+        from pybluehost.transport.tcp import TCPTransport
+
+        transport = TCPTransport(host, port)
+        await transport.open()
+        try:
+            return await cls._build(transport, config, StackMode.LIVE)
+        except Exception:
+            close = getattr(transport, "close", None)
+            if close is not None:
+                await close()
+            raise
+
+    @classmethod
     async def virtual(
         cls,
         config: StackConfig | None = None,

@@ -151,3 +151,69 @@ async def test_build_factory_uses_provided_transport():
         assert stack._transport is host_transport
     finally:
         await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_from_tcp_constructs_tcp_transport(monkeypatch):
+    """Stack.from_tcp(host, port) instantiates TCPTransport with the args."""
+    from pybluehost import stack as stack_module
+    from pybluehost.stack import Stack, StackMode
+
+    captured = {}
+
+    class FakeTCPTransport:
+        def __init__(self, host: str, port: int) -> None:
+            captured["host"] = host
+            captured["port"] = port
+
+        async def open(self) -> None:
+            captured["opened"] = True
+
+        async def close(self) -> None:
+            captured["closed"] = True
+
+    async def fake_build(cls, transport, config, mode):
+        captured["transport"] = transport
+        captured["mode"] = mode
+        return Stack()
+
+    monkeypatch.setattr(
+        "pybluehost.transport.tcp.TCPTransport", FakeTCPTransport
+    )
+    monkeypatch.setattr(Stack, "_build", classmethod(fake_build))
+
+    await Stack.from_tcp("localhost", 9000)
+
+    assert captured["host"] == "localhost"
+    assert captured["port"] == 9000
+    assert captured["opened"] is True
+    assert captured["mode"] == StackMode.LIVE
+
+
+@pytest.mark.asyncio
+async def test_from_tcp_closes_transport_when_build_fails(monkeypatch):
+    from pybluehost.stack import Stack
+
+    closed = {"value": False}
+
+    class FakeTCPTransport:
+        def __init__(self, host: str, port: int) -> None:
+            pass
+
+        async def open(self) -> None:
+            return None
+
+        async def close(self) -> None:
+            closed["value"] = True
+
+    async def fake_build_raises(cls, transport, config, mode):
+        raise RuntimeError("init failed")
+
+    monkeypatch.setattr(
+        "pybluehost.transport.tcp.TCPTransport", FakeTCPTransport
+    )
+    monkeypatch.setattr(Stack, "_build", classmethod(fake_build_raises))
+
+    with pytest.raises(RuntimeError, match="init failed"):
+        await Stack.from_tcp("localhost", 9000)
+    assert closed["value"] is True
