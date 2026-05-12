@@ -65,14 +65,7 @@ from pybluehost.transport.usb.diagnostics import (
 from pybluehost.transport.usb.base import USBTransport, parse_hci_reset_status
 from pybluehost.transport.usb.intel import IntelUSBTransport
 from pybluehost.transport.usb.realtek import RealtekLocalVersion, RealtekUSBTransport
-
-
-class CSRUSBTransport(USBTransport):
-    """CSR Bluetooth USB transport.
-
-    CSR8510 currently follows the standard Bluetooth USB HCI path, so it can
-    use the base USB transport behavior without vendor-specific initialization.
-    """
+from pybluehost.transport.usb.csr import CSRUSBTransport
 
 
 # --- Known Bluetooth USB chips registry ---
