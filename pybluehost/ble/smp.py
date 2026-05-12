@@ -7,7 +7,7 @@ import struct
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Awaitable, Callable, Protocol, runtime_checkable
 
 from pybluehost.core.address import BDAddress
 
@@ -73,6 +73,15 @@ class SMPCode(IntEnum):
     PAIRING_PUBLIC_KEY = 0x0C
     PAIRING_DHKEY_CHECK = 0x0D
     KEYPRESS_NOTIFICATION = 0x0E
+
+
+# Pairing Failed reasons (Core 5.4 Vol 3 Part H 3.5.5)
+PAIRING_FAILED_REASON_PASSKEY_ENTRY_FAILED = 0x01
+PAIRING_FAILED_REASON_OOB_NOT_AVAILABLE     = 0x02
+PAIRING_FAILED_REASON_AUTH_REQUIREMENTS     = 0x03
+PAIRING_FAILED_REASON_CONFIRM_VALUE_FAILED  = 0x04
+PAIRING_FAILED_REASON_PAIRING_NOT_SUPPORTED = 0x05
+PAIRING_FAILED_REASON_UNSPECIFIED           = 0x08
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +581,12 @@ class AutoAcceptDelegate:
 # ---------------------------------------------------------------------------
 
 class SMPManager:
-    """SMP pairing state machine manager."""
+    """SMP pairing state machine manager.
+
+    Current scope (PRD 1.0 closure): channel binding + delegate plumbing
+    works end-to-end. Incoming PDUs are answered with PAIRING_FAILED
+    (UNSPECIFIED) until the full state machine ships in a follow-up Plan.
+    """
 
     def __init__(
         self,
@@ -583,3 +597,38 @@ class SMPManager:
         self._hci = hci
         self._bond_storage = bond_storage
         self._delegate = delegate or AutoAcceptDelegate()
+        self._senders: dict[int, Callable[[bytes], Awaitable[None]]] = {}
+
+    def bind_channel(
+        self,
+        connection_handle: int,
+        send: Callable[[bytes], Awaitable[None]],
+    ) -> None:
+        """Bind an L2CAP CID_SMP channel send-callable to a connection handle."""
+        self._senders[connection_handle] = send
+
+    def unbind_channel(self, connection_handle: int) -> None:
+        self._senders.pop(connection_handle, None)
+
+    def set_delegate(
+        self,
+        delegate: PairingDelegate | AutoAcceptDelegate,
+    ) -> None:
+        self._delegate = delegate
+
+    async def on_pdu(self, data: bytes, *, connection_handle: int) -> None:
+        """Handle an inbound SMP PDU.
+
+        Until the full pairing state machine lands, answer with
+        PAIRING_FAILED(UNSPECIFIED). This still proves the L2CAP→SMP
+        binding works end-to-end and surfaces protocol-level errors.
+        """
+        send = self._senders.get(connection_handle)
+        if send is None:
+            return
+        if not data:
+            return
+        response = bytes(
+            [SMPCode.PAIRING_FAILED, PAIRING_FAILED_REASON_UNSPECIFIED]
+        )
+        await send(response)

@@ -37,6 +37,7 @@ class GAP:
         classic_ssp: SSPManager | None = None,
         whitelist: WhiteList | None = None,
         ble_extended_advertiser: ExtendedAdvertiser | None = None,
+        smp: object | None = None,
     ) -> None:
         self._ble_advertiser = ble_advertiser
         self._ble_scanner = ble_scanner
@@ -48,6 +49,7 @@ class GAP:
         self._classic_ssp = classic_ssp
         self._whitelist = whitelist
         self._ble_extended_advertiser = ble_extended_advertiser
+        self._smp = smp
         self._pairing_delegate: object | None = None
 
     # -- BLE properties ------------------------------------------------------
@@ -101,8 +103,16 @@ class GAP:
 
         The delegate object can implement methods expected by SMPManager
         (PairingDelegate protocol) and/or SSPManager confirmation handlers.
+        Downstreams to SMPManager.set_delegate() and SSPManager.set_delegate()
+        when those subsystems are present.
         """
         self._pairing_delegate = delegate
+        smp = self._smp
+        if smp is not None and hasattr(smp, "set_delegate"):
+            smp.set_delegate(delegate)
+        ssp = self._classic_ssp
+        if ssp is not None and hasattr(ssp, "set_delegate"):
+            ssp.set_delegate(delegate)
 
     @property
     def pairing_delegate(self) -> object | None:

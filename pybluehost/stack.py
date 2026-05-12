@@ -82,6 +82,7 @@ class Stack:
         self._gatt_server: Any = None
         self._trace: Any = None
         self._sdp: Any = None
+        self._smp: Any = None
         self._rfcomm: Any = None
         self._local_address: BDAddress | None = None
         self._powered = False
@@ -169,6 +170,31 @@ class Stack:
         gatt_server = GATTServer()
         stack._gatt_server = gatt_server
 
+        # 5b. SMP — bind to each LE connection's CID_SMP fixed channel.
+        from pybluehost.ble.smp import SMPManager
+        smp = SMPManager(hci=hci, bond_storage=cfg.bond_storage)
+        stack._smp = smp
+
+        def _bind_smp_to_le_connection(handle: int, channels: dict) -> None:
+            from pybluehost.l2cap.channel import SimpleChannelEvents
+            from pybluehost.l2cap.constants import CID_SMP
+
+            smp_channel = channels.get(CID_SMP)
+            if smp_channel is None:
+                return
+
+            async def _send(data: bytes) -> None:
+                await smp_channel.send(data)
+
+            smp.bind_channel(handle, _send)
+
+            async def _on_data(data: bytes) -> None:
+                await smp.on_pdu(data, connection_handle=handle)
+
+            smp_channel.set_events(SimpleChannelEvents(on_data=_on_data))
+
+        l2cap.on_le_connection_open(_bind_smp_to_le_connection)
+
         # 6. Classic layers
         sdp = SDPServer()
         stack._sdp = sdp
@@ -195,6 +221,7 @@ class Stack:
             classic_ssp=SSPManager(hci=hci),
             whitelist=WhiteList(hci=hci),
             ble_extended_advertiser=ExtendedAdvertiser(hci=hci),
+            smp=smp,
         )
         stack._gap = gap
 
@@ -730,3 +757,7 @@ class Stack:
     @property
     def mode(self) -> StackMode:
         return self._mode
+
+    @property
+    def smp(self) -> Any:
+        return self._smp
