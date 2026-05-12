@@ -13,8 +13,10 @@ from typing import Any, Awaitable, Callable
 from pybluehost.cli._transport import parse_transport_arg
 from pybluehost.core.trace import BtsnoopSink, CallbackSink, Direction, TraceEvent
 from pybluehost.stack import Stack, StackConfig
+from pybluehost.transport.spec import UART_SPEC_FORMAT, USB_SPEC_FORMAT
 
 logger = logging.getLogger(__name__)
+TRANSPORT_HELP = f"virtual | {USB_SPEC_FORMAT} | {UART_SPEC_FORMAT}"
 
 
 async def _print_hci_trace(event: TraceEvent) -> None:
@@ -27,6 +29,11 @@ async def _print_hci_trace(event: TraceEvent) -> None:
 def add_trace_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--hci-log", action="store_true", help="Print HCI TX/RX packets to stderr")
     parser.add_argument("--btsnoop", type=Path, help="Write HCI btsnoop log to a .cfa file")
+
+
+def add_common_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("-t", "--transport", required=True, help=TRANSPORT_HELP)
+    add_trace_arguments(parser)
 
 
 def trace_kwargs_from_args(args: Any) -> dict[str, Any]:

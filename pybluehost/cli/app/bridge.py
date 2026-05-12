@@ -11,13 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from pybluehost.cli._lifecycle import add_trace_arguments, trace_kwargs_from_args
+from pybluehost.cli._lifecycle import add_common_arguments, trace_kwargs_from_args
 from pybluehost.cli._transport import parse_transport_arg
 from pybluehost.core.errors import TransportError
 from pybluehost.core.trace import BtsnoopSink, Direction, TraceEvent
 from pybluehost.transport.base import Transport, TransportSink
 from pybluehost.transport.h4 import H4Framer
-from pybluehost.transport.spec import UART_SPEC_FORMAT, USB_SPEC_FORMAT
 
 BridgeProtocol = Literal["tcp", "udp"]
 
@@ -248,16 +247,7 @@ def register_bridge_command(subparsers: argparse._SubParsersAction) -> None:
         "bridge",
         help="Bridge a local UART/USB HCI transport to TCP/UDP H4",
     )
-    add_trace_arguments(p)
-    p.add_argument(
-        "-t",
-        "--transport",
-        required=True,
-        help=(
-            "Local HCI transport: "
-            f"{USB_SPEC_FORMAT} | {UART_SPEC_FORMAT}"
-        ),
-    )
+    add_common_arguments(p)
     p.add_argument(
         "--protocol",
         choices=("tcp", "udp"),

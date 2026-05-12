@@ -1,9 +1,29 @@
 import asyncio
+import argparse
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
-from pybluehost.cli._lifecycle import run_app_command
+from pybluehost.cli._lifecycle import add_common_arguments, run_app_command
 from pybluehost.core.trace import Direction, TraceEvent
+
+
+def test_add_common_arguments_registers_transport_and_trace_options():
+    parser = argparse.ArgumentParser()
+    add_common_arguments(parser)
+
+    args = parser.parse_args(
+        ["-t", "usb:33FA:0012#1", "--hci-log", "--btsnoop", "trace.cfa"]
+    )
+    transport_action = next(
+        action for action in parser._actions if "--transport" in action.option_strings
+    )
+
+    assert args.transport == "usb:33FA:0012#1"
+    assert args.hci_log is True
+    assert args.btsnoop == Path("trace.cfa")
+    assert "usb[:VID:PID#N]" in transport_action.help
+    assert "uart:<port>[@baud]" in transport_action.help
 
 
 async def test_run_app_command_completes_normally():

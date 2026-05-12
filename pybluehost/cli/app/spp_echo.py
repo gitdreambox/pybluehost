@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from pybluehost.classic.spp import SPPConnection, SPPService
-from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
+from pybluehost.cli._lifecycle import add_common_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.stack import Stack
 
 logger = logging.getLogger(__name__)
@@ -14,8 +14,7 @@ logger = logging.getLogger(__name__)
 
 def register_spp_echo_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("spp-echo", help="RFCOMM ch1 echo server (Ctrl+C to stop)")
-    p.add_argument("-t", "--transport", required=True)
-    add_trace_arguments(p)
+    add_common_arguments(p)
     p.set_defaults(func=lambda args: asyncio.run(
         run_app_command(
             args.transport,

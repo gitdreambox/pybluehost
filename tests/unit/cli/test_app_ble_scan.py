@@ -54,3 +54,16 @@ def test_ble_scan_accepts_btsnoop_option():
 
     assert args.transport == "usb:vendor=csr"
     assert args.btsnoop == Path("scan.cfa")
+
+
+def test_ble_scan_transport_help_uses_usb_transport_name(capsys):
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="cmd")
+    register_ble_scan_command(subparsers)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["ble-scan", "--help"])
+
+    out = capsys.readouterr().out
+    assert "usb[:VID:PID#N]" in out
+    assert "usb[:vendor=...]" not in out

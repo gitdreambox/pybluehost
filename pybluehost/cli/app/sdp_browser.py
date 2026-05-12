@@ -7,7 +7,7 @@ import logging
 
 from pybluehost.classic.sdp import DataElement, DataElementType, SDPClient
 from pybluehost.cli._target import TARGET_HELP, parse_target_arg
-from pybluehost.cli._lifecycle import add_trace_arguments, run_app_command, trace_kwargs_from_args
+from pybluehost.cli._lifecycle import add_common_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.l2cap.constants import PSM_SDP
 from pybluehost.stack import Stack
 
@@ -80,7 +80,6 @@ def _parse_max_attribute_bytes_arg(value: str) -> int:
 
 def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("sdp-browser", help="Connect, query SDP, print, exit")
-    p.add_argument("-t", "--transport", required=True)
     p.add_argument("-a", "--target", help=TARGET_HELP)
     p.add_argument(
         "--uuid",
@@ -100,7 +99,7 @@ def register_sdp_browser_command(subparsers: argparse._SubParsersAction) -> None
         default=DEFAULT_MAX_ATTRIBUTE_BYTES,
         help="SDP MaxAttributeByteCount, accepts decimal or hex; default 0x03F0",
     )
-    add_trace_arguments(p)
+    add_common_arguments(p)
     p.set_defaults(func=lambda args: asyncio.run(_sdp_browser_main(args)))
 
 
