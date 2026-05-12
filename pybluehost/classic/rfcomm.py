@@ -252,6 +252,10 @@ class RFCOMMSession:
                         task = asyncio.create_task(result)
                         self._handler_tasks.add(task)
                         task.add_done_callback(self._handler_tasks.discard)
+                        # Yield once so the handler's synchronous setup
+                        # (e.g. channel.on_data(...)) runs before subsequent
+                        # frames are dispatched to the channel.
+                        await asyncio.sleep(0)
                     await self._send_modem_status(frame.dlci)
             return
         if frame.frame_type == RFCOMMFrameType.UIH:
