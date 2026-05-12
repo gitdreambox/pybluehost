@@ -67,6 +67,7 @@ class L2CAPManager:
         self._classic_config_pending_by_cid: dict[tuple[int, int], _ClassicConfigPending] = {}
         self._classic_listeners: dict[int, Callable[[ClassicChannel], object]] = {}
         self._classic_inbound_pending: dict[tuple[int, int], _ClassicInboundPending] = {}
+        self._le_connection_open_listeners: list[Callable[[int, dict[int, "Channel"]], None]] = []
 
     # -- HCI upstream callbacks (registered via hci.set_upstream) --
 
@@ -157,6 +158,12 @@ class L2CAPManager:
             )
             channels[CID_CLASSIC_SIGNALING] = signaling
         self._connections[handle] = channels
+        if link_type == LinkType.LE:
+            for listener in list(self._le_connection_open_listeners):
+                try:
+                    listener(handle, channels)
+                except Exception:
+                    logger.exception("LE connection listener raised")
         logger.info(
             "L2CAP connection handle=0x%04X link_type=%s opened",
             handle,
@@ -185,6 +192,19 @@ class L2CAPManager:
                         pass
 
     # -- Channel access --
+
+    def on_le_connection_open(
+        self,
+        listener: Callable[[int, dict[int, "Channel"]], None],
+    ) -> None:
+        """Register a listener invoked once when an LE connection's fixed
+        channels (ATT/SMP/LE signaling) are created.
+
+        Listeners are called synchronously inside on_connection(); they must
+        not block. Use this hook to bind upper-layer handlers (e.g. attach
+        SMPManager to the CID_SMP channel) instead of polling.
+        """
+        self._le_connection_open_listeners.append(listener)
 
     def get_fixed_channel(self, handle: int, cid: int) -> Channel | None:
         """Get a fixed channel by connection handle and CID."""
