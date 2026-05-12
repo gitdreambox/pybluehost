@@ -30,17 +30,8 @@ try:
 except ImportError:
     usb = None  # type: ignore[assignment]
 
-
-@dataclass(frozen=True)
-class ChipInfo:
-    """Describes a known Bluetooth USB chip: vendor, VID/PID, firmware pattern."""
-
-    vendor: str
-    name: str
-    vid: int
-    pid: int
-    firmware_pattern: str
-    transport_class: type | None  # filled after subclass definitions
+from pybluehost.transport.usb.chips import ChipInfo
+from pybluehost.transport.usb.errors import NoBluetoothDeviceError, WinUSBDriverError
 
 
 @dataclass(frozen=True)
@@ -277,14 +268,6 @@ class USBDeviceDiagnostics:
             return f"USB Device {device.idVendor:04x}:{device.idProduct:04x}"
         except Exception:
             return "Unknown USB Device"
-
-
-class NoBluetoothDeviceError(RuntimeError):
-    """No supported Bluetooth USB device was found."""
-
-
-class WinUSBDriverError(RuntimeError):
-    """Device is not bound to WinUSB driver (Windows)."""
 
 
 def known_chip_for(dev: Any) -> ChipInfo | None:
