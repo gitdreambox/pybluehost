@@ -25,9 +25,7 @@ from pybluehost.transport.usb.discovery import (
     _matches_usb_selection,
     format_usb_class,
     get_usb_endpoints,
-    is_bluetooth_usb_class,
     is_bluetooth_usb_device,
-    iter_usb_interfaces,
     known_chip_for,
     known_usb_vendors,
     usb_class_tuple,
@@ -36,16 +34,12 @@ from pybluehost.transport.usb.diagnostics import (
     USBDeviceCheck,
     USBDeviceDiagnosis,
     USBDeviceDiagnostics,
-    USBDiagnosticReport,
     _diagnose_intel_version_direct,
     _diagnose_realtek_version_direct,
     _diagnostic_report_checks,
     _find_interrupt_in_endpoint,
 )
-from pybluehost.transport.usb.errors import (
-    NoBluetoothDeviceError,
-    WinUSBDriverError,
-)
+from pybluehost.transport.usb.errors import NoBluetoothDeviceError
 
 logger = logging.getLogger(__name__)
 

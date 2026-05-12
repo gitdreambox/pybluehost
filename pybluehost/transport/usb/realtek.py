@@ -11,10 +11,8 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from pybluehost.transport.firmware import FirmwareManager, FirmwarePolicy
+from pybluehost.transport.firmware import FirmwareManager
 from pybluehost.transport.usb.base import USBTransport
-from pybluehost.transport.usb.chips import ChipInfo
-from pybluehost.transport.usb.diagnostics import _diagnose_realtek_version_direct
 
 logger = logging.getLogger(__name__)
 
