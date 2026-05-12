@@ -265,11 +265,20 @@ def register_bridge_command(subparsers: argparse._SubParsersAction) -> None:
         default=DEFAULT_BRIDGE_PORT,
         help=f"Listen port (default: {DEFAULT_BRIDGE_PORT})",
     )
-    p.set_defaults(func=lambda args: asyncio.run(_run_bridge_command(args)))
+    p.set_defaults(func=run_bridge_command)
+
+
+def run_bridge_command(args: argparse.Namespace) -> int:
+    try:
+        return asyncio.run(_run_bridge_command(args))
+    except KeyboardInterrupt:
+        return 130
 
 
 async def _run_bridge_command(args: argparse.Namespace) -> int:
     stop_event = asyncio.Event()
+    stop_task: asyncio.Task[bool] | None = None
+    bridge_task: asyncio.Task[None] | None = None
     try:
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -308,6 +317,17 @@ async def _run_bridge_command(args: argparse.Namespace) -> int:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         return 130 if stop_task in done else 1
+    except asyncio.CancelledError:
+        stop_event.set()
+        if bridge is not None:
+            bridge.request_stop()
+        for task in (stop_task, bridge_task):
+            if task is None or task.done():
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        return 130
     except Exception as exc:
         logger.error("Error: %s: %s", type(exc).__name__, exc)
         return 1

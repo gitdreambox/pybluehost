@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from pybluehost.cli.app.bridge import DEFAULT_BRIDGE_PORT, register_bridge_command
+from pybluehost.cli.app.bridge import (
+    DEFAULT_BRIDGE_PORT,
+    register_bridge_command,
+    run_bridge_command,
+)
 
 
 def test_bridge_command_defaults_to_tcp_port_57123():
@@ -70,3 +74,15 @@ def test_bridge_command_help_uses_shared_uart_transport_spec(capsys):
     out = capsys.readouterr().out
     assert "uart:<port>[@baud]" in out
     assert "uart:COM5@921600" not in out
+
+
+def test_run_bridge_command_converts_keyboard_interrupt_to_sigint_exit_code(monkeypatch):
+    def raise_keyboard_interrupt(coro):
+        coro.close()
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr("pybluehost.cli.app.bridge.asyncio.run", raise_keyboard_interrupt)
+
+    code = run_bridge_command(argparse.Namespace())
+
+    assert code == 130

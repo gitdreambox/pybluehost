@@ -1,10 +1,11 @@
+import argparse
 import asyncio
 import importlib.util
 import struct
 
 import pytest
 
-from pybluehost.cli.app.bridge import HCITransportBridge
+from pybluehost.cli.app.bridge import HCITransportBridge, _run_bridge_command
 from pybluehost.transport.base import Transport, TransportInfo
 
 
@@ -163,3 +164,30 @@ async def test_bridge_writes_btsnoop_packets(tmp_path):
     assert struct.unpack(">II", second_record[:8]) == (len(event), len(event))
     assert struct.unpack(">I", second_record[8:12])[0] == 1
     assert second_record[24:] == event
+
+
+@pytest.mark.asyncio
+async def test_run_bridge_command_converts_cancellation_to_sigint_exit_code(monkeypatch):
+    backend = RecordingTransport()
+
+    async def parse_transport(_transport_arg):
+        return backend
+
+    monkeypatch.setattr("pybluehost.cli.app.bridge.parse_transport_arg", parse_transport)
+
+    args = argparse.Namespace(
+        transport="usb",
+        protocol="tcp",
+        host="127.0.0.1",
+        port=0,
+        hci_log=False,
+        btsnoop=None,
+    )
+    task = asyncio.create_task(_run_bridge_command(args))
+    await _wait_for(lambda: backend.opened)
+
+    task.cancel()
+    code = await asyncio.wait_for(task, timeout=2.0)
+
+    assert code == 130
+    assert backend.closed is True
