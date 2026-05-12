@@ -68,3 +68,22 @@ async def test_unified_gap_set_pairing_delegate_downstreams_to_smp():
         assert stack.smp._delegate is delegate
     finally:
         await stack.close()
+
+
+async def test_stack_unbinds_smp_channel_on_le_disconnect():
+    """LE disconnect must remove the SMP sender to avoid stale-handle leaks."""
+    from pybluehost.core.types import LinkType
+    from pybluehost.stack import Stack
+
+    stack = await Stack.virtual()
+    try:
+        # Simulate L2CAP LE connection open + disconnect cycle
+        await stack._l2cap.on_connection(
+            handle=0x0040, link_type=LinkType.LE, peer_address=None, role=None,
+        )
+        assert 0x0040 in stack.smp._senders
+
+        await stack._l2cap.on_disconnection(handle=0x0040, reason=0x16)
+        assert 0x0040 not in stack.smp._senders
+    finally:
+        await stack.close()

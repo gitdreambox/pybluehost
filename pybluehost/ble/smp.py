@@ -608,6 +608,7 @@ class SMPManager:
         self._senders[connection_handle] = send
 
     def unbind_channel(self, connection_handle: int) -> None:
+        """Remove the L2CAP send-callable for a connection handle."""
         self._senders.pop(connection_handle, None)
 
     def set_delegate(
@@ -625,8 +626,16 @@ class SMPManager:
         """
         send = self._senders.get(connection_handle)
         if send is None:
+            logger.debug(
+                "SMP PDU dropped: no sender bound for handle=0x%04X",
+                connection_handle,
+            )
             return
         if not data:
+            logger.debug(
+                "SMP PDU dropped: empty payload on handle=0x%04X",
+                connection_handle,
+            )
             return
         response = bytes(
             [SMPCode.PAIRING_FAILED, PAIRING_FAILED_REASON_UNSPECIFIED]

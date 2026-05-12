@@ -191,7 +191,10 @@ class Stack:
             async def _on_data(data: bytes) -> None:
                 await smp.on_pdu(data, connection_handle=handle)
 
-            smp_channel.set_events(SimpleChannelEvents(on_data=_on_data))
+            def _on_close(_reason: int) -> None:
+                smp.unbind_channel(handle)
+
+            smp_channel.set_events(SimpleChannelEvents(on_data=_on_data, on_close=_on_close))
 
         l2cap.on_le_connection_open(_bind_smp_to_le_connection)
 
