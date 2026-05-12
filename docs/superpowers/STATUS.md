@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：Pytest Transport Selection — ✅ Plan 全部完成
-**下一步**：可从 worktree `codex/pytest-transport-selection` 合并/提交到 master
+**当前进行中**：PRD 1.0 收尾 — ✅ 全部完成
+**下一步**：选择下一个 Plan（完整 SMP 配对状态机 / HCI 容错初始化 / 断线重连闭环 / transport/usb 拆包 / e2e 覆盖）
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -42,8 +42,9 @@
 | CLI app+tools | CLI 命令行工具（app + tools 两命名空间，12 个子命令） | ✅ 完成 | [cli-app-tools](plans/cli-app-tools.md) | `pybluehost/cli/app/`, `pybluehost/cli/tools/` |
 | Pytest Transport Selection | pytest transport 选择机制 | ✅ 已完成 | [pytest-transport-selection](plans/pytest-transport-selection.md) | `tests/conftest.py`, `tests/_transport_select.py`, `pybluehost/stack.py` |
 | Trace / Log Structured Output | HCI 结构化彩色 trace + 协议层 logger 注入 | ✅ 已完成 | [trace-log-system](plans/trace-log-system.md) | `pybluehost/hci/format.py`, `pybluehost/hci/format_fields.py`, `pybluehost/core/trace_console.py`, `pybluehost/core/trace_control.py`, 9 protocol-layer files |
+| PRD 1.0 收尾 | PcapngSink + Stack 工厂补全 + SMP 装配 + RFCOMM dispatch fix + bond_storage | ✅ 完成 | [2026-05-12-prd-v1-closure](plans/2026-05-12-prd-v1-closure.md) | `core/trace.py`, `core/errors.py`, `stack.py`, `l2cap/manager.py`, `ble/smp.py`, `gap.py`, `classic/rfcomm.py` |
 
-**总计：18 个 Plan（原 17 个 + Trace/Log Structured Output）**
+**总计：19 个 Plan（原 18 个 + PRD 1.0 收尾）**
 
 ---
 
@@ -209,6 +210,25 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 已知遗留：4 个 pre-existing 失败（USB diagnostics × 3 + RFCOMM inbound handler × 1）与本计划无关，不在本计划范围内修复
 - 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS（coverage 86.32%）
 
+### ✅ PRD 1.0 收尾
+- 完成时间：2026-05-12
+- Plan 文档：[2026-05-12-prd-v1-closure.md](plans/2026-05-12-prd-v1-closure.md)
+- 审查基线：[review-notes-2026-05-12.md](../architecture/review-notes-2026-05-12.md)
+- 关键变化：
+  - `core/trace.py` 新增 `PcapngSink`（LinkType 201 BLUETOOTH_HCI_H4_WITH_PHDR + 4 字节方向 pseudo-header）
+  - `core/errors.py` 新增 `ReplayModeError`
+  - `Stack` 新增 4 个工厂方法：`from_tcp(host, port)` / `from_btsnoop(path, *, realtime=False)` / `build(transport, *, config, mode)` / `loopback()`（virtual 别名）
+  - `StackMode.REPLAY` 现在被 `_check_writable()` 守卫真正强制（connect_gatt/connect_classic/authenticate_classic/enable_classic_encryption）
+  - `StackConfig.bond_storage` 字段
+  - `L2CAPManager.on_le_connection_open(callback)` 钩子
+  - `SMPManager` 补 `bind_channel / unbind_channel / set_delegate / on_pdu` 方法（最小占位：任何入站 PDU 回 PAIRING_FAILED UNSPECIFIED）+ Stack 装配 + LE disconnect 时自动 unbind
+  - `gap.set_pairing_delegate` 真正下发到 SMPManager（+ 预留 SSPManager 路径）
+  - `classic/rfcomm.py` 修复 SABM→UIH 调度阻塞（`asyncio.sleep(0)` 让出，handler 同步 setup 跑完才分发后续 frame）
+- 测试新增：4 个新测试文件（`test_pcapng_sink` × 4、`test_manager_le_connection_callback` × 3、`test_smp_manager_assembly` × 5）+ `test_stack_factories` / `test_stack` 各追加多条
+- 已知遗留：仅 3 个 pre-existing USB diagnostics 失败（RFCOMM 那条已修复，剩余 3 条与本 Plan 无关）
+- 后续 Plan（已在 Plan 文档"范围声明"中明确推迟）：完整 SMP 配对状态机、HCI 容错初始化、断线自动重连闭环、`transport/usb.py` 拆包、`tests/e2e/` 端到端覆盖
+- 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS（coverage 86.27%）
+
 ---
 
 ## 问题日志
@@ -231,6 +251,7 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 | 2026-04-26 | USB 硬件诊断 | CSR8510 硬件测试通过，但 Intel BE200 因驱动问题无法 open | 已实现 USBDeviceDiagnostics 自动诊断 + 中文提示步骤 | ✅ 已解决 |
 | 2026-04-27 | Pytest Transport Selection Task 2 | full-suite `uv run pytest tests/ -q` / `-m "not hardware"` verification was blocked because old hardware tests still ran Intel BE200 USB timeout paths | Later marker migration and autodetect usability probe now isolate/fallback hardware paths; final `uv run --frozen pytest tests/ -q` passes | ✅ 已解决 |
 | 2026-04-28 | CLI Demo 功能闭环 Task 4/5 | CSR 硬件上 `sdp-browser` 已完成 ACL、SSP、authentication、encryption、L2CAP outbound/inbound SDP，但目标设备不返回本机主动发出的 SDP `ServiceSearchAttributeRequest` | 已修复地址线序、L2CAP Pending、SSP 事件、Link Key Request、CLI 错误格式、本地 SDP listener、inbound L2CAP configure；剩余现象需用其他目标设备或外部抓包对比远端 SDP server 行为 | ⚠️ 待确认 |
+| 2026-05-12 | Plan 10（PcapngSink 声明回滚） | Plan 10 STATUS 误声明 "PcapngSink + 回放" 已实装，实际 `core/trace.py` 没有 PcapngSink；同样 Stack `from_tcp` / `from_btsnoop` / `build` / `loopback` 4 个工厂未实现 | 本 Plan（2026-05-12 PRD 1.0 收尾）补齐 PcapngSink、4 个工厂、REPLAY 守卫、bond_storage 字段、SMP 装配、RFCOMM dispatch fix | ✅ 已解决 |
 
 ---
 
