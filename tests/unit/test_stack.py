@@ -481,3 +481,27 @@ async def test_stack_config_bond_storage_defaults_to_none():
 
     cfg = StackConfig()
     assert cfg.bond_storage is None
+
+
+async def test_replay_mode_rejects_authenticate_classic():
+    from pybluehost.core.errors import ReplayModeError
+    from pybluehost.stack import Stack, StackMode
+
+    stack = Stack()
+    stack._mode = StackMode.REPLAY
+    stack._gap = object()
+
+    with pytest.raises(ReplayModeError):
+        await stack.authenticate_classic(handle=0x0040)
+
+
+async def test_replay_mode_rejects_enable_classic_encryption():
+    from pybluehost.core.errors import ReplayModeError
+    from pybluehost.stack import Stack, StackMode
+
+    stack = Stack()
+    stack._mode = StackMode.REPLAY
+    stack._gap = object()
+
+    with pytest.raises(ReplayModeError):
+        await stack.enable_classic_encryption(handle=0x0040)

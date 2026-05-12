@@ -49,3 +49,28 @@ async def test_on_le_connection_open_supports_multiple_listeners():
 
     assert seen_a == [0x0041]
     assert seen_b == [0x0041]
+
+
+async def test_on_le_connection_open_listener_exception_does_not_break_others(caplog):
+    """A listener raising must not prevent later listeners from firing."""
+    import logging
+
+    manager = L2CAPManager(hci=None)
+    seen: list[int] = []
+
+    def bad_listener(handle: int, channels: dict) -> None:
+        raise RuntimeError("boom")
+
+    def good_listener(handle: int, channels: dict) -> None:
+        seen.append(handle)
+
+    manager.on_le_connection_open(bad_listener)
+    manager.on_le_connection_open(good_listener)
+
+    with caplog.at_level(logging.ERROR):
+        await manager.on_connection(
+            handle=0x0042, link_type=LinkType.LE, peer_address=None, role=None,
+        )
+
+    assert seen == [0x0042]
+    assert any("LE connection listener raised" in rec.message for rec in caplog.records)

@@ -156,7 +156,6 @@ async def test_build_factory_uses_provided_transport():
 @pytest.mark.asyncio
 async def test_from_tcp_constructs_tcp_transport(monkeypatch):
     """Stack.from_tcp(host, port) instantiates TCPTransport with the args."""
-    from pybluehost import stack as stack_module
     from pybluehost.stack import Stack, StackMode
 
     captured = {}
