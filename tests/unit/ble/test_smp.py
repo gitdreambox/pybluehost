@@ -324,7 +324,7 @@ class TestBondInfo:
         assert bi.irk is None
         assert bi.csrk is None
         assert bi.ediv == 0
-        assert bi.rand == 0
+        assert bi.rand == b"\x00" * 8
         assert bi.key_size == 16
         assert bi.authenticated is False
         assert bi.sc is False

@@ -9,7 +9,11 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Awaitable, Callable, Protocol, runtime_checkable
 
+import asyncio
+
 from pybluehost.core.address import BDAddress
+from pybluehost.core.statemachine import StateMachine
+from pybluehost.core.types import IOCapability
 
 logger = logging.getLogger(__name__)
 
@@ -441,7 +445,7 @@ class BondInfo:
     irk: bytes | None = None
     csrk: bytes | None = None
     ediv: int = 0
-    rand: int = 0
+    rand: bytes = field(default_factory=lambda: b"\x00" * 8)
     key_size: int = 16
     authenticated: bool = False
     sc: bool = False
@@ -483,7 +487,7 @@ class JsonBondStorage:
             "irk": bond.irk.hex() if bond.irk else None,
             "csrk": bond.csrk.hex() if bond.csrk else None,
             "ediv": bond.ediv,
-            "rand": bond.rand,
+            "rand": bond.rand.hex(),
             "key_size": bond.key_size,
             "authenticated": bond.authenticated,
             "sc": bond.sc,
@@ -504,7 +508,7 @@ class JsonBondStorage:
             irk=bytes.fromhex(entry["irk"]) if entry.get("irk") else None,
             csrk=bytes.fromhex(entry["csrk"]) if entry.get("csrk") else None,
             ediv=entry.get("ediv", 0),
-            rand=entry.get("rand", 0),
+            rand=bytes.fromhex(entry.get("rand", "0000000000000000")),
             key_size=entry.get("key_size", 16),
             authenticated=entry.get("authenticated", False),
             sc=entry.get("sc", False),
@@ -527,7 +531,7 @@ class JsonBondStorage:
                 irk=bytes.fromhex(entry["irk"]) if entry.get("irk") else None,
                 csrk=bytes.fromhex(entry["csrk"]) if entry.get("csrk") else None,
                 ediv=entry.get("ediv", 0),
-                rand=entry.get("rand", 0),
+                rand=bytes.fromhex(entry.get("rand", "0000000000000000")),
                 key_size=entry.get("key_size", 16),
                 authenticated=entry.get("authenticated", False),
                 sc=entry.get("sc", False),
@@ -574,6 +578,118 @@ class AutoAcceptDelegate:
 
     async def display_passkey(self, passkey: int) -> None:
         pass
+
+
+# ---------------------------------------------------------------------------
+# State-machine enums
+# ---------------------------------------------------------------------------
+
+class SMPState(IntEnum):
+    IDLE = 0
+    FEATURE_EXCHANGE = 1
+    CONFIRMING = 2
+    RANDOM_EXCHANGE = 3
+    STK_ENCRYPTING = 4
+    KEY_DISTRIBUTION = 5
+    BONDED = 6
+    FAILED = 7
+
+
+class SMPEvent(IntEnum):
+    LOCAL_PAIR_REQUEST = 0
+    PAIRING_REQ_RX = 1
+    PAIRING_RSP_RX = 2
+    PAIRING_CONFIRM_RX = 3
+    PAIRING_RANDOM_RX = 4
+    ENCRYPTION_CHANGE_SUCCESS = 5
+    ENCRYPTION_CHANGE_FAILED = 6
+    ENCRYPTION_INFO_RX = 7
+    MASTER_IDENT_RX = 8
+    IDENTITY_INFO_RX = 9
+    IDENTITY_ADDR_RX = 10
+    SIGNING_INFO_RX = 11
+    KEYS_RECEIVED = 12
+    PAIRING_FAILED_RX = 13
+    TIMEOUT = 14
+    DISCONNECTED = 15
+
+
+class PairingRole(IntEnum):
+    INITIATOR = 0
+    RESPONDER = 1
+
+
+# ---------------------------------------------------------------------------
+# Per-connection pairing context
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SMPPairingContext:
+    """Per-connection pairing state container."""
+
+    connection_handle: int
+    peer_address: BDAddress
+    role: PairingRole
+    state_machine: StateMachine
+
+    # Feature exchange
+    local_io_caps: IOCapability = IOCapability.NO_INPUT_NO_OUTPUT
+    peer_io_caps: IOCapability | None = None
+    local_auth_req: int = 0
+    peer_auth_req: int = 0
+    local_max_key_size: int = 16
+    peer_max_key_size: int = 16
+    local_init_key_dist: int = 0
+    peer_init_key_dist: int = 0
+    local_resp_key_dist: int = 0
+    peer_resp_key_dist: int = 0
+    saved_pairing_request: bytes = b""
+    saved_pairing_response: bytes = b""
+
+    # Phase 2 working state
+    tk: bytes = field(default_factory=lambda: b"\x00" * 16)
+    local_random: bytes = b""
+    peer_random: bytes = b""
+    local_confirm: bytes = b""
+    peer_confirm: bytes = b""
+    stk: bytes = b""
+
+    # Phase 3 collected (from peer)
+    received_ltk: bytes = b""
+    received_ediv: int = 0
+    received_rand: bytes = b""
+    received_irk: bytes = b""
+    received_identity_address: tuple[int, bytes] = field(default_factory=lambda: (0, b""))
+    received_csrk: bytes = b""
+
+    # Bookkeeping
+    bondable: bool = True
+    local_address: BDAddress | None = None
+    pairing_complete: "asyncio.Future[None] | None" = None
+    send: "Callable[[bytes], Awaitable[None]] | None" = None
+    _hci: object | None = None
+    _bond_storage: "BondStorage | None" = None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        connection_handle: int,
+        peer_address: BDAddress,
+        role: PairingRole,
+        send: "Callable[[bytes], Awaitable[None]] | None" = None,
+    ) -> "SMPPairingContext":
+        sm: StateMachine[SMPState, SMPEvent] = StateMachine(
+            name=f"SMP[h=0x{connection_handle:04X}]",
+            initial=SMPState.IDLE,
+        )
+        return cls(
+            connection_handle=connection_handle,
+            peer_address=peer_address,
+            role=role,
+            state_machine=sm,
+            send=send,
+        )
 
 
 # ---------------------------------------------------------------------------
