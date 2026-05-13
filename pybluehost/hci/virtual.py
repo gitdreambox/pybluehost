@@ -6,19 +6,24 @@ allowing full HCI stack testing without hardware.
 
 from __future__ import annotations
 
+import asyncio
 import struct
 from typing import Callable
 
 from pybluehost.core.address import BDAddress
 from pybluehost.hci.constants import (
     ErrorCode,
+    EventCode,
     HCI_COMMAND_PACKET,
     HCI_HOST_BUFFER_SIZE,
+    HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY,
+    HCI_LE_LONG_TERM_KEY_REQUEST_REPLY,
     HCI_LE_READ_BUFFER_SIZE,
     HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_LE_SET_EVENT_MASK,
     HCI_LE_SET_RANDOM_ADDRESS,
     HCI_LE_SET_SCAN_PARAMS,
+    HCI_LE_START_ENCRYPTION,
     HCI_READ_BD_ADDR,
     HCI_READ_BUFFER_SIZE,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
@@ -29,10 +34,16 @@ from pybluehost.hci.constants import (
     HCI_WRITE_LE_HOST_SUPPORTED,
     HCI_WRITE_SCAN_ENABLE,
     HCI_WRITE_SIMPLE_PAIRING_MODE,
+    LEMetaSubEvent,
 )
 from pybluehost.hci.packets import (
     HCI_Command_Complete_Event,
+    HCI_Command_Status_Event,
+    HCI_LE_LTK_Request_Negative_Reply_Command,
+    HCI_LE_LTK_Request_Reply_Command,
+    HCI_LE_Start_Encryption_Command,
     HCICommand,
+    HCIEvent,
     decode_hci_packet,
 )
 from pybluehost.transport.base import Transport, TransportInfo
@@ -47,6 +58,7 @@ class VirtualController:
 
     def __init__(self, address: BDAddress) -> None:
         self._address = address
+        self._host_sink: object | None = None  # set by create(); used for async event injection
         self._handlers: dict[int, Callable[[HCICommand], bytes]] = {
             HCI_RESET: self._handle_reset,
             HCI_READ_BD_ADDR: self._handle_read_bd_addr,
@@ -86,21 +98,76 @@ class VirtualController:
         ctrl_t.set_sink(_VCSink())
         await host_t.open()
         await ctrl_t.open()
+        # Give the controller a way to push async events to the host
+        vc._host_sink = host_t._sink  # type: ignore[attr-defined]
+        # Intercept future sink assignments so the reference stays current
+        _orig_set_sink = host_t.set_sink
+
+        def _patched_set_sink(sink: object) -> None:
+            _orig_set_sink(sink)
+            vc._host_sink = sink
+
+        host_t.set_sink = _patched_set_sink  # type: ignore[method-assign]
         return vc, host_t
 
-    async def process(self, data: bytes) -> bytes | None:
-        """Process raw H4+HCI bytes and return a Command Complete response.
+    async def _send_event_to_host(self, event: HCIEvent) -> None:
+        """Push a raw HCI event to the host-side sink."""
+        sink = self._host_sink
+        if sink is not None:
+            await sink.on_transport_data(event.to_bytes())  # type: ignore[union-attr]
 
+    async def process(self, data: bytes) -> bytes | None:
+        """Process raw H4+HCI bytes and return a response event.
+
+        For most commands returns a Command Complete event.
+        For HCI_LE_Start_Encryption returns a Command Status event and
+        schedules an async Encryption_Change event via _send_event_to_host.
         Returns None if the packet is not a command.
         """
         if not data or data[0] != HCI_COMMAND_PACKET:
             return None
 
+        # Parse opcode and raw parameters directly from the H4 frame so that
+        # fields are always correct (typed subclasses may not implement from_bytes
+        # and their __post_init__ can overwrite self.parameters with defaults).
+        if len(data) < 4:
+            return None
+        opcode = struct.unpack_from("<H", data, 1)[0]
+        param_len = data[3]
+        raw_params = data[4 : 4 + param_len]
+
+        # --- Encryption commands with special response sequences ---
+        if opcode == HCI_LE_START_ENCRYPTION:
+            handle = struct.unpack_from("<H", raw_params, 0)[0]
+            # Spec: LE_Start_Encryption gets Command_Status, then Encryption_Change
+            asyncio.create_task(
+                self._emit_simulated_encryption_change(handle, status=0, enabled=1)
+            )
+            return self._make_command_status(opcode, status=0)
+
+        if opcode == HCI_LE_LONG_TERM_KEY_REQUEST_REPLY:
+            handle = struct.unpack_from("<H", raw_params, 0)[0]
+            asyncio.create_task(
+                self._emit_simulated_encryption_change(handle, status=0, enabled=1)
+            )
+            return self._make_command_complete(
+                opcode, b"\x00" + struct.pack("<H", handle)
+            )
+
+        if opcode == HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY:
+            handle = struct.unpack_from("<H", raw_params, 0)[0]
+            asyncio.create_task(
+                self._emit_simulated_encryption_change(handle, status=0x06, enabled=0)
+            )
+            return self._make_command_complete(
+                opcode, b"\x00" + struct.pack("<H", handle)
+            )
+
+        # --- Standard Command Complete dispatch ---
         packet = decode_hci_packet(data)
         if not isinstance(packet, HCICommand):
             return None
 
-        opcode = packet.opcode
         handler = self._handlers.get(opcode)
         if handler is not None:
             return_params = handler(packet)
@@ -117,6 +184,39 @@ class VirtualController:
             return_parameters=return_params,
         )
         return event.to_bytes()
+
+    def _make_command_status(self, opcode: int, status: int) -> bytes:
+        """Build a full H4+HCI Command Status event."""
+        event = HCI_Command_Status_Event(
+            status=status,
+            num_hci_command_packets=1,
+            command_opcode=opcode,
+        )
+        return event.to_bytes()
+
+    async def _emit_simulated_encryption_change(
+        self, handle: int, status: int, enabled: int
+    ) -> None:
+        """Emit an HCI_Encryption_Change event after yielding to the event loop."""
+        await asyncio.sleep(0)  # let Command Status/Complete reach the host first
+        params = bytes([status]) + struct.pack("<H", handle) + bytes([enabled])
+        event = HCIEvent(event_code=int(EventCode.ENCRYPTION_CHANGE), parameters=params)
+        await self._send_event_to_host(event)
+
+    def simulate_le_ltk_request(self, *, handle: int, rand: bytes, ediv: int) -> None:
+        """Test hook: inject an LE_LTK_Request subevent from the controller to the host."""
+        if len(rand) != 8:
+            raise ValueError("rand must be 8 bytes")
+        subevent_data = (
+            bytes([int(LEMetaSubEvent.LE_LONG_TERM_KEY_REQUEST)])
+            + struct.pack("<H", handle)
+            + rand
+            + struct.pack("<H", ediv)
+        )
+        meta_event = HCIEvent(
+            event_code=int(EventCode.LE_META), parameters=subevent_data
+        )
+        asyncio.create_task(self._send_event_to_host(meta_event))
 
     # -- Handlers --------------------------------------------------------------
 
