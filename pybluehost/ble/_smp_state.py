@@ -37,7 +37,9 @@ from pybluehost.ble.smp import (
     SMPPairingRequest,
     SMPPairingResponse,
     SMPState,
+    _log_pairing_complete,
 )
+from pybluehost.core.address import BDAddress
 
 if TYPE_CHECKING:
     from pybluehost.ble.smp import SMPPairingContext
@@ -100,12 +102,12 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
     sm.add_transition(
         SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
         SMPState.KEY_DISTRIBUTION,
-        action=lambda **kw: _start_phase3_placeholder(ctx, **kw),
+        action=lambda **kw: _start_phase3(ctx, **kw),
     )
     sm.add_transition(
         SMPState.RANDOM_EXCHANGE, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
         SMPState.KEY_DISTRIBUTION,
-        action=lambda **kw: _start_phase3_placeholder(ctx, **kw),
+        action=lambda **kw: _start_phase3(ctx, **kw),
     )
     sm.add_transition(
         SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_FAILED,
@@ -117,6 +119,39 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
         SMPState.FAILED,
         action=lambda **kw: _on_failed(ctx, reason=0x08, **kw),
     )
+
+    # ---- Phase 3 — Key distribution ----
+    sm.add_transition(
+        SMPState.KEY_DISTRIBUTION, SMPEvent.ENCRYPTION_INFO_RX,
+        SMPState.KEY_DISTRIBUTION,
+        action=lambda **kw: _recv_encryption_info(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.KEY_DISTRIBUTION, SMPEvent.MASTER_IDENT_RX,
+        SMPState.KEY_DISTRIBUTION,
+        action=lambda **kw: _recv_master_ident(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.KEY_DISTRIBUTION, SMPEvent.IDENTITY_INFO_RX,
+        SMPState.KEY_DISTRIBUTION,
+        action=lambda **kw: _recv_identity_info(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.KEY_DISTRIBUTION, SMPEvent.IDENTITY_ADDR_RX,
+        SMPState.KEY_DISTRIBUTION,
+        action=lambda **kw: _recv_identity_addr(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.KEY_DISTRIBUTION, SMPEvent.SIGNING_INFO_RX,
+        SMPState.KEY_DISTRIBUTION,
+        action=lambda **kw: _recv_signing_info(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.KEY_DISTRIBUTION, SMPEvent.KEYS_RECEIVED,
+        SMPState.BONDED,
+        action=lambda **kw: _persist_bond(ctx, **kw),
+    )
+    sm.set_timeout(SMPState.KEY_DISTRIBUTION, 30.0, SMPEvent.TIMEOUT)
 
     # Phase-2 timeouts
     sm.set_timeout(SMPState.RANDOM_EXCHANGE, 30.0, SMPEvent.TIMEOUT)
@@ -277,13 +312,112 @@ async def _responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -
     ctx.stk = SMPCrypto.s1(ctx.tk, ctx.local_random, ctx.peer_random)
 
 
-async def _start_phase3_placeholder(ctx: "SMPPairingContext", **_kw) -> None:
-    """Placeholder for Phase 3 entry (filled in by Task 7).
+async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
+    """Phase 3 entry: distribute our keys per the negotiated mask, then await peer keys."""
+    from pybluehost.ble.smp import (
+        SMPEncryptionInformation, SMPIdentityAddressInformation,
+        SMPIdentityInformation, SMPMasterIdentification, SMPSigningInformation,
+    )
+    logger.debug("entered KEY_DISTRIBUTION on handle=0x%04X", ctx.connection_handle)
+    mask = ctx.local_init_key_dist if ctx.role == PairingRole.INITIATOR else ctx.local_resp_key_dist
 
-    For Task 6 we just log; Phase 3 key distribution + bonding lands later.
-    """
-    logger.debug("entered KEY_DISTRIBUTION on handle=0x%04X (Phase 3 lands in Task 7)",
-                 ctx.connection_handle)
+    if mask & 0x01:  # EncKey: LTK + EDIV + RAND
+        ltk = os.urandom(16)
+        ediv = int.from_bytes(os.urandom(2), "little")
+        rand = os.urandom(8)
+        await ctx.send(SMPEncryptionInformation(long_term_key=ltk).to_bytes())
+        await ctx.send(SMPMasterIdentification(ediv=ediv, rand=rand).to_bytes())
+    if mask & 0x02:  # IdKey: IRK + IdentityAddress
+        irk = os.urandom(16)
+        await ctx.send(SMPIdentityInformation(irk=irk).to_bytes())
+        local_addr = ctx.local_address if ctx.local_address is not None else BDAddress(b"\x00" * 6)
+        local_addr_bytes = bytes(local_addr.address) if hasattr(local_addr, "address") else bytes(local_addr)
+        await ctx.send(SMPIdentityAddressInformation(
+            addr_type=0, bd_addr=local_addr_bytes,
+        ).to_bytes())
+    if mask & 0x04:  # Sign: CSRK
+        csrk = os.urandom(16)
+        await ctx.send(SMPSigningInformation(signature_key=csrk).to_bytes())
+
+    # If we expect no keys from peer, finalize immediately
+    expected = ctx.peer_resp_key_dist if ctx.role == PairingRole.INITIATOR else ctx.peer_init_key_dist
+    if expected == 0:
+        await ctx.state_machine.fire(SMPEvent.KEYS_RECEIVED)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 actions
+# ---------------------------------------------------------------------------
+
+async def _recv_encryption_info(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    ctx.received_ltk = pdu.long_term_key
+    await _check_phase3_complete(ctx)
+
+
+async def _recv_master_ident(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    ctx.received_ediv = pdu.ediv
+    ctx.received_rand = pdu.rand
+    await _check_phase3_complete(ctx)
+
+
+async def _recv_identity_info(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    ctx.received_irk = pdu.irk
+    await _check_phase3_complete(ctx)
+
+
+async def _recv_identity_addr(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    # SMPIdentityAddressInformation uses addr_type and bd_addr (raw bytes)
+    ctx.received_identity_address = (pdu.addr_type, bytes(pdu.bd_addr))
+    await _check_phase3_complete(ctx)
+
+
+async def _recv_signing_info(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    # SMPSigningInformation uses signature_key (not csrk)
+    ctx.received_csrk = pdu.signature_key
+    await _check_phase3_complete(ctx)
+
+
+async def _check_phase3_complete(ctx: "SMPPairingContext") -> None:
+    """Fire KEYS_RECEIVED if every expected peer key has arrived."""
+    expected = ctx.peer_resp_key_dist if ctx.role == PairingRole.INITIATOR else ctx.peer_init_key_dist
+    have_enc = (expected & 0x01) == 0 or (
+        bool(ctx.received_ltk) and bool(ctx.received_rand)
+    )
+    have_id = (expected & 0x02) == 0 or (
+        bool(ctx.received_irk) and bool(ctx.received_identity_address[1])
+    )
+    have_sign = (expected & 0x04) == 0 or bool(ctx.received_csrk)
+    if have_enc and have_id and have_sign:
+        await ctx.state_machine.fire(SMPEvent.KEYS_RECEIVED)
+
+
+async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
+    """Save peer's keys to BondStorage and resolve pairing_complete Future."""
+    from pybluehost.ble.smp import BondInfo
+    storage = getattr(ctx, "_bond_storage", None)
+    if storage is None:
+        logger.debug("no bond storage configured; not persisting bond")
+    else:
+        bond = BondInfo(
+            peer_address=ctx.peer_address,
+            address_type=ctx.received_identity_address[0],
+            ltk=ctx.received_ltk if ctx.received_ltk else None,
+            irk=ctx.received_irk if ctx.received_irk else None,
+            csrk=ctx.received_csrk if ctx.received_csrk else None,
+            ediv=ctx.received_ediv,
+            rand=ctx.received_rand if ctx.received_rand else b"\x00" * 8,
+            key_size=16,
+            authenticated=False,
+            sc=False,
+        )
+        await storage.save_bond(bond)
+        _log_pairing_complete(
+            handle=ctx.connection_handle,
+            peer_addr=str(ctx.peer_address),
+            ltk_stored=bool(ctx.received_ltk),
+        )
+    if ctx.pairing_complete and not ctx.pairing_complete.done():
+        ctx.pairing_complete.set_result(None)
 
 
 # ---------------------------------------------------------------------------
