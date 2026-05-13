@@ -14,6 +14,7 @@ from pybluehost.core.address import BDAddress
 from pybluehost.hci.constants import (
     ErrorCode,
     EventCode,
+    HCI_ACL_PACKET,
     HCI_COMMAND_PACKET,
     HCI_HOST_BUFFER_SIZE,
     HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY,
@@ -42,6 +43,7 @@ from pybluehost.hci.packets import (
     HCI_LE_LTK_Request_Negative_Reply_Command,
     HCI_LE_LTK_Request_Reply_Command,
     HCI_LE_Start_Encryption_Command,
+    HCIACLData,
     HCICommand,
     HCIEvent,
     decode_hci_packet,
@@ -59,6 +61,7 @@ class VirtualController:
     def __init__(self, address: BDAddress) -> None:
         self._address = address
         self._host_sink: object | None = None  # set by create(); used for async event injection
+        self._acl_forwarder = None  # set by VirtualLELink to bridge ACL frames
         self._handlers: dict[int, Callable[[HCICommand], bytes]] = {
             HCI_RESET: self._handle_reset,
             HCI_READ_BD_ADDR: self._handle_read_bd_addr,
@@ -116,6 +119,20 @@ class VirtualController:
         if sink is not None:
             await sink.on_transport_data(event.to_bytes())  # type: ignore[union-attr]
 
+    def set_acl_forwarder(self, forwarder) -> None:
+        """Register an async callback invoked with each ACL frame coming from the host.
+
+        forwarder: async callable taking HCIACLData. Used by VirtualLELink to bridge
+        ACL frames between two VirtualControllers.
+        """
+        self._acl_forwarder = forwarder
+
+    async def _inject_acl_to_host(self, acl) -> None:
+        """Push an ACL frame to the host-side sink. Used by the loopback bridge."""
+        sink = self._host_sink
+        if sink is not None:
+            await sink.on_transport_data(acl.to_bytes())  # type: ignore[union-attr]
+
     async def process(self, data: bytes) -> bytes | None:
         """Process raw H4+HCI bytes and return a response event.
 
@@ -124,7 +141,26 @@ class VirtualController:
         schedules an async Encryption_Change event via _send_event_to_host.
         Returns None if the packet is not a command.
         """
-        if not data or data[0] != HCI_COMMAND_PACKET:
+        if not data:
+            return None
+
+        # Route ACL frames to the registered forwarder (if any)
+        if data[0] == HCI_ACL_PACKET:
+            if self._acl_forwarder is not None and len(data) >= 5:
+                h_f = int.from_bytes(data[1:3], "little")
+                handle = h_f & 0x0FFF
+                pb_flag = (h_f >> 12) & 0x03
+                bc_flag = (h_f >> 14) & 0x03
+                length = int.from_bytes(data[3:5], "little")
+                payload = data[5:5 + length]
+                acl = HCIACLData(
+                    handle=handle, pb_flag=pb_flag,
+                    bc_flag=bc_flag, data=payload,
+                )
+                asyncio.create_task(self._acl_forwarder(acl))
+            return None
+
+        if data[0] != HCI_COMMAND_PACKET:
             return None
 
         # Parse opcode and raw parameters directly from the H4 frame so that
