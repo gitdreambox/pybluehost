@@ -243,6 +243,9 @@ class Stack:
             on_acl_data=stack._on_acl_data,
         )
 
+        hci.on_encryption_change(stack._on_encryption_change)
+        hci.on_le_ltk_request(stack._on_le_ltk_request)
+
         return stack
 
     @classmethod
@@ -414,6 +417,64 @@ class Stack:
             self._attach_gatt_server_to_att_channels()
             await self._l2cap.on_acl_data(packet)
 
+    async def _on_encryption_change(self, handle: int, status: int, enabled: int) -> None:
+        """Forward to active SMP context (during pairing) + emit user event."""
+        if self._smp is not None:
+            ctx = self._smp.get_context(handle)
+            if ctx is not None:
+                from pybluehost.ble.smp import SMPEvent
+                event = (
+                    SMPEvent.ENCRYPTION_CHANGE_SUCCESS
+                    if status == 0 and enabled
+                    else SMPEvent.ENCRYPTION_CHANGE_FAILED
+                )
+                try:
+                    await ctx.state_machine.fire(event)
+                except Exception:
+                    pass
+        if status == 0 and enabled:
+            self._emit_connection_event(StackConnectionEvent(state="encrypted", handle=handle))
+
+    async def _on_le_ltk_request(self, handle: int, rand: bytes, ediv: int) -> None:
+        """Reply to LE_LTK_Request — pairing-time uses active SMP ctx.stk;
+        reconnect-time looks up bond by (ediv, rand)."""
+        from pybluehost.hci.packets import (
+            HCI_LE_LTK_Request_Negative_Reply_Command,
+            HCI_LE_LTK_Request_Reply_Command,
+        )
+        # Pairing-time STK request: rand=0, ediv=0
+        if ediv == 0 and rand == b"\x00" * 8 and self._smp is not None:
+            ctx = self._smp.get_context(handle)
+            if ctx is not None and ctx.stk:
+                await self._hci.send_command(HCI_LE_LTK_Request_Reply_Command(
+                    connection_handle=handle, long_term_key=ctx.stk,
+                ))
+                return
+        # Reconnection LTK request: look up bond by EDIV/RAND
+        if self._config.bond_storage is not None:
+            for bond in await self._config.bond_storage.list_bonds():
+                if bond.ediv == ediv and bond.rand == rand and bond.ltk:
+                    await self._hci.send_command(HCI_LE_LTK_Request_Reply_Command(
+                        connection_handle=handle, long_term_key=bond.ltk,
+                    ))
+                    return
+        # No match
+        await self._hci.send_command(
+            HCI_LE_LTK_Request_Negative_Reply_Command(connection_handle=handle)
+        )
+
+    async def _auto_encrypt_on_reconnect(self, handle: int, peer_addr: "BDAddress") -> None:
+        from pybluehost.hci.packets import HCI_LE_Start_Encryption_Command
+        bond = await self._config.bond_storage.load_bond(peer_addr)  # type: ignore[union-attr]
+        if bond is None or not bond.ltk:
+            return
+        await self._hci.send_command(HCI_LE_Start_Encryption_Command(
+            connection_handle=handle,
+            random_number=bond.rand if bond.rand else b"\x00" * 8,
+            encrypted_diversifier=bond.ediv,
+            long_term_key=bond.ltk,
+        ))
+
     def _attach_gatt_server_to_att_channels(self) -> None:
         if self._l2cap is None or self._gatt_server is None:
             return
@@ -548,6 +609,19 @@ class Stack:
             for waiter in waiters:
                 if not waiter.done():
                     waiter.set_result(handle)
+            # Auto-encrypt on bonded reconnect (Central role only — Peripheral waits for LTK_Request)
+            if (
+                self._config.auto_encrypt_on_bonded_reconnect
+                and self._config.bond_storage is not None
+            ):
+                params = event.subevent_parameters
+                if len(params) >= 11:
+                    role = params[3]
+                    peer_addr = BDAddress(params[5:11])
+                    if role == 0x00:  # Central
+                        asyncio.create_task(
+                            self._auto_encrypt_on_reconnect(handle, peer_addr)
+                        )
         else:
             reason = _hci_status_text(status)
             self._emit_connection_event(StackConnectionEvent(state="failed", handle=handle, reason=reason))
@@ -621,7 +695,14 @@ class Stack:
         bearer = ATTBearer(channel, mtu=getattr(channel, "mtu", 23))
         channel.set_events(SimpleChannelEvents(on_data=bearer._on_pdu))
         setattr(channel, "_gatt_client_bound", True)
-        return GATTClient(bearer)
+        return GATTClient(
+            bearer,
+            connection_handle=handle,
+            on_insufficient_encryption=self._on_gatt_insufficient_encryption,
+        )
+
+    async def _on_gatt_insufficient_encryption(self, handle: int) -> None:
+        await self.pair(handle)
 
     async def connect_classic(
         self,

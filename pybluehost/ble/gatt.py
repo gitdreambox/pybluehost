@@ -434,8 +434,16 @@ class GATTServer:
 class GATTClient:
     """GATT Client — wraps ATTBearer for service discovery and attribute access."""
 
-    def __init__(self, bearer: ATTBearer) -> None:
+    def __init__(
+        self,
+        bearer: ATTBearer,
+        *,
+        connection_handle: int | None = None,
+        on_insufficient_encryption=None,
+    ) -> None:
         self._bearer = bearer
+        self._connection_handle = connection_handle
+        self._on_insufficient_encryption = on_insufficient_encryption
 
     async def discover_all_services(self) -> list[tuple[int, int, bytes]]:
         """Discover all primary services via Read_By_Group_Type."""
@@ -550,8 +558,18 @@ class GATTClient:
             start = last_handle + 1
         return descriptors
 
+    async def _request_with_retry(self, coro_factory):
+        """Run coro_factory(); on ATTError 0x0F call on_insufficient_encryption and retry once."""
+        try:
+            return await coro_factory()
+        except ATTError as exc:
+            if exc.error_code != 0x0F or self._on_insufficient_encryption is None:
+                raise
+            await self._on_insufficient_encryption(self._connection_handle)
+            return await coro_factory()
+
     async def read_characteristic(self, handle: int) -> bytes:
-        return await self._bearer.read(handle)
+        return await self._request_with_retry(lambda: self._bearer.read(handle))
 
     async def write_characteristic(self, handle: int, value: bytes) -> None:
-        await self._bearer.write(handle, value)
+        await self._request_with_retry(lambda: self._bearer.write(handle, value))
