@@ -45,6 +45,10 @@ class StackConfig:
     # Bond persistence — pluggable backend (PRD §5.4)
     bond_storage: BondStorage | None = None
 
+    # SMP bonding behaviour
+    bondable: bool = True
+    auto_encrypt_on_bonded_reconnect: bool = True
+
 
 @dataclass(frozen=True)
 class StackConnectionEvent:
@@ -172,7 +176,13 @@ class Stack:
 
         # 5b. SMP — bind to each LE connection's CID_SMP fixed channel.
         from pybluehost.ble.smp import SMPManager
-        smp = SMPManager(hci=hci, bond_storage=cfg.bond_storage)
+        smp = SMPManager(
+            hci=hci,
+            bond_storage=cfg.bond_storage,
+            local_io_caps=cfg.le_io_capability,
+            bondable=cfg.bondable,
+            local_address=stack._local_address,
+        )
         stack._smp = smp
 
         def _bind_smp_to_le_connection(handle: int, channels: dict) -> None:
@@ -662,6 +672,53 @@ class Stack:
                     waiters.remove(waiter)
                 if not waiters:
                     self._classic_auth_waiters.pop(handle, None)
+
+    async def pair(self, handle: int, *, timeout: float = 30.0) -> None:
+        """Initiate SMP pairing as Initiator over an existing LE connection.
+
+        Raises ReplayModeError if stack is in REPLAY mode.
+        Raises RuntimeError if no SMP channel is bound for this handle
+        (typically because no LE connection is open).
+        """
+        self._check_writable()
+        if self._smp is None:
+            raise RuntimeError("Stack is not initialized")
+        fut = await self._smp.start_initiator(handle)
+        try:
+            await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(f"Pairing timeout on handle=0x{handle:04X}") from exc
+
+    async def encrypt(self, handle: int, *, timeout: float = 5.0) -> None:
+        """Restore encryption from a stored bond (Initiator/Central role).
+
+        Looks up the peer address bound to this connection handle, loads the
+        bond, and issues HCI_LE_Start_Encryption. Raises RuntimeError if no
+        bond is available.
+
+        Full integration (auto-trigger on LE_Connection_Complete) lands in Task 9.
+        """
+        self._check_writable()
+        if self._smp is None:
+            raise RuntimeError("Stack is not initialized")
+        if self._config.bond_storage is None:
+            raise RuntimeError("Bond storage not configured")
+        # Look up peer address from SMPManager's peer-address binding (set during
+        # L2CAP LE-connection-open hook in PRD 1.0 closure Plan).
+        peer = self._smp._peer_addrs.get(handle)
+        if peer is None:
+            raise RuntimeError(f"No peer address bound for handle=0x{handle:04X}")
+        bond = await self._config.bond_storage.load_bond(peer)
+        if bond is None or not bond.ltk:
+            raise RuntimeError(f"No bond available for peer={peer}")
+        from pybluehost.hci.packets import HCI_LE_Start_Encryption_Command
+        await self._hci.send_command(HCI_LE_Start_Encryption_Command(
+            connection_handle=handle,
+            random_number=bond.rand if bond.rand else b"\x00" * 8,
+            encrypted_diversifier=bond.ediv,
+            long_term_key=bond.ltk,
+        ))
+        # Wait for HCI_Encryption_Change is left to caller for now — Task 9 wires up event listeners
 
     async def enable_classic_encryption(
         self,
