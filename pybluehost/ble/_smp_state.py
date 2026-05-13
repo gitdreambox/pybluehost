@@ -7,9 +7,19 @@ Phase 1 — Feature Exchange:
     Responder path:
         IDLE  --(PAIRING_REQ_RX)--> CONFIRMING            [send PairingResponse; wait for Confirm]
 
-Phase 2 & 3 transitions land in later tasks. Universal failure transitions
+Phase 2 — Confirm/Random/STK:
+    Initiator path:
+        CONFIRMING --(PAIRING_CONFIRM_RX)--> CONFIRMING   [store peer Confirm, send local Random]
+        CONFIRMING --(PAIRING_RANDOM_RX)--> STK_ENCRYPTING
+            [verify peer Confirm, derive STK, send HCI_LE_Start_Encryption]
+    Responder path:
+        CONFIRMING --(PAIRING_CONFIRM_RX)--> CONFIRMING   [gen Srand, compute+send own Confirm]
+        CONFIRMING --(PAIRING_RANDOM_RX)--> RANDOM_EXCHANGE
+            [verify peer Confirm, send own Random, derive STK]
+
+Phase 3 transitions land in Task 7. Universal failure transitions
 (PAIRING_FAILED_RX / TIMEOUT / DISCONNECTED → FAILED) are registered for all
-states Phase 1 can reach.
+states Phases 1–2 can reach.
 """
 from __future__ import annotations
 
@@ -56,6 +66,61 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
             SMPState.CONFIRMING,
             action=lambda **kw: _responder_recv_pairing_request(ctx, **kw),
         )
+
+    # ---- Phase 2 — Confirm/Random ----
+    if ctx.role == PairingRole.INITIATOR:
+        # Initiator already sent its Confirm in Phase 1 transition.
+        # Now waits to receive peer Confirm, then peer Random.
+        sm.add_transition(
+            SMPState.CONFIRMING, SMPEvent.PAIRING_CONFIRM_RX,
+            SMPState.CONFIRMING,
+            action=lambda **kw: _initiator_recv_peer_confirm(ctx, **kw),
+        )
+        sm.add_transition(
+            SMPState.CONFIRMING, SMPEvent.PAIRING_RANDOM_RX,
+            SMPState.STK_ENCRYPTING,
+            action=lambda **kw: _initiator_recv_peer_random(ctx, **kw),
+        )
+    else:
+        # Responder: in CONFIRMING after sending Pairing Response.
+        # First receives Initiator Confirm → sends own Confirm.
+        # Then receives Initiator Random → sends own Random, advances to RANDOM_EXCHANGE.
+        sm.add_transition(
+            SMPState.CONFIRMING, SMPEvent.PAIRING_CONFIRM_RX,
+            SMPState.CONFIRMING,
+            action=lambda **kw: _responder_recv_peer_confirm(ctx, **kw),
+        )
+        sm.add_transition(
+            SMPState.CONFIRMING, SMPEvent.PAIRING_RANDOM_RX,
+            SMPState.RANDOM_EXCHANGE,
+            action=lambda **kw: _responder_recv_peer_random(ctx, **kw),
+        )
+
+    # Encryption-change advancement (both roles use the same target state)
+    sm.add_transition(
+        SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
+        SMPState.KEY_DISTRIBUTION,
+        action=lambda **kw: _start_phase3_placeholder(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.RANDOM_EXCHANGE, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
+        SMPState.KEY_DISTRIBUTION,
+        action=lambda **kw: _start_phase3_placeholder(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_FAILED,
+        SMPState.FAILED,
+        action=lambda **kw: _on_failed(ctx, reason=0x08, **kw),
+    )
+    sm.add_transition(
+        SMPState.RANDOM_EXCHANGE, SMPEvent.ENCRYPTION_CHANGE_FAILED,
+        SMPState.FAILED,
+        action=lambda **kw: _on_failed(ctx, reason=0x08, **kw),
+    )
+
+    # Phase-2 timeouts
+    sm.set_timeout(SMPState.RANDOM_EXCHANGE, 30.0, SMPEvent.TIMEOUT)
+    sm.set_timeout(SMPState.STK_ENCRYPTING, 30.0, SMPEvent.TIMEOUT)
 
     # Universal failure transitions
     for state in (
@@ -150,8 +215,106 @@ async def _responder_recv_pairing_request(ctx: "SMPPairingContext", *, pdu: SMPP
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 actions
+# ---------------------------------------------------------------------------
+
+async def _initiator_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """Initiator: peer (Responder) Confirm arrived. Store it; send our Random."""
+    from pybluehost.ble.smp import SMPPairingRandom
+    ctx.peer_confirm = pdu.confirm_value
+    # Send our Random
+    await ctx.send(SMPPairingRandom(random_value=ctx.local_random).to_bytes())
+
+
+async def _initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """Initiator: peer (Responder) Random arrived. Verify Confirm, derive STK, start encryption."""
+    from pybluehost.hci.packets import HCI_LE_Start_Encryption_Command
+    ctx.peer_random = pdu.random_value
+    # Verify peer's confirm: expected = c1(tk, peer_random, preq, pres, iat, rat, ia, ra)
+    preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
+    expected = SMPCrypto.c1(ctx.tk, ctx.peer_random, preq, pres, iat, rat, ia, ra)
+    if expected != ctx.peer_confirm:
+        await _on_failed(ctx, reason=0x04)  # Confirm Value Failed
+        return
+    # Derive STK = s1(tk, Srand, Mrand)
+    # Initiator's local_random = Mrand; peer_random = Srand.
+    ctx.stk = SMPCrypto.s1(ctx.tk, ctx.peer_random, ctx.local_random)
+    # Drive encryption
+    if ctx._hci is None:
+        await _on_failed(ctx, reason=0x08)
+        return
+    await ctx._hci.send_command(HCI_LE_Start_Encryption_Command(
+        connection_handle=ctx.connection_handle,
+        random_number=b"\x00" * 8,
+        encrypted_diversifier=0,
+        long_term_key=ctx.stk,
+    ))
+
+
+async def _responder_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """Responder: peer (Initiator) Confirm arrived. Generate Srand and own Confirm."""
+    from pybluehost.ble.smp import SMPPairingConfirm
+    ctx.peer_confirm = pdu.confirm_value
+    ctx.local_random = os.urandom(16)
+    preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
+    ctx.local_confirm = SMPCrypto.c1(ctx.tk, ctx.local_random, preq, pres, iat, rat, ia, ra)
+    await ctx.send(SMPPairingConfirm(confirm_value=ctx.local_confirm).to_bytes())
+
+
+async def _responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """Responder: peer (Initiator) Random arrived. Verify peer Confirm, send own Random."""
+    from pybluehost.ble.smp import SMPPairingRandom
+    ctx.peer_random = pdu.random_value
+    preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
+    expected = SMPCrypto.c1(ctx.tk, ctx.peer_random, preq, pres, iat, rat, ia, ra)
+    if expected != ctx.peer_confirm:
+        await _on_failed(ctx, reason=0x04)
+        return
+    # Send our random
+    await ctx.send(SMPPairingRandom(random_value=ctx.local_random).to_bytes())
+    # Derive STK locally too (Responder computes the same STK once it has both randoms).
+    # s1(TK, Srand, Mrand) — Responder's local_random = Srand; peer_random = Mrand.
+    ctx.stk = SMPCrypto.s1(ctx.tk, ctx.local_random, ctx.peer_random)
+
+
+async def _start_phase3_placeholder(ctx: "SMPPairingContext", **_kw) -> None:
+    """Placeholder for Phase 3 entry (filled in by Task 7).
+
+    For Task 6 we just log; Phase 3 key distribution + bonding lands later.
+    """
+    logger.debug("entered KEY_DISTRIBUTION on handle=0x%04X (Phase 3 lands in Task 7)",
+                 ctx.connection_handle)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _build_c1_params(
+    ctx: "SMPPairingContext",
+) -> tuple[bytes, bytes, int, int, bytes, bytes]:
+    """Return (preq, pres, iat, rat, ia, ra) for c1 confirm computation.
+
+    Per BT Spec Vol 3 Part H §2.2.3:
+      preq = full 7-byte Pairing Request PDU (opcode included)
+      pres = full 7-byte Pairing Response PDU (opcode included)
+      iat  = Initiator address type (0 = public)
+      rat  = Responder address type (0 = public)
+      ia   = Initiator device address (6 bytes, LSB first)
+      ra   = Responder device address (6 bytes, LSB first)
+    """
+    preq = ctx.saved_pairing_request[:7]
+    pres = ctx.saved_pairing_response[:7]
+    iat = 0x00  # address type public
+    rat = 0x00
+    if ctx.role == PairingRole.INITIATOR:
+        ia = _local_address_bytes(ctx)
+        ra = _peer_address_bytes(ctx)
+    else:
+        ia = _peer_address_bytes(ctx)   # peer is Initiator
+        ra = _local_address_bytes(ctx)  # local is Responder
+    return preq, pres, iat, rat, ia, ra
+
 
 def _local_address_bytes(ctx: "SMPPairingContext") -> bytes:
     if ctx.local_address is None:
