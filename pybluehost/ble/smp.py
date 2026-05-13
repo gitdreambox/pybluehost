@@ -697,35 +697,45 @@ class SMPPairingContext:
 # ---------------------------------------------------------------------------
 
 class SMPManager:
-    """SMP pairing state machine manager.
-
-    Current scope (PRD 1.0 closure): channel binding + delegate plumbing
-    works end-to-end. Incoming PDUs are answered with PAIRING_FAILED
-    (UNSPECIFIED) until the full state machine ships in a follow-up Plan.
-    """
+    """SMP pairing state machine manager."""
 
     def __init__(
         self,
         hci: object | None = None,
         bond_storage: BondStorage | None = None,
         delegate: PairingDelegate | AutoAcceptDelegate | None = None,
+        local_io_caps: IOCapability = IOCapability.NO_INPUT_NO_OUTPUT,
+        bondable: bool = True,
+        local_address: BDAddress | None = None,
     ) -> None:
         self._hci = hci
         self._bond_storage = bond_storage
         self._delegate = delegate or AutoAcceptDelegate()
+        self._local_io_caps = local_io_caps
+        self._bondable = bondable
+        self._local_address = local_address
         self._senders: dict[int, Callable[[bytes], Awaitable[None]]] = {}
+        self._peer_addrs: dict[int, BDAddress] = {}
+        self._contexts: dict[int, SMPPairingContext] = {}
 
     def bind_channel(
         self,
         connection_handle: int,
         send: Callable[[bytes], Awaitable[None]],
+        peer_address: BDAddress | None = None,
     ) -> None:
-        """Bind an L2CAP CID_SMP channel send-callable to a connection handle."""
+        """Bind an L2CAP CID_SMP send-callable to a connection handle."""
         self._senders[connection_handle] = send
+        if peer_address is not None:
+            self._peer_addrs[connection_handle] = peer_address
 
     def unbind_channel(self, connection_handle: int) -> None:
-        """Remove the L2CAP send-callable for a connection handle."""
+        """Remove the L2CAP send-callable and tear down any active context."""
         self._senders.pop(connection_handle, None)
+        self._peer_addrs.pop(connection_handle, None)
+        ctx = self._contexts.pop(connection_handle, None)
+        if ctx is not None and ctx.state_machine.state not in (SMPState.BONDED, SMPState.FAILED):
+            asyncio.create_task(ctx.state_machine.fire(SMPEvent.DISCONNECTED))
 
     def set_delegate(
         self,
@@ -733,27 +743,125 @@ class SMPManager:
     ) -> None:
         self._delegate = delegate
 
-    async def on_pdu(self, data: bytes, *, connection_handle: int) -> None:
-        """Handle an inbound SMP PDU.
+    def set_hci(self, hci: object) -> None:
+        self._hci = hci
 
-        Until the full pairing state machine lands, answer with
-        PAIRING_FAILED(UNSPECIFIED). This still proves the L2CAP→SMP
-        binding works end-to-end and surfaces protocol-level errors.
-        """
+    def set_local_address(self, address: BDAddress) -> None:
+        self._local_address = address
+
+    def get_context(self, connection_handle: int) -> SMPPairingContext | None:
+        return self._contexts.get(connection_handle)
+
+    async def start_initiator(self, connection_handle: int) -> "asyncio.Future[None]":
+        """Begin Initiator-role pairing on a connected LE link."""
+        from pybluehost.ble._smp_state import register_transitions
+        if connection_handle in self._contexts:
+            raise RuntimeError(f"SMP context already active for handle=0x{connection_handle:04X}")
         send = self._senders.get(connection_handle)
         if send is None:
-            logger.debug(
-                "SMP PDU dropped: no sender bound for handle=0x%04X",
-                connection_handle,
-            )
-            return
-        if not data:
-            logger.debug(
-                "SMP PDU dropped: empty payload on handle=0x%04X",
-                connection_handle,
-            )
-            return
-        response = bytes(
-            [SMPCode.PAIRING_FAILED, PAIRING_FAILED_REASON_UNSPECIFIED]
+            raise RuntimeError(f"No SMP channel bound for handle=0x{connection_handle:04X}")
+        peer = self._peer_addrs.get(connection_handle)
+        if peer is None:
+            raise RuntimeError(f"Peer address unknown for handle=0x{connection_handle:04X}")
+        ctx = SMPPairingContext.create(
+            connection_handle=connection_handle,
+            peer_address=peer,
+            role=PairingRole.INITIATOR,
+            send=send,
         )
-        await send(response)
+        ctx.local_io_caps = self._local_io_caps
+        ctx.bondable = self._bondable
+        ctx.local_address = self._local_address
+        ctx._hci = self._hci
+        ctx._bond_storage = self._bond_storage
+        ctx.pairing_complete = asyncio.get_running_loop().create_future()
+        register_transitions(ctx)
+        self._contexts[connection_handle] = ctx
+        await ctx.state_machine.fire(SMPEvent.LOCAL_PAIR_REQUEST)
+        return ctx.pairing_complete
+
+    async def on_pdu(self, data: bytes, *, connection_handle: int) -> None:
+        """Route an inbound SMP PDU to its connection's state machine."""
+        if not data:
+            return
+        opcode = data[0]
+        ctx = self._contexts.get(connection_handle)
+        if ctx is None:
+            if opcode != SMPCode.PAIRING_REQUEST:
+                logger.debug(
+                    "SMP PDU dropped: no context handle=0x%04X opcode=0x%02X",
+                    connection_handle, opcode,
+                )
+                return
+            send = self._senders.get(connection_handle)
+            if send is None:
+                logger.debug("SMP Pairing Request on unbound handle=0x%04X", connection_handle)
+                return
+            peer = self._peer_addrs.get(connection_handle, BDAddress(b"\x00" * 6))
+            ctx = SMPPairingContext.create(
+                connection_handle=connection_handle,
+                peer_address=peer,
+                role=PairingRole.RESPONDER,
+                send=send,
+            )
+            ctx.local_io_caps = self._local_io_caps
+            ctx.bondable = self._bondable
+            ctx.local_address = self._local_address
+            ctx._hci = self._hci
+            ctx._bond_storage = self._bond_storage
+            ctx.pairing_complete = asyncio.get_running_loop().create_future()
+            from pybluehost.ble._smp_state import register_transitions
+            register_transitions(ctx)
+            self._contexts[connection_handle] = ctx
+
+        pdu = decode_smp_pdu(data)
+        event = _pdu_to_event(pdu)
+        if event is None:
+            logger.debug("Unhandled SMP opcode 0x%02X", opcode)
+            return
+        from pybluehost.core.errors import InvalidTransitionError
+        try:
+            await ctx.state_machine.fire(event, pdu=pdu)
+        except InvalidTransitionError as e:
+            logger.warning("SMP invalid transition: %s", e)
+            try:
+                await ctx.state_machine.fire(SMPEvent.PAIRING_FAILED_RX)
+            except Exception:
+                pass
+
+
+def _pdu_to_event(pdu: SMPPdu) -> "SMPEvent | None":
+    """Map an SMP PDU instance to the corresponding state-machine event."""
+    from pybluehost.ble.smp import (
+        SMPEncryptionInformation,
+        SMPIdentityAddressInformation,
+        SMPIdentityInformation,
+        SMPMasterIdentification,
+        SMPPairingConfirm,
+        SMPPairingFailed,
+        SMPPairingRandom,
+        SMPPairingRequest,
+        SMPPairingResponse,
+        SMPSigningInformation,
+    )
+    if isinstance(pdu, SMPPairingRequest):
+        return SMPEvent.PAIRING_REQ_RX
+    if isinstance(pdu, SMPPairingResponse):
+        return SMPEvent.PAIRING_RSP_RX
+    if isinstance(pdu, SMPPairingConfirm):
+        return SMPEvent.PAIRING_CONFIRM_RX
+    if isinstance(pdu, SMPPairingRandom):
+        return SMPEvent.PAIRING_RANDOM_RX
+    if isinstance(pdu, SMPPairingFailed):
+        return SMPEvent.PAIRING_FAILED_RX
+    if isinstance(pdu, SMPEncryptionInformation):
+        return SMPEvent.ENCRYPTION_INFO_RX
+    if isinstance(pdu, SMPMasterIdentification):
+        return SMPEvent.MASTER_IDENT_RX
+    if isinstance(pdu, SMPIdentityInformation):
+        return SMPEvent.IDENTITY_INFO_RX
+    if isinstance(pdu, SMPIdentityAddressInformation):
+        return SMPEvent.IDENTITY_ADDR_RX
+    if isinstance(pdu, SMPSigningInformation):
+        return SMPEvent.SIGNING_INFO_RX
+    return None

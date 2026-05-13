@@ -4,32 +4,31 @@ from __future__ import annotations
 import pytest
 
 from pybluehost.ble.smp import (
-    PAIRING_FAILED_REASON_UNSPECIFIED,
     SMPCode,
     SMPManager,
 )
+from pybluehost.core.address import BDAddress
 
 
-async def test_smp_manager_on_pdu_responds_pairing_failed_when_no_state_machine():
-    """Minimal assembly proof: SMP channel binding works end-to-end.
-
-    Full pairing state machine is a follow-up Plan; for now, on_pdu() replies
-    with PAIRING_FAILED(UNSPECIFIED) to any incoming PDU.
-    """
+async def test_smp_manager_responder_replies_to_pairing_request():
+    """SMP Manager auto-creates Responder context on inbound Pairing Request."""
     sent: list[bytes] = []
 
     async def send(data: bytes) -> None:
         sent.append(data)
 
     mgr = SMPManager()
-    mgr.bind_channel(connection_handle=0x0040, send=send)
+    mgr.bind_channel(
+        connection_handle=0x0040,
+        send=send,
+        peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"),
+    )
 
-    # Send a PAIRING_REQUEST: opcode 0x01 + IO/OOB/Authreq/MaxKey/IK/RK
-    await mgr.on_pdu(b"\x01\x03\x00\x05\x10\x07\x07", connection_handle=0x0040)
+    # Pairing Request: opcode 0x01 + io/oob/auth/maxkey/initkd/respkd
+    await mgr.on_pdu(b"\x01\x03\x00\x01\x10\x07\x07", connection_handle=0x0040)
 
     assert len(sent) == 1
-    assert sent[0][0] == SMPCode.PAIRING_FAILED
-    assert sent[0][1] == PAIRING_FAILED_REASON_UNSPECIFIED
+    assert sent[0][0] == SMPCode.PAIRING_RESPONSE
 
 
 async def test_stack_virtual_assembles_smp_manager():
