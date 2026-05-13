@@ -33,6 +33,9 @@ from pybluehost.hci.constants import (
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
     HCI_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
+    HCI_LE_START_ENCRYPTION,
+    HCI_LE_LONG_TERM_KEY_REQUEST_REPLY,
+    HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY,
     EventCode,
 )
 
@@ -539,6 +542,59 @@ class HCI_LE_Set_Random_Address_Command(HCICommand):
     @classmethod
     def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Random_Address_Command:
         return cls(random_address=parameters[:6])
+
+
+@PacketRegistry.register_command(HCI_LE_START_ENCRYPTION)
+@dataclass
+class HCI_LE_Start_Encryption_Command(HCICommand):
+    """HCI_LE_Start_Encryption (Vol 4 Part E §7.8.24)."""
+
+    connection_handle: int = 0
+    random_number: bytes = field(default_factory=lambda: bytes(8))
+    encrypted_diversifier: int = 0
+    long_term_key: bytes = field(default_factory=lambda: bytes(16))
+    opcode: int = field(default=HCI_LE_START_ENCRYPTION)
+
+    def __post_init__(self) -> None:
+        if len(self.random_number) != 8:
+            raise ValueError(f"random_number must be 8 bytes, got {len(self.random_number)}")
+        if len(self.long_term_key) != 16:
+            raise ValueError(f"long_term_key must be 16 bytes, got {len(self.long_term_key)}")
+        self.parameters = (
+            struct.pack("<H", self.connection_handle)
+            + self.random_number
+            + struct.pack("<H", self.encrypted_diversifier)
+            + self.long_term_key
+        )
+
+
+@PacketRegistry.register_command(HCI_LE_LONG_TERM_KEY_REQUEST_REPLY)
+@dataclass
+class HCI_LE_LTK_Request_Reply_Command(HCICommand):
+    """HCI_LE_Long_Term_Key_Request_Reply (Vol 4 Part E §7.8.25)."""
+
+    connection_handle: int = 0
+    long_term_key: bytes = field(default_factory=lambda: bytes(16))
+    opcode: int = field(default=HCI_LE_LONG_TERM_KEY_REQUEST_REPLY)
+
+    def __post_init__(self) -> None:
+        if len(self.long_term_key) != 16:
+            raise ValueError("long_term_key must be 16 bytes")
+        self.parameters = (
+            struct.pack("<H", self.connection_handle) + self.long_term_key
+        )
+
+
+@PacketRegistry.register_command(HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY)
+@dataclass
+class HCI_LE_LTK_Request_Negative_Reply_Command(HCICommand):
+    """HCI_LE_Long_Term_Key_Request_Negative_Reply (Vol 4 Part E §7.8.26)."""
+
+    connection_handle: int = 0
+    opcode: int = field(default=HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY)
+
+    def __post_init__(self) -> None:
+        self.parameters = struct.pack("<H", self.connection_handle)
 
 
 # ---------------------------------------------------------------------------

@@ -108,6 +108,10 @@ class HCIController:
         self._on_acl_data: OnACLData | None = None
         self._on_sco_data: OnSCOData | None = None
 
+        # Encryption event listeners
+        self._encryption_change_listeners: list = []
+        self._le_ltk_request_listeners: list = []
+
         # Register ourselves as the transport's sink
         if hasattr(transport, "set_sink"):
             transport.set_sink(self)  # type: ignore[union-attr]
@@ -126,6 +130,14 @@ class HCIController:
         self._on_hci_event = on_hci_event
         self._on_acl_data = on_acl_data
         self._on_sco_data = on_sco_data
+
+    def on_encryption_change(self, listener) -> None:
+        """Register listener called as (handle: int, status: int, encryption_enabled: int) when HCI_Encryption_Change event arrives."""
+        self._encryption_change_listeners.append(listener)
+
+    def on_le_ltk_request(self, listener) -> None:
+        """Register listener called as (handle: int, rand: bytes, ediv: int) when LE_LTK_Request subevent arrives."""
+        self._le_ltk_request_listeners.append(listener)
 
     # ------------------------------------------------------------------
     # TransportSink protocol
@@ -319,6 +331,30 @@ class HCIController:
         if isinstance(event, HCI_Number_Of_Completed_Packets_Event):
             self._acl_flow.on_num_completed(event.completed)
             return
+
+        # Encryption-specific listeners
+        from pybluehost.hci.constants import EventCode, LEMetaSubEvent
+        from pybluehost.hci.packets import HCI_LE_Meta_Event
+
+        if event.event_code == EventCode.ENCRYPTION_CHANGE and len(event.parameters) >= 4:
+            status = event.parameters[0]
+            handle = int.from_bytes(event.parameters[1:3], "little")
+            enabled = event.parameters[3]
+            for listener in list(self._encryption_change_listeners):
+                result = listener(handle, status, enabled)
+                if asyncio.iscoroutine(result):
+                    await result
+
+        if isinstance(event, HCI_LE_Meta_Event) and event.subevent_code == LEMetaSubEvent.LE_LONG_TERM_KEY_REQUEST:
+            params = event.subevent_parameters
+            if len(params) >= 12:
+                handle = int.from_bytes(params[0:2], "little")
+                rand_b = params[2:10]
+                ediv = int.from_bytes(params[10:12], "little")
+                for listener in list(self._le_ltk_request_listeners):
+                    result = listener(handle, rand_b, ediv)
+                    if asyncio.iscoroutine(result):
+                        await result
 
         # All other events go to the upper layer
         if self._on_hci_event is not None:
