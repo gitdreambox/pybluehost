@@ -95,7 +95,7 @@ Task 9 (auto-encrypt + LTK_Request + GATT retry) ──────────�
 
 ### Step 1.1: 加 opcode 常量
 
-- [ ] **Modify `pybluehost/hci/constants.py`**: 在现有 `HCI_LE_*` opcode 区域追加：
+- [x] **Modify `pybluehost/hci/constants.py`**: 在现有 `HCI_LE_*` opcode 区域追加：
 
 ```python
 HCI_LE_START_ENCRYPTION                       = 0x2019
@@ -107,7 +107,7 @@ HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY   = 0x201B
 
 ### Step 1.2: 写失败测试
 
-- [ ] **Create `tests/unit/hci/test_le_encryption_packets.py`:**
+- [x] **Create `tests/unit/hci/test_le_encryption_packets.py`:**
 
 ```python
 """HCI LE encryption command + event encode/decode tests."""
@@ -206,7 +206,7 @@ def test_encryption_change_event_decode():
 
 ### Step 1.3: 跑测试确认失败
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_le_encryption_packets.py -v --transport=virtual
@@ -216,7 +216,7 @@ uv run --frozen pytest tests/unit/hci/test_le_encryption_packets.py -v --transpo
 
 ### Step 1.4: 实现 command dataclasses
 
-- [ ] **Modify `pybluehost/hci/packets.py`**: 在文件末尾、`decode_hci_packet` 函数之前追加：
+- [x] **Modify `pybluehost/hci/packets.py`**: 在文件末尾、`decode_hci_packet` 函数之前追加：
 
 ```python
 @PacketRegistry.register_command(HCI_LE_START_ENCRYPTION)
@@ -275,7 +275,7 @@ Also verify `EventCode.ENCRYPTION_CHANGE = 0x08` exists in `constants.py`; if no
 
 ### Step 1.5: 添加 controller 事件分发
 
-- [ ] **Modify `pybluehost/hci/controller.py`**: 
+- [x] **Modify `pybluehost/hci/controller.py`**: 
 
 (a) 在 `HCIController.__init__` 中追加 listener lists：
 
@@ -333,7 +333,7 @@ Also verify `EventCode.ENCRYPTION_CHANGE = 0x08` exists in `constants.py`; if no
 
 ### Step 1.6: 跑测试确认绿
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_le_encryption_packets.py -v --transport=virtual
@@ -344,7 +344,7 @@ uv run --frozen pytest tests/unit/hci/ -q --transport=virtual
 
 ### Step 1.7: 全套回归
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/ -q --transport=virtual --tb=no 2>&1 | tail -7
@@ -354,7 +354,7 @@ uv run --frozen pytest tests/ -q --transport=virtual --tb=no 2>&1 | tail -7
 
 ### Step 1.8: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/hci/ tests/unit/hci/test_le_encryption_packets.py
@@ -380,7 +380,7 @@ Foundation for SMP Legacy Just Works pairing (Sub-Plan 1)."
 
 ### Step 2.1: 写失败测试
 
-- [ ] **Create `tests/unit/hci/test_virtual_encryption.py`:**
+- [x] **Create `tests/unit/hci/test_virtual_encryption.py`:**
 
 ```python
 """VirtualController simulates HCI_LE_Start_Encryption -> Encryption_Change(success)."""
@@ -450,7 +450,7 @@ async def test_ltk_request_reply_completes_pairing_phase():
 
 ### Step 2.2: 跑测试确认失败
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_virtual_encryption.py -v --transport=virtual
@@ -460,7 +460,7 @@ uv run --frozen pytest tests/unit/hci/test_virtual_encryption.py -v --transport=
 
 ### Step 2.3: 实现 VirtualController encryption simulation
 
-- [ ] **Modify `pybluehost/hci/virtual.py`**: 在 `VirtualController` 类中：
+- [x] **Modify `pybluehost/hci/virtual.py`**: 在 `VirtualController` 类中：
 
 (a) 在已有的 command dispatch 表 / `_handle_command` 方法中（search "HCI_LE_SET_SCAN_ENABLE" 或类似 LE opcode handling）追加：
 
@@ -513,7 +513,7 @@ Imports at top of `virtual.py`: add `HCI_LE_START_ENCRYPTION`, `HCI_LE_LONG_TERM
 
 ### Step 2.4: 跑测试确认绿
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_virtual_encryption.py -v --transport=virtual
@@ -524,7 +524,7 @@ uv run --frozen pytest tests/unit/hci/ -q --transport=virtual
 
 ### Step 2.5: 全套回归
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/ -q --transport=virtual --tb=no 2>&1 | tail -7
@@ -534,7 +534,7 @@ uv run --frozen pytest tests/ -q --transport=virtual --tb=no 2>&1 | tail -7
 
 ### Step 2.6: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/hci/virtual.py tests/unit/hci/test_virtual_encryption.py
@@ -559,7 +559,7 @@ ACL traffic is not actually AES-CCM encrypted."
 
 ### Step 3.1: 写失败测试
 
-- [ ] **Create `tests/unit/hci/test_virtual_link.py`:**
+- [x] **Create `tests/unit/hci/test_virtual_link.py`:**
 
 ```python
 """Two VirtualControllers paired as Central/Peripheral via VirtualLELink."""
@@ -642,7 +642,7 @@ async def test_link_forwards_acl_data_bidirectionally():
 
 ### Step 3.2: 跑测试确认失败
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_virtual_link.py -v --transport=virtual
@@ -652,7 +652,7 @@ uv run --frozen pytest tests/unit/hci/test_virtual_link.py -v --transport=virtua
 
 ### Step 3.3: 实现 virtual_link.py
 
-- [ ] **Create `pybluehost/hci/virtual_link.py`:**
+- [x] **Create `pybluehost/hci/virtual_link.py`:**
 
 ```python
 """Loopback bridge: two VirtualControllers paired as Central + Peripheral.
@@ -733,7 +733,7 @@ If `EventCode.LE_META` doesn't exist in `constants.py`, add it (value 0x3E per C
 
 ### Step 3.4: 跑测试确认绿
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_virtual_link.py -v --transport=virtual
@@ -744,7 +744,7 @@ uv run --frozen pytest tests/unit/hci/ -q --transport=virtual
 
 ### Step 3.5: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/hci/virtual_link.py pybluehost/hci/virtual.py tests/unit/hci/test_virtual_link.py
@@ -766,7 +766,7 @@ tests across two Stack.virtual() instances."
 
 ### Step 4.1: 写失败测试
 
-- [ ] **Create `tests/unit/ble/test_smp_state_machine.py`:**
+- [x] **Create `tests/unit/ble/test_smp_state_machine.py`:**
 
 ```python
 """SMPPairingContext skeleton: enum completeness + initial state."""
@@ -837,7 +837,7 @@ def test_context_rejects_invalid_event():
 
 ### Step 4.2: 跑测试确认失败
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_state_machine.py -v --transport=virtual
@@ -847,7 +847,7 @@ uv run --frozen pytest tests/unit/ble/test_smp_state_machine.py -v --transport=v
 
 ### Step 4.3: 修 BondInfo.rand 类型
 
-- [ ] **Modify `pybluehost/ble/smp.py`**: 找到 `BondInfo` dataclass 中 `rand: int = 0`，改成：
+- [x] **Modify `pybluehost/ble/smp.py`**: 找到 `BondInfo` dataclass 中 `rand: int = 0`，改成：
 
 ```python
     rand: bytes = b"\x00" * 8
@@ -857,7 +857,7 @@ uv run --frozen pytest tests/unit/ble/test_smp_state_machine.py -v --transport=v
 
 ### Step 4.4: 加 enums + SMPPairingContext
 
-- [ ] **Modify `pybluehost/ble/smp.py`**: 在 `SMPManager` 之前（约 line 580）追加：
+- [x] **Modify `pybluehost/ble/smp.py`**: 在 `SMPManager` 之前（约 line 580）追加：
 
 ```python
 from enum import IntEnum, auto
@@ -975,7 +975,7 @@ Notes:
 
 ### Step 4.5: 跑测试确认绿
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_state_machine.py -v --transport=virtual
@@ -986,7 +986,7 @@ uv run --frozen pytest tests/unit/ble/ -q --transport=virtual
 
 ### Step 4.6: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/ble/smp.py tests/unit/ble/test_smp_state_machine.py
@@ -1010,7 +1010,7 @@ State machine has no transitions yet — Task 5 onward register them."
 
 ### Step 5.1: 写失败测试
 
-- [ ] **Create `tests/unit/ble/test_smp_legacy_jw_responder.py`:**
+- [x] **Create `tests/unit/ble/test_smp_legacy_jw_responder.py`:**
 
 ```python
 """Responder-side Phase 1: receive Pairing Request, reply with Pairing Response.
@@ -1070,7 +1070,7 @@ async def test_responder_acks_pairing_request_with_pairing_response():
     assert ctx.state_machine.state == SMPState.CONFIRMING
 ```
 
-- [ ] **Create `tests/unit/ble/test_smp_legacy_jw_initiator.py`:**
+- [x] **Create `tests/unit/ble/test_smp_legacy_jw_initiator.py`:**
 
 ```python
 """Initiator-side Phase 1: send Pairing Request, accept Pairing Response."""
@@ -1146,7 +1146,7 @@ async def test_initiator_advances_on_pairing_response():
 
 ### Step 5.2: 跑测试确认失败
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_legacy_jw_responder.py tests/unit/ble/test_smp_legacy_jw_initiator.py -v --transport=virtual
@@ -1156,7 +1156,7 @@ uv run --frozen pytest tests/unit/ble/test_smp_legacy_jw_responder.py tests/unit
 
 ### Step 5.3: 实现 `pybluehost/ble/_smp_state.py`
 
-- [ ] **Create `pybluehost/ble/_smp_state.py`** with the Phase 1 transition table + action callbacks. Skeleton:
+- [x] **Create `pybluehost/ble/_smp_state.py`** with the Phase 1 transition table + action callbacks. Skeleton:
 
 ```python
 """SMP state machine transition table + action callbacks (Sub-Plan 1).
@@ -1324,7 +1324,7 @@ async def _on_failed(ctx: "SMPPairingContext", *, reason: int | None = None, **k
 
 ### Step 5.4: 扩展 SMPManager
 
-- [ ] **Modify `pybluehost/ble/smp.py`**: Replace `SMPManager` body. Key changes:
+- [x] **Modify `pybluehost/ble/smp.py`**: Replace `SMPManager` body. Key changes:
 
 ```python
 class SMPManager:
@@ -1465,7 +1465,7 @@ Note: The exact `SMPPairingRequest` constructor field names may differ from what
 
 ### Step 5.5: 跑测试确认绿
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_legacy_jw_responder.py tests/unit/ble/test_smp_legacy_jw_initiator.py -v --transport=virtual
@@ -1476,7 +1476,7 @@ uv run --frozen pytest tests/unit/ble/ -q --transport=virtual
 
 ### Step 5.6: 更新旧测试
 
-- [ ] **Modify `tests/unit/ble/test_smp_manager_assembly.py`**: 把 `test_smp_manager_on_pdu_responds_pairing_failed_when_no_state_machine` 重命名 + 改写为：
+- [x] **Modify `tests/unit/ble/test_smp_manager_assembly.py`**: 把 `test_smp_manager_on_pdu_responds_pairing_failed_when_no_state_machine` 重命名 + 改写为：
 
 ```python
 async def test_smp_manager_responder_replies_to_pairing_request():
@@ -1504,7 +1504,7 @@ Drop or update other obsolete assertions in that file.
 
 ### Step 5.7: 全套回归
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/ -q --transport=virtual --tb=no 2>&1 | tail -7
@@ -1514,7 +1514,7 @@ uv run --frozen pytest tests/ -q --transport=virtual --tb=no 2>&1 | tail -7
 
 ### Step 5.8: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/ble/smp.py pybluehost/ble/_smp_state.py tests/unit/ble/
@@ -1540,7 +1540,7 @@ Sub-Plan 1 Task 5."
 
 ### Step 6.1: Write tests for Phase 2
 
-- [ ] **Append to `tests/unit/ble/test_smp_legacy_jw_initiator.py`:**
+- [x] **Append to `tests/unit/ble/test_smp_legacy_jw_initiator.py`:**
 
 ```python
 async def test_initiator_completes_phase2_and_starts_encryption(monkeypatch):
@@ -1599,7 +1599,7 @@ async def test_initiator_completes_phase2_and_starts_encryption(monkeypatch):
 
 Note: the exact c1 values in the test require careful construction. If matching real c1 is impractical in the unit test, instead patch `SMPCrypto.c1` via monkeypatch to return a fixed value and assert the state machine flow advances. The acceptance criterion is "after receiving peer Confirm+Random with matching confirm, state reaches STK_ENCRYPTING and HCI Start_Encryption is issued".
 
-- [ ] **Append to `tests/unit/ble/test_smp_legacy_jw_responder.py`:**
+- [x] **Append to `tests/unit/ble/test_smp_legacy_jw_responder.py`:**
 
 ```python
 async def test_responder_completes_phase2_with_ltk_request(monkeypatch):
@@ -1646,7 +1646,7 @@ async def test_responder_completes_phase2_with_ltk_request(monkeypatch):
 
 ### Step 6.2: 实现 Phase 2 transitions
 
-- [ ] **Modify `pybluehost/ble/_smp_state.py`**: 在 `register_transitions` 中追加：
+- [x] **Modify `pybluehost/ble/_smp_state.py`**: 在 `register_transitions` 中追加：
 
 ```python
     # Phase 2 — Confirm/Random
@@ -1744,7 +1744,7 @@ def _get_hci(ctx):
 
 ### Step 6.3: Plumb HCI + local_address into SMPManager / context
 
-- [ ] **Modify `pybluehost/ble/smp.py`**:
+- [x] **Modify `pybluehost/ble/smp.py`**:
 
 (a) Add `_hci` field to `SMPPairingContext` dataclass:
 
@@ -1771,7 +1771,7 @@ def _local_address_for(ctx: "SMPPairingContext") -> bytes:
 
 ### Step 6.4: 跑测试确认绿
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_legacy_jw_initiator.py tests/unit/ble/test_smp_legacy_jw_responder.py -v --transport=virtual
@@ -1782,7 +1782,7 @@ uv run --frozen pytest tests/unit/ble/ tests/unit/hci/ -q --transport=virtual
 
 ### Step 6.5: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/ble/ tests/unit/ble/
@@ -1808,7 +1808,7 @@ Sub-Plan 1 Task 6."
 
 ### Step 7.1: 写测试
 
-- [ ] **Create `tests/unit/ble/test_bond_storage_roundtrip.py`:**
+- [x] **Create `tests/unit/ble/test_bond_storage_roundtrip.py`:**
 
 ```python
 """JsonBondStorage round-trip with all BondInfo fields."""
@@ -1854,7 +1854,7 @@ async def test_list_and_delete(storage):
     assert await storage.list_bonds() == []
 ```
 
-- [ ] **Create `tests/unit/ble/test_smp_phase3_key_distribution.py`:**
+- [x] **Create `tests/unit/ble/test_smp_phase3_key_distribution.py`:**
 
 ```python
 """Phase 3: key distribution + bond persistence."""
@@ -1952,7 +1952,7 @@ Note: the test uses `ctx.state_machine._state = SMPState.STK_ENCRYPTING` to shor
 
 ### Step 7.2: 实现 Phase 3 transitions + bond save
 
-- [ ] **Modify `pybluehost/ble/_smp_state.py`**: 在 `register_transitions` 中追加 Phase 3 transitions:
+- [x] **Modify `pybluehost/ble/_smp_state.py`**: 在 `register_transitions` 中追加 Phase 3 transitions:
 
 ```python
     # Phase 3 — Key distribution
@@ -2079,7 +2079,7 @@ async def _persist_bond(ctx, **kw):
 
 ### Step 7.3: 跑测试确认绿
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_phase3_key_distribution.py tests/unit/ble/test_bond_storage_roundtrip.py -v --transport=virtual
@@ -2090,7 +2090,7 @@ uv run --frozen pytest tests/unit/ble/ -q --transport=virtual
 
 ### Step 7.4: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/ble/ tests/unit/ble/
@@ -2115,7 +2115,7 @@ Sub-Plan 1 Task 7."
 
 ### Step 8.1: 测试
 
-- [ ] **Create `tests/unit/test_stack_pair_api.py`:**
+- [x] **Create `tests/unit/test_stack_pair_api.py`:**
 
 ```python
 """Stack.pair() and Stack.encrypt() public APIs."""
@@ -2147,7 +2147,7 @@ async def test_stack_config_new_fields_defaults():
 
 ### Step 8.2: 实现
 
-- [ ] **Modify `pybluehost/ble/security.py`**: extend `SecurityConfig`:
+- [x] **Modify `pybluehost/ble/security.py`**: extend `SecurityConfig`:
 
 ```python
 @dataclass
@@ -2157,7 +2157,7 @@ class SecurityConfig:
     auto_encrypt_on_bonded_reconnect: bool = True
 ```
 
-- [ ] **Modify `pybluehost/stack.py`**:
+- [x] **Modify `pybluehost/stack.py`**:
 
 (a) Add new `StackConfig` fields proxied from SecurityConfig (or directly on `StackConfig`):
 
@@ -2208,13 +2208,13 @@ For Task 8 the `encrypt` method can be a thin stub that raises if not bonded; Ta
 
 ### Step 8.3: 跑测试 + 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/test_stack_pair_api.py tests/unit/test_stack.py -v --transport=virtual
 ```
 
-- [ ] **Commit:**
+- [x] **Commit:**
 
 ```bash
 git add pybluehost/stack.py pybluehost/ble/security.py tests/unit/test_stack_pair_api.py
@@ -2240,7 +2240,7 @@ Sub-Plan 1 Task 8."
 
 ### Step 9.1: 测试 — auto-encrypt
 
-- [ ] **Create `tests/unit/test_stack_auto_encrypt.py`:**
+- [x] **Create `tests/unit/test_stack_auto_encrypt.py`:**
 
 ```python
 """Stack auto-encrypt on bonded reconnect."""
@@ -2316,7 +2316,7 @@ async def test_no_auto_encrypt_when_config_disabled(tmp_path):
 
 ### Step 9.2: 测试 — GATT auto-retry
 
-- [ ] **Create `tests/unit/ble/test_gatt_auto_pair_retry.py`:**
+- [x] **Create `tests/unit/ble/test_gatt_auto_pair_retry.py`:**
 
 ```python
 """GATTClient retries read/write once after auto-pair on Insufficient_Encryption."""
@@ -2375,7 +2375,7 @@ async def test_gatt_read_does_not_retry_more_than_once(monkeypatch):
 
 ### Step 9.3: 实现 auto-encrypt + LTK_Request 处理
 
-- [ ] **Modify `pybluehost/stack.py`**:
+- [x] **Modify `pybluehost/stack.py`**:
 
 (a) In `_build`, register HCI callbacks:
 
@@ -2447,7 +2447,7 @@ async def test_gatt_read_does_not_retry_more_than_once(monkeypatch):
 
 ### Step 9.4: 实现 GATT auto-retry
 
-- [ ] **Modify `pybluehost/ble/att.py`**: 
+- [x] **Modify `pybluehost/ble/att.py`**: 
 
 `ATTBearer` already has a `request()` method; check existing signature. Add an optional callback:
 
@@ -2460,7 +2460,7 @@ class ATTBearer:
 
 No automatic retry in `ATTBearer` itself — keep it dumb. Retry happens in `GATTClient`.
 
-- [ ] **Modify `pybluehost/ble/gatt.py`**: in `GATTClient`:
+- [x] **Modify `pybluehost/ble/gatt.py`**: in `GATTClient`:
 
 ```python
 class GATTClient:
@@ -2489,7 +2489,7 @@ class GATTClient:
             await self._bearer.write_request(attribute_handle, value)
 ```
 
-- [ ] **Modify `pybluehost/stack.py`**: in `connect_gatt`, wire the callback:
+- [x] **Modify `pybluehost/stack.py`**: in `connect_gatt`, wire the callback:
 
 ```python
         return GATTClient(
@@ -2500,7 +2500,7 @@ class GATTClient:
 
 ### Step 9.5: 跑测试
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/test_stack_auto_encrypt.py tests/unit/ble/test_gatt_auto_pair_retry.py -v --transport=virtual
@@ -2511,7 +2511,7 @@ uv run --frozen pytest tests/unit/ tests/integration/ -q --transport=virtual
 
 ### Step 9.6: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/stack.py pybluehost/ble/att.py pybluehost/ble/gatt.py tests/unit/test_stack_auto_encrypt.py tests/unit/ble/test_gatt_auto_pair_retry.py
@@ -2540,7 +2540,7 @@ Sub-Plan 1 Task 9."
 
 ### Step 10.1: Loopback E2E test
 
-- [ ] **Create `tests/integration/test_pairing_loopback.py`:**
+- [x] **Create `tests/integration/test_pairing_loopback.py`:**
 
 ```python
 """End-to-end Legacy Just Works pairing across two Stack.virtual() instances."""
@@ -2630,7 +2630,7 @@ async def test_reconnect_auto_restores_encryption(tmp_path):
 
 ### Step 10.2: 真机 smoke
 
-- [ ] **Create `tests/hardware/test_pairing_real.py`:**
+- [x] **Create `tests/hardware/test_pairing_real.py`:**
 
 ```python
 """Manual hardware verification of Legacy Just Works pairing.
@@ -2665,7 +2665,7 @@ async def test_pair_with_android_phone(stack, tmp_path):
 
 ### Step 10.3: STATUS.md
 
-- [ ] **Modify `docs/superpowers/STATUS.md`**:
+- [x] **Modify `docs/superpowers/STATUS.md`**:
 
 (a) Update 快速定位:
 
@@ -2686,7 +2686,7 @@ async def test_pair_with_android_phone(stack, tmp_path):
 
 ### Step 10.4: 全套回归 + coverage
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/ -q --transport=virtual --cov=pybluehost --cov-fail-under=85 --tb=no 2>&1 | tail -15
@@ -2696,7 +2696,7 @@ uv run --frozen pytest tests/ -q --transport=virtual --cov=pybluehost --cov-fail
 
 ### Step 10.5: 提交
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add tests/integration/test_pairing_loopback.py tests/hardware/test_pairing_real.py docs/superpowers/STATUS.md
@@ -2716,18 +2716,18 @@ STATUS.md marks SMP Sub-Plan 1 complete."
 
 ## 验收清单
 
-- [ ] HCI commands: `HCI_LE_Start_Encryption`, `HCI_LE_LTK_Request_Reply`, `HCI_LE_LTK_Request_Negative_Reply` 全部 encode/decode round-trip 通过
-- [ ] `HCI_LE_LTK_Request` 子事件 + `HCI_Encryption_Change` 事件能被 `HCIController` 派发到注册的 listener
-- [ ] VirtualController 接受 `HCI_LE_Start_Encryption` 后回 `Encryption_Change(success)`；`simulate_le_ltk_request` 能注入测试事件
-- [ ] `VirtualLELink` 把两个 VirtualController 配成一条 LE 连接 + 双向 ACL 转发
-- [ ] `SMPState`、`SMPEvent`、`PairingRole` 完整
-- [ ] `SMPPairingContext` 包含所有 Phase 1/2/3 所需字段
-- [ ] `_smp_state.py` 实现 Initiator + Responder 完整 transition 表
-- [ ] `BondInfo.rand: bytes` 类型修复
-- [ ] Loopback E2E: 两个 `Stack.virtual()` 完成 Just Works pairing → 双向 BondStorage 持久化 → 重连自动恢复加密
-- [ ] `Stack.pair(handle)` / `Stack.encrypt(handle)` 公共 API + `StackConfig.bondable` / `auto_encrypt_on_bonded_reconnect`
-- [ ] GATT client 收到 0x0F 自动调 pair 并重试一次
-- [ ] 全套测试：除 3 个 pre-existing USB diagnostics 失败外全绿；coverage ≥ 85%
+- [x] HCI commands: `HCI_LE_Start_Encryption`, `HCI_LE_LTK_Request_Reply`, `HCI_LE_LTK_Request_Negative_Reply` 全部 encode/decode round-trip 通过
+- [x] `HCI_LE_LTK_Request` 子事件 + `HCI_Encryption_Change` 事件能被 `HCIController` 派发到注册的 listener
+- [x] VirtualController 接受 `HCI_LE_Start_Encryption` 后回 `Encryption_Change(success)`；`simulate_le_ltk_request` 能注入测试事件
+- [x] `VirtualLELink` 把两个 VirtualController 配成一条 LE 连接 + 双向 ACL 转发
+- [x] `SMPState`、`SMPEvent`、`PairingRole` 完整
+- [x] `SMPPairingContext` 包含所有 Phase 1/2/3 所需字段
+- [x] `_smp_state.py` 实现 Initiator + Responder 完整 transition 表
+- [x] `BondInfo.rand: bytes` 类型修复
+- [x] Loopback E2E: 两个 `Stack.virtual()` 完成 Just Works pairing → 双向 BondStorage 持久化 → 重连自动恢复加密
+- [x] `Stack.pair(handle)` / `Stack.encrypt(handle)` 公共 API + `StackConfig.bondable` / `auto_encrypt_on_bonded_reconnect`
+- [x] GATT client 收到 0x0F 自动调 pair 并重试一次
+- [x] 全套测试：除 3 个 pre-existing USB diagnostics 失败外全绿；coverage ≥ 85%
 
 ## 后续 Plan 钩子（已为 Sub-Plan 2/3 留出扩展点）
 

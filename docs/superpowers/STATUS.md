@@ -6,7 +6,7 @@
 
 ## 快速定位
 
-**当前进行中**：SMP Sub-Plan 1 (Legacy Just Works) — ✅ 全部完成
+**当前进行中**：SMP Sub-Plan 1 收尾 — ✅ 全部完成
 **下一步**：SMP Sub-Plan 2 (LE Secure Connections) / HCI 容错初始化 / 断线重连闭环 / e2e 覆盖
 
 > **注意（2026-04-18 深度审查后更新）**：
@@ -45,8 +45,9 @@
 | PRD 1.0 收尾 | PcapngSink + Stack 工厂补全 + SMP 装配 + RFCOMM dispatch fix + bond_storage | ✅ 完成 | [2026-05-12-prd-v1-closure](plans/2026-05-12-prd-v1-closure.md) | `core/trace.py`, `core/errors.py`, `stack.py`, `l2cap/manager.py`, `ble/smp.py`, `gap.py`, `classic/rfcomm.py` |
 | transport/usb 拆包 | 2562 行 god module 拆成 8 个职责清晰的 sibling 模块 | ✅ 完成 | [2026-05-12-transport-usb-split](plans/2026-05-12-transport-usb-split.md) | `pybluehost/transport/usb/{__init__,chips,errors,discovery,diagnostics,base,intel,realtek,csr}.py` |
 | SMP Sub-Plan 1 (Legacy JW) | Legacy Just Works 配对完整路径 + 绑定 + 重连自动加密 | ✅ 完成 | [2026-05-13-smp-pairing-legacy-jw](plans/2026-05-13-smp-pairing-legacy-jw.md) | `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/hci/virtual_link.py`, `pybluehost/stack.py`, `pybluehost/ble/gatt.py` |
+| SMP Sub-Plan 1 收尾 | TIMEOUT/DISCONNECTED/PAIRING_FAILED_RX 单测 + Stack.encrypt 等事件 + BondInfo.rand 兼容 + register_peer_address + Plan checkbox | ✅ 完成 | [2026-05-16-smp-sub-plan-1-followups](plans/2026-05-16-smp-sub-plan-1-followups.md) | `pybluehost/ble/smp.py`, `pybluehost/stack.py` |
 
-**总计：21 个 Plan（原 20 个 + SMP Sub-Plan 1）**
+**总计：22 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾）**
 
 ---
 
@@ -262,6 +263,17 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
 - 验收：loopback E2E（两个 `Stack.virtual()` Just Works pairing → 双向 BondStorage 持久化 → 重连自动加密恢复）+ 真机 smoke 占位（手动运行）；coverage 86.70%
 - 后续 Plan 钩子：`SMPState` 可扩展 `PUBLIC_KEY_EXCHANGE` / `DHKEY_CHECK`（Sub-Plan 2）；`PairingDelegate` 可加 `request_passkey` / `numeric_comparison_confirm`（Sub-Plan 3）
+
+### ✅ SMP Sub-Plan 1 收尾
+- 完成时间：2026-05-16
+- Plan 文档：[2026-05-16-smp-sub-plan-1-followups.md](plans/2026-05-16-smp-sub-plan-1-followups.md)
+- 关键变化（5 项非阻塞 review item）：
+  - 加 3 个状态机失败路径单测（TIMEOUT/DISCONNECTED/PAIRING_FAILED_RX）—— `_smp_state.py` 既有 transitions 行为正确，无需改实现
+  - `Stack.encrypt(handle)` 不再 fire-and-forget；用 per-handle Future 等 `HCI_Encryption_Change`（success → 完成；status≠0 → RuntimeError；超时 → TimeoutError）
+  - `JsonBondStorage.load_bond` 兼容 legacy `rand: int`（自动 little-endian 转 8 字节）
+  - `SMPManager.register_peer_address(handle, addr)` 公开 API 替代 `stack._smp._peer_addrs[handle] = ...` 私有访问
+  - SMP Sub-Plan 1 Plan 文档 75 个 checkbox 全部勾选
+- 验收：`uv run --frozen pytest tests/ -q --transport=virtual` 仅 3 个 pre-existing USB diagnostics 失败
 
 ---
 
