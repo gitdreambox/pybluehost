@@ -97,6 +97,7 @@ class Stack:
         self._classic_connection_waiters: list[asyncio.Future[int]] = []
         self._classic_auth_waiters: dict[int, list[asyncio.Future[None]]] = {}
         self._classic_encryption_waiters: dict[int, list[asyncio.Future[None]]] = {}
+        self._encryption_waiters: dict[int, asyncio.Future[None]] = {}
         self._connection_event_handlers: list[Callable[[StackConnectionEvent], object]] = []
 
     # -- Factory methods -----------------------------------------------------
@@ -446,6 +447,15 @@ class Stack:
                     await ctx.state_machine.fire(event)
                 except Exception:
                     pass
+        # Resolve any Stack.encrypt() waiter pending on this handle
+        waiter = self._encryption_waiters.pop(handle, None)
+        if waiter is not None and not waiter.done():
+            if status == 0 and enabled:
+                waiter.set_result(None)
+            else:
+                waiter.set_exception(RuntimeError(
+                    f"encryption failed on handle=0x{handle:04X} status=0x{status:02X}"
+                ))
         if status == 0 and enabled:
             self._emit_connection_event(StackConnectionEvent(state="encrypted", handle=handle))
 
@@ -789,35 +799,44 @@ class Stack:
             raise RuntimeError(f"Pairing timeout on handle=0x{handle:04X}") from exc
 
     async def encrypt(self, handle: int, *, timeout: float = 5.0) -> None:
-        """Restore encryption from a stored bond (Initiator/Central role).
+        """Restore encryption using a stored bond and wait for completion.
 
-        Looks up the peer address bound to this connection handle, loads the
-        bond, and issues HCI_LE_Start_Encryption. Raises RuntimeError if no
-        bond is available.
+        Looks up the bonded peer for this connection handle, issues
+        HCI_LE_Start_Encryption, and awaits the HCI_Encryption_Change event.
 
-        Full integration (auto-trigger on LE_Connection_Complete) lands in Task 9.
+        Raises:
+            ReplayModeError: stack is in REPLAY mode
+            RuntimeError: bond storage not configured / no peer address bound /
+                no bond available / controller reports encryption failure
+            asyncio.TimeoutError: no Encryption_Change event arrives within timeout
         """
         self._check_writable()
         if self._smp is None:
             raise RuntimeError("Stack is not initialized")
         if self._config.bond_storage is None:
             raise RuntimeError("Bond storage not configured")
-        # Look up peer address from SMPManager's peer-address binding (set during
-        # L2CAP LE-connection-open hook in PRD 1.0 closure Plan).
         peer = self._smp._peer_addrs.get(handle)
         if peer is None:
             raise RuntimeError(f"No peer address bound for handle=0x{handle:04X}")
         bond = await self._config.bond_storage.load_bond(peer)
         if bond is None or not bond.ltk:
             raise RuntimeError(f"No bond available for peer={peer}")
+
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[None] = loop.create_future()
+        self._encryption_waiters[handle] = waiter
+
         from pybluehost.hci.packets import HCI_LE_Start_Encryption_Command
-        await self._hci.send_command(HCI_LE_Start_Encryption_Command(
-            connection_handle=handle,
-            random_number=bond.rand if bond.rand else b"\x00" * 8,
-            encrypted_diversifier=bond.ediv,
-            long_term_key=bond.ltk,
-        ))
-        # Wait for HCI_Encryption_Change is left to caller for now — Task 9 wires up event listeners
+        try:
+            await self._hci.send_command(HCI_LE_Start_Encryption_Command(
+                connection_handle=handle,
+                random_number=bond.rand if bond.rand else b"\x00" * 8,
+                encrypted_diversifier=bond.ediv,
+                long_term_key=bond.ltk,
+            ))
+            await asyncio.wait_for(waiter, timeout=timeout)
+        finally:
+            self._encryption_waiters.pop(handle, None)
 
     async def enable_classic_encryption(
         self,
