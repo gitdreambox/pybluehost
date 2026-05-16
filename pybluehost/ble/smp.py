@@ -468,6 +468,19 @@ class BondStorage(Protocol):
     async def list_bonds(self) -> list[BondInfo]: ...
 
 
+def _decode_legacy_rand(value: int | str | None) -> bytes:
+    """Decode the bond ``rand`` field, accepting both legacy int and new hex string.
+
+    Pre-Sub-Plan-1 stored rand as an int; current code stores it as an 8-byte
+    hex string. Old JSON files must still load.
+    """
+    if isinstance(value, int):
+        return value.to_bytes(8, "little")
+    if isinstance(value, str):
+        return bytes.fromhex(value)
+    return b"\x00" * 8
+
+
 class JsonBondStorage:
     """JSON file-based bond storage."""
 
@@ -508,7 +521,7 @@ class JsonBondStorage:
             irk=bytes.fromhex(entry["irk"]) if entry.get("irk") else None,
             csrk=bytes.fromhex(entry["csrk"]) if entry.get("csrk") else None,
             ediv=entry.get("ediv", 0),
-            rand=bytes.fromhex(entry.get("rand", "0000000000000000")),
+            rand=_decode_legacy_rand(entry.get("rand", "0000000000000000")),
             key_size=entry.get("key_size", 16),
             authenticated=entry.get("authenticated", False),
             sc=entry.get("sc", False),
@@ -531,7 +544,7 @@ class JsonBondStorage:
                 irk=bytes.fromhex(entry["irk"]) if entry.get("irk") else None,
                 csrk=bytes.fromhex(entry["csrk"]) if entry.get("csrk") else None,
                 ediv=entry.get("ediv", 0),
-                rand=bytes.fromhex(entry.get("rand", "0000000000000000")),
+                rand=_decode_legacy_rand(entry.get("rand", "0000000000000000")),
                 key_size=entry.get("key_size", 16),
                 authenticated=entry.get("authenticated", False),
                 sc=entry.get("sc", False),
