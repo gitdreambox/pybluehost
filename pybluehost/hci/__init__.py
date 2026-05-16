@@ -43,6 +43,7 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_EXTENDED_SCAN_RSP_DATA,
     HCI_LE_SET_EXTENDED_ADVERTISING_ENABLE,
 )
+from pybluehost.hci.capabilities import SupportedCommands
 from pybluehost.hci.controller import ConnectionManager, HCIConnection, HCIController
 from pybluehost.hci.flow import ACLFlowController, CommandFlowController
 from pybluehost.hci.virtual import VirtualController
@@ -155,6 +156,8 @@ __all__ = [
     "HCI_LE_Meta_Event",
     "PacketRegistry",
     "decode_hci_packet",
+    # Capabilities
+    "SupportedCommands",
     # Flow control
     "CommandFlowController",
     "ACLFlowController",
