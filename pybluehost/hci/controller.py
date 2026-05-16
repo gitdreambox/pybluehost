@@ -14,6 +14,9 @@ import logging
 import time
 from typing import Callable, Awaitable
 
+# Controller-wide logger used by initialize() to debug-log skipped commands.
+logger = logging.getLogger(__name__)
+
 # Connection-lifecycle sub-logger; distinct from any controller-wide logger so
 # users can isolate connection events via `--trace=hci=debug` (parent
 # `pybluehost.hci` level propagates to children unless overridden).
@@ -103,6 +106,9 @@ class HCIController:
         self._acl_flow = ACLFlowController()
         self.connections = ConnectionManager()
 
+        # Supported_Commands bitmap parsed during initialize()
+        self._supported_commands: "SupportedCommands | None" = None
+
         # Upper-layer callbacks (set via set_upstream)
         self._on_hci_event: OnHCIEvent | None = None
         self._on_acl_data: OnACLData | None = None
@@ -138,6 +144,15 @@ class HCIController:
     def on_le_ltk_request(self, listener) -> None:
         """Register listener called as (handle: int, rand: bytes, ediv: int) when LE_LTK_Request subevent arrives."""
         self._le_ltk_request_listeners.append(listener)
+
+    # ------------------------------------------------------------------
+    # Public properties
+    # ------------------------------------------------------------------
+
+    @property
+    def supported_commands(self) -> "SupportedCommands | None":
+        """The parsed Supported_Commands bitmap from initialize(), or None before init."""
+        return self._supported_commands
 
     # ------------------------------------------------------------------
     # TransportSink protocol
@@ -220,7 +235,17 @@ class HCIController:
     # ------------------------------------------------------------------
 
     async def initialize(self) -> None:
-        """Send the standard HCI initialization sequence (16 commands)."""
+        """Send the HCI init sequence, skipping commands the controller doesn't advertise.
+
+        After HCI_Reset and Read_Local_Supported_Commands, every subsequent
+        command is gated on its bit in the Supported_Commands bitmap. If the
+        controller reports a command as unsupported, it is skipped with a
+        debug log. Two commands are mandatory: HCI_Reset (without which the
+        controller is in an unknown state) and Read_BD_ADDR (without which
+        SMP/GAP cannot function); if either is unsupported or fails, init
+        raises RuntimeError.
+        """
+        from pybluehost.hci.capabilities import SupportedCommands
         from pybluehost.hci.packets import (
             HCI_Reset,
             HCI_Read_Local_Version_Command,
@@ -239,17 +264,34 @@ class HCIController:
             HCI_LE_Set_Scan_Parameters_Command,
             HCI_LE_Set_Random_Address_Command,
         )
+        from pybluehost.hci.constants import HCI_READ_BD_ADDR
 
         EVENT_MASK_ALL = b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x3F"
         LE_EVENT_MASK = b"\x1F\x00\x00\x00\x00\x00\x00\x00"
         RANDOM_ADDRESS = bytes(6)
 
-        init_commands = [
-            HCI_Reset(),
+        # Step 1: HCI_Reset — mandatory, never gated.
+        await self.send_command(HCI_Reset())
+
+        # Step 2: Read_Local_Supported_Commands — parse response bitmap.
+        rsp = await self.send_command(HCI_Read_Local_Supported_Commands_Command())
+        # Command_Complete.return_parameters: status(1) + bitmap(64)
+        bitmap = rsp.return_parameters[1:65]
+        if len(bitmap) != 64:
+            raise RuntimeError(
+                f"Read_Local_Supported_Commands returned {len(bitmap)}-byte bitmap, expected 64"
+            )
+        self._supported_commands = SupportedCommands(bitmap)
+
+        # Read_BD_ADDR is mandatory.
+        if not self._supported_commands.has(HCI_READ_BD_ADDR):
+            raise RuntimeError("controller does not support Read_BD_ADDR (mandatory)")
+        await self.send_command(HCI_Read_BD_ADDR_Command())
+
+        # Optional commands — skip if bit unset.
+        optional_commands = [
             HCI_Read_Local_Version_Command(),
-            HCI_Read_Local_Supported_Commands_Command(),
             HCI_Read_Local_Supported_Features_Command(),
-            HCI_Read_BD_ADDR_Command(),
             HCI_Read_Buffer_Size_Command(),
             HCI_LE_Read_Buffer_Size_Command(),
             HCI_LE_Read_Local_Supported_Features_Command(),
@@ -274,7 +316,14 @@ class HCIController:
             HCI_LE_Set_Random_Address_Command(random_address=RANDOM_ADDRESS),
         ]
 
-        for cmd in init_commands:
+        for cmd in optional_commands:
+            opcode = cmd.opcode
+            if not self._supported_commands.has(opcode):
+                logger.debug(
+                    "HCI initialize: skipping unsupported command opcode=0x%04X",
+                    opcode,
+                )
+                continue
             await self.send_command(cmd)
 
     # ------------------------------------------------------------------

@@ -26,11 +26,13 @@ from pybluehost.hci.constants import (
 )
 
 EXPECTED_INIT_OPCODES = [
+    # Always-mandatory phase
     HCI_RESET,
-    HCI_READ_LOCAL_VERSION,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
-    HCI_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_READ_BD_ADDR,
+    # Optional commands (gated on Supported_Commands bitmap)
+    HCI_READ_LOCAL_VERSION,
+    HCI_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_READ_BUFFER_SIZE,
     HCI_LE_READ_BUFFER_SIZE,
     HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
