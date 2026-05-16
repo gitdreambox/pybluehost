@@ -630,7 +630,7 @@ class Stack:
                 peer_addr = BDAddress(params[5:11])
                 # Always register peer address so SMP.start_initiator() can look it up
                 if self._smp is not None:
-                    self._smp._peer_addrs[handle] = peer_addr
+                    self._smp.register_peer_address(handle, peer_addr)
                 # Auto-encrypt on bonded reconnect (Central role only — Peripheral waits for LTK_Request)
                 if (
                     self._config.auto_encrypt_on_bonded_reconnect

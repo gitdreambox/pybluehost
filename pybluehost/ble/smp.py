@@ -734,6 +734,16 @@ class SMPManager:
         if peer_address is not None:
             self._peer_addrs[connection_handle] = peer_address
 
+    def register_peer_address(self, connection_handle: int, address: BDAddress) -> None:
+        """Bind a peer BD address to an LE connection handle.
+
+        Called from Stack on LE_Connection_Complete so SMP can:
+        - Look up the bond by peer address on reconnect
+        - Build the c1/s1 parameters for legacy pairing using the actual peer addr
+        - Persist BondInfo.peer_address correctly after Phase 3
+        """
+        self._peer_addrs[connection_handle] = address
+
     def unbind_channel(self, connection_handle: int) -> None:
         """Remove the L2CAP send-callable and tear down any active context."""
         self._senders.pop(connection_handle, None)
