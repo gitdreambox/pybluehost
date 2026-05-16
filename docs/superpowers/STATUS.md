@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：SMP Sub-Plan 1 收尾 — ✅ 全部完成
-**下一步**：SMP Sub-Plan 2 (LE Secure Connections) / HCI 容错初始化 / 断线重连闭环 / e2e 覆盖
+**当前进行中**：HCI 容错初始化 — ✅ 完成
+**下一步**：SMP Sub-Plan 2 (LE Secure Connections) / 断线重连闭环 / e2e 覆盖
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -46,8 +46,9 @@
 | transport/usb 拆包 | 2562 行 god module 拆成 8 个职责清晰的 sibling 模块 | ✅ 完成 | [2026-05-12-transport-usb-split](plans/2026-05-12-transport-usb-split.md) | `pybluehost/transport/usb/{__init__,chips,errors,discovery,diagnostics,base,intel,realtek,csr}.py` |
 | SMP Sub-Plan 1 (Legacy JW) | Legacy Just Works 配对完整路径 + 绑定 + 重连自动加密 | ✅ 完成 | [2026-05-13-smp-pairing-legacy-jw](plans/2026-05-13-smp-pairing-legacy-jw.md) | `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/hci/virtual_link.py`, `pybluehost/stack.py`, `pybluehost/ble/gatt.py` |
 | SMP Sub-Plan 1 收尾 | TIMEOUT/DISCONNECTED/PAIRING_FAILED_RX 单测 + Stack.encrypt 等事件 + BondInfo.rand 兼容 + register_peer_address + Plan checkbox | ✅ 完成 | [2026-05-16-smp-sub-plan-1-followups](plans/2026-05-16-smp-sub-plan-1-followups.md) | `pybluehost/ble/smp.py`, `pybluehost/stack.py` |
+| HCI 容错初始化 | initialize() 按 Supported_Commands bitmap 跳过不支持的命令；Read_BD_ADDR 硬要求 | ✅ 完成 | [2026-05-16-hci-tolerant-initialization](plans/2026-05-16-hci-tolerant-initialization.md) | `pybluehost/hci/capabilities.py`, `pybluehost/hci/controller.py`, `pybluehost/hci/virtual.py` |
 
-**总计：22 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾）**
+**总计：23 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化）**
 
 ---
 
@@ -274,6 +275,18 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
   - `SMPManager.register_peer_address(handle, addr)` 公开 API 替代 `stack._smp._peer_addrs[handle] = ...` 私有访问
   - SMP Sub-Plan 1 Plan 文档 75 个 checkbox 全部勾选
 - 验收：`uv run --frozen pytest tests/ -q --transport=virtual` 仅 3 个 pre-existing USB diagnostics 失败
+
+### ✅ HCI 容错初始化
+- 完成时间：2026-05-16
+- Plan 文档：[2026-05-16-hci-tolerant-initialization.md](plans/2026-05-16-hci-tolerant-initialization.md)
+- 关键变化：
+  - 新 `pybluehost/hci/capabilities.py`: `SupportedCommands` value class + 16-entry opcode→(octet,bit) registry per Core 5.4 Vol 4 Part E Table 6.27
+  - `HCIController.initialize()` parses the 64-byte bitmap and gates 13 optional commands; hard-fails on missing Read_BD_ADDR
+  - `HCIController.supported_commands` public property exposes the parsed bitmap
+  - `VirtualController._handle_read_local_supported_commands` returns a permissive bitmap covering all init commands
+  - 新 init command 顺序：Reset → Read_Local_Supported_Commands → Read_BD_ADDR → 13 optional 命令（按 bitmap 跳过）
+- 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
+- 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS；6 个 new capability tests + 3 new tolerant-init tests；1137 passed, 20 skipped，coverage 87%
 
 ---
 
