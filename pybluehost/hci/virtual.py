@@ -62,6 +62,14 @@ class VirtualController:
         self._address = address
         self._host_sink: object | None = None  # set by create(); used for async event injection
         self._acl_forwarder = None  # set by VirtualLELink to bridge ACL frames
+        # Optional async hook called by VirtualLELink to intercept encryption starts.
+        # Signature: async (handle, rand, ediv, ltk) -> None
+        # When set, the VirtualController skips its own ENCRYPTION_CHANGE emission
+        # and delegates the full Central↔Peripheral encryption dance to the hook.
+        self._encryption_start_hook = None
+        # Optional async hook for LTK_Request_Reply from the Peripheral side.
+        # Signature: async (handle, ltk) -> None
+        self._ltk_reply_hook = None
         self._handlers: dict[int, Callable[[HCICommand], bytes]] = {
             HCI_RESET: self._handle_reset,
             HCI_READ_BD_ADDR: self._handle_read_bd_addr,
@@ -175,17 +183,28 @@ class VirtualController:
         # --- Encryption commands with special response sequences ---
         if opcode == HCI_LE_START_ENCRYPTION:
             handle = struct.unpack_from("<H", raw_params, 0)[0]
-            # Spec: LE_Start_Encryption gets Command_Status, then Encryption_Change
-            asyncio.create_task(
-                self._emit_simulated_encryption_change(handle, status=0, enabled=1)
-            )
+            if self._encryption_start_hook is not None:
+                # VirtualLELink loopback: delegate the full Central↔Peripheral dance.
+                rand = raw_params[2:10]   # 8-byte random value
+                ediv = struct.unpack_from("<H", raw_params, 10)[0]
+                ltk  = raw_params[12:28]  # 16-byte LTK
+                asyncio.create_task(self._encryption_start_hook(handle, rand, ediv, ltk))
+            else:
+                # Stand-alone controller: immediately simulate encryption success.
+                asyncio.create_task(
+                    self._emit_simulated_encryption_change(handle, status=0, enabled=1)
+                )
             return self._make_command_status(opcode, status=0)
 
         if opcode == HCI_LE_LONG_TERM_KEY_REQUEST_REPLY:
             handle = struct.unpack_from("<H", raw_params, 0)[0]
-            asyncio.create_task(
-                self._emit_simulated_encryption_change(handle, status=0, enabled=1)
-            )
+            if self._ltk_reply_hook is not None:
+                ltk = raw_params[2:18]  # 16-byte LTK
+                asyncio.create_task(self._ltk_reply_hook(handle, ltk))
+            else:
+                asyncio.create_task(
+                    self._emit_simulated_encryption_change(handle, status=0, enabled=1)
+                )
             return self._make_command_complete(
                 opcode, b"\x00" + struct.pack("<H", handle)
             )

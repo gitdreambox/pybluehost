@@ -88,6 +88,7 @@ class Stack:
         self._sdp: Any = None
         self._smp: Any = None
         self._rfcomm: Any = None
+        self._virtual_controller: Any = None
         self._local_address: BDAddress | None = None
         self._powered = False
         self._mode: StackMode = StackMode.LIVE
@@ -351,15 +352,25 @@ class Stack:
     async def virtual(
         cls,
         config: StackConfig | None = None,
+        *,
+        address: "BDAddress | None" = None,
     ) -> Stack:
         """Create a single Stack backed by a software-emulated VirtualController.
 
         No real Bluetooth hardware required; suitable for unit/integration tests
         and CLI experimentation.
+
+        Args:
+            config: Optional stack configuration.
+            address: Optional BD_ADDR for the virtual controller.  When omitted
+                     a fixed default address is used (``AA:BB:CC:DD:EE:01``).
+                     Pass distinct addresses when instantiating two stacks for
+                     loopback E2E tests so SMP confirm values are computed with
+                     the correct peer/local address pair.
         """
         from pybluehost.hci.virtual import VirtualController
 
-        vc, host_t = await VirtualController.create()
+        vc, host_t = await VirtualController.create(address=address)
         try:
             stack = await cls._build(host_t, config, StackMode.VIRTUAL)
         except Exception:
@@ -368,6 +379,9 @@ class Stack:
                 await close()
             raise
         stack._local_address = vc._address
+        stack._virtual_controller = vc
+        if stack._smp is not None:
+            stack._smp.set_local_address(vc._address)
         return stack
 
     @classmethod
@@ -609,19 +623,23 @@ class Stack:
             for waiter in waiters:
                 if not waiter.done():
                     waiter.set_result(handle)
-            # Auto-encrypt on bonded reconnect (Central role only — Peripheral waits for LTK_Request)
-            if (
-                self._config.auto_encrypt_on_bonded_reconnect
-                and self._config.bond_storage is not None
-            ):
-                params = event.subevent_parameters
-                if len(params) >= 11:
-                    role = params[3]
-                    peer_addr = BDAddress(params[5:11])
-                    if role == 0x00:  # Central
-                        asyncio.create_task(
-                            self._auto_encrypt_on_reconnect(handle, peer_addr)
-                        )
+            # Register peer address in SMP + optional auto-encrypt on bonded reconnect
+            params = event.subevent_parameters
+            if len(params) >= 11:
+                role = params[3]
+                peer_addr = BDAddress(params[5:11])
+                # Always register peer address so SMP.start_initiator() can look it up
+                if self._smp is not None:
+                    self._smp._peer_addrs[handle] = peer_addr
+                # Auto-encrypt on bonded reconnect (Central role only — Peripheral waits for LTK_Request)
+                if (
+                    self._config.auto_encrypt_on_bonded_reconnect
+                    and self._config.bond_storage is not None
+                    and role == 0x00  # Central
+                ):
+                    asyncio.create_task(
+                        self._auto_encrypt_on_reconnect(handle, peer_addr)
+                    )
         else:
             reason = _hci_status_text(status)
             self._emit_connection_event(StackConnectionEvent(state="failed", handle=handle, reason=reason))

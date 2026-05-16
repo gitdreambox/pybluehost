@@ -662,6 +662,11 @@ class SMPPairingContext:
     received_identity_address: tuple[int, bytes] = field(default_factory=lambda: (0, b""))
     received_csrk: bytes = b""
 
+    # Phase 3 generated locally (sent to peer; Peripheral needs these for reconnect LTK replies)
+    local_ltk: bytes = b""
+    local_ediv: int = 0
+    local_rand: bytes = b""
+
     # Bookkeeping
     bondable: bool = True
     local_address: BDAddress | None = None

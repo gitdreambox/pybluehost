@@ -61,7 +61,12 @@ addopts = "--strict-markers -q"
 
 [tool.coverage.run]
 source = ["pybluehost"]
-omit = ["tests/*", "pybluehost/__main__.py"]
+omit = [
+    "tests/*",
+    "pybluehost/__main__.py",
+    # Legacy monolithic usb.py replaced by usb/ package — kept for git history only
+    "pybluehost/transport/usb.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [

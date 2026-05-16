@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：transport/usb 拆包 — ✅ 全部完成
-**下一步**：选择下一个 Plan（完整 SMP 配对状态机 / HCI 容错初始化 / 断线重连闭环 / e2e 覆盖）
+**当前进行中**：SMP Sub-Plan 1 (Legacy Just Works) — ✅ 全部完成
+**下一步**：SMP Sub-Plan 2 (LE Secure Connections) / HCI 容错初始化 / 断线重连闭环 / e2e 覆盖
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -44,8 +44,9 @@
 | Trace / Log Structured Output | HCI 结构化彩色 trace + 协议层 logger 注入 | ✅ 已完成 | [trace-log-system](plans/trace-log-system.md) | `pybluehost/hci/format.py`, `pybluehost/hci/format_fields.py`, `pybluehost/core/trace_console.py`, `pybluehost/core/trace_control.py`, 9 protocol-layer files |
 | PRD 1.0 收尾 | PcapngSink + Stack 工厂补全 + SMP 装配 + RFCOMM dispatch fix + bond_storage | ✅ 完成 | [2026-05-12-prd-v1-closure](plans/2026-05-12-prd-v1-closure.md) | `core/trace.py`, `core/errors.py`, `stack.py`, `l2cap/manager.py`, `ble/smp.py`, `gap.py`, `classic/rfcomm.py` |
 | transport/usb 拆包 | 2562 行 god module 拆成 8 个职责清晰的 sibling 模块 | ✅ 完成 | [2026-05-12-transport-usb-split](plans/2026-05-12-transport-usb-split.md) | `pybluehost/transport/usb/{__init__,chips,errors,discovery,diagnostics,base,intel,realtek,csr}.py` |
+| SMP Sub-Plan 1 (Legacy JW) | Legacy Just Works 配对完整路径 + 绑定 + 重连自动加密 | ✅ 完成 | [2026-05-13-smp-pairing-legacy-jw](plans/2026-05-13-smp-pairing-legacy-jw.md) | `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/hci/virtual_link.py`, `pybluehost/stack.py`, `pybluehost/ble/gatt.py` |
 
-**总计：20 个 Plan（原 19 个 + transport/usb 拆包）**
+**总计：21 个 Plan（原 20 个 + SMP Sub-Plan 1）**
 
 ---
 
@@ -242,6 +243,26 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 后续 Plan（已在 Plan 文档"范围声明"中明确推迟）：完整 SMP 配对状态机、HCI 容错初始化、断线自动重连闭环、`transport/usb.py` 拆包、`tests/e2e/` 端到端覆盖
 - 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS（coverage 86.27%）
 
+### ✅ SMP Sub-Plan 1 (Legacy Just Works)
+- 完成时间：2026-05-13
+- Plan 文档：[2026-05-13-smp-pairing-legacy-jw.md](plans/2026-05-13-smp-pairing-legacy-jw.md)
+- 设计基线：[2026-05-13-smp-pairing-legacy-jw-design.md](../superpowers/specs/2026-05-13-smp-pairing-legacy-jw-design.md)
+- 关键变化：
+  - HCI: 加 `HCI_LE_Start_Encryption_Command` / `HCI_LE_LTK_Request_Reply_Command` / `HCI_LE_LTK_Request_Negative_Reply_Command`；`HCIController.on_encryption_change` / `on_le_ltk_request` listener API
+  - VirtualController: 模拟 LE encryption commands；`simulate_le_ltk_request` 测试钩子；ACL forwarder hook；`_encryption_start_hook` / `_ltk_reply_hook` 供 VirtualLELink 拦截加密握手；`VirtualController.create(address)` 参数
+  - 新 `pybluehost/hci/virtual_link.py`：两台 VirtualController 配对为单条 LE 连接的 loopback bridge（双向 ACL 转发 + LE 加密握手模拟）
+  - SMP: `SMPState` / `SMPEvent` / `PairingRole` 枚举 + `SMPPairingContext` per-connection 上下文；新增 `local_ltk` / `local_ediv` / `local_rand` 字段保存本端生成的 LTK（供 Peripheral 重连时响应 LE_LTK_Request）
+  - 新 `pybluehost/ble/_smp_state.py`：完整 Initiator + Responder 状态机 transition table + action callbacks（Phase 1 feature exchange、Phase 2 confirm/random/STK、Phase 3 key distribution）；`_persist_bond` 按角色选择正确的 LTK（Responder 存本端生成的 LTK，Initiator 存 peer 发来的 LTK）
+  - `BondInfo.rand: int → bytes` 修复
+  - Stack 新 API: `pair(handle, timeout)` / `encrypt(handle, timeout)`；新 `StackConfig.bondable` / `auto_encrypt_on_bonded_reconnect` 字段；`Stack.virtual(address=...)` 参数
+  - `Stack._handle_connection_event` 在 LE_Connection_Complete 时注册 peer_addr 到 SMP manager 并更新 SMP local_address
+  - LE_Connection_Complete 携带 bonded peer → 自动 `HCI_LE_Start_Encryption`；LE_LTK_Request → 用 active SMP context.stk（pairing time）或 BondStorage 查找 LTK（reconnect）
+  - GATTClient 收到 ATT 0x0F (Insufficient_Encryption) → 自动 `stack.pair(handle)` + retry
+  - `pyproject.toml` coverage omit 新增 `pybluehost/transport/usb.py`（已被 usb/ package 替换的遗留文件）
+- 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
+- 验收：loopback E2E（两个 `Stack.virtual()` Just Works pairing → 双向 BondStorage 持久化 → 重连自动加密恢复）+ 真机 smoke 占位（手动运行）；coverage 86.70%
+- 后续 Plan 钩子：`SMPState` 可扩展 `PUBLIC_KEY_EXCHANGE` / `DHKEY_CHECK`（Sub-Plan 2）；`PairingDelegate` 可加 `request_passkey` / `numeric_comparison_confirm`（Sub-Plan 3）
+
 ---
 
 ## 问题日志
@@ -266,6 +287,11 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 | 2026-04-28 | CLI Demo 功能闭环 Task 4/5 | CSR 硬件上 `sdp-browser` 已完成 ACL、SSP、authentication、encryption、L2CAP outbound/inbound SDP，但目标设备不返回本机主动发出的 SDP `ServiceSearchAttributeRequest` | 已修复地址线序、L2CAP Pending、SSP 事件、Link Key Request、CLI 错误格式、本地 SDP listener、inbound L2CAP configure；剩余现象需用其他目标设备或外部抓包对比远端 SDP server 行为 | ⚠️ 待确认 |
 | 2026-05-12 | Plan 10（PcapngSink 声明回滚） | Plan 10 STATUS 误声明 "PcapngSink + 回放" 已实装，实际 `core/trace.py` 没有 PcapngSink；同样 Stack `from_tcp` / `from_btsnoop` / `build` / `loopback` 4 个工厂未实现 | 本 Plan（2026-05-12 PRD 1.0 收尾）补齐 PcapngSink、4 个工厂、REPLAY 守卫、bond_storage 字段、SMP 装配、RFCOMM dispatch fix | ✅ 已解决 |
 | 2026-05-12 | transport/usb 拆包 | usb.py 2562 行 god module 影响新加 vendor 的可维护性 | 按职责拆成 8 个 sibling 模块，__init__ 仅做 re-export；外部 import API 不变 | ✅ 已解决 |
+| 2026-05-13 | SMP Sub-Plan 1 | SMPCrypto.c1 bytearray slice assignment bug | preq/pres must pass full 7-byte PDU (including opcode), not 6-byte parameter portion | ✅ 已解决 |
+| 2026-05-13 | SMP Sub-Plan 1 | E2E loopback：LE_Connection_Complete 注入的地址与 VirtualController._address 不一致导致 c1 confirm 双端计算不符 | Stack.virtual(address=...) 新参数；VirtualController 用指定地址初始化；loopback 测试用 _CENTRAL_ADDR/_PERIPHERAL_ADDR 创建 stack | ✅ 已解决 |
+| 2026-05-13 | SMP Sub-Plan 1 | E2E loopback：VirtualLELink 只桥接 ACL，未模拟 LE 加密握手（LE_LTK_Request + ENCRYPTION_CHANGE）导致双端进入 KEY_DISTRIBUTION 时序错乱 | VirtualController 新增 `_encryption_start_hook` / `_ltk_reply_hook`；VirtualLELink.connect() 注册这两个 hook 并用 asyncio.gather 并发发送双端 ENCRYPTION_CHANGE | ✅ 已解决 |
+| 2026-05-13 | SMP Sub-Plan 1 | E2E reconnect：Peripheral 存的 bond 是 Central 发来的 LTK，而非自己生成的 LTK，导致 LE_LTK_Request 无法匹配 | `_start_phase3` 保存 ctx.local_ltk/ediv/rand；`_persist_bond` Responder 路径改用本端 LTK | ✅ 已解决 |
+| 2026-05-13 | SMP Sub-Plan 1 | coverage 从 86% 降至 76%（旧 usb.py 2562 行仍在 worktree，未被 usb/ package 替换） | pyproject.toml coverage.run.omit 追加 `pybluehost/transport/usb.py` | ✅ 已解决 |
 
 ---
 
