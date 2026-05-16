@@ -299,8 +299,18 @@ class VirtualController:
         return b"\x00" + struct.pack("<HB", 251, 8)
 
     def _handle_read_local_supported_commands(self, cmd: HCICommand) -> bytes:
-        # status + 64 bytes of supported commands bitmap
-        return b"\x00" + b"\x00" * 64
+        """Return a permissive Supported_Commands bitmap.
+
+        We advertise all the commands HCIController.initialize() issues so the
+        tolerant-init gating (Task 3) doesn't skip anything. Tests that need a
+        restricted bitmap subclass VirtualController and override this method.
+        """
+        from pybluehost.hci.capabilities import _OPCODE_BIT_POSITIONS
+
+        bitmap = bytearray(64)
+        for octet, bit in _OPCODE_BIT_POSITIONS.values():
+            bitmap[octet] |= 1 << bit
+        return b"\x00" + bytes(bitmap)
 
     def _handle_read_local_supported_features(self, cmd: HCICommand) -> bytes:
         # status + 8 bytes of LMP features
