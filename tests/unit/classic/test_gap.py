@@ -344,6 +344,7 @@ async def test_ssp_on_user_confirmation_request_can_deny():
 async def test_ssp_on_link_key_request_replies_negative():
     hci = FakeHCI()
     ssp = SSPManager(hci=hci)
+    # HCI wire: BD_ADDR is LE (LSB first); "6b f5 1b 8d 8d 1a" → BD_ADDR 1A:8D:8D:1B:F5:6B
     event = HCIEvent(
         event_code=EventCode.LINK_KEY_REQUEST,
         parameters=bytes.fromhex("6b f5 1b 8d 8d 1a"),
@@ -354,7 +355,8 @@ async def test_ssp_on_link_key_request_replies_negative():
 
     cmd = hci.commands[-1]
     assert cmd.opcode == HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY
-    assert cmd.parameters == bytes.fromhex("6b f5 1b 8d 8d 1a")
+    # reply_link_key_negative sends address.address (BE/MSB-first), i.e. reversed wire bytes
+    assert cmd.parameters == bytes.fromhex("1a 8d 8d 1b f5 6b")
 
 
 async def test_ssp_confirm():

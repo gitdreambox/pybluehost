@@ -109,3 +109,78 @@ async def test_ssp_user_confirmation_request_still_auto_accepts():
     await mgr.on_hci_event(evt)
     await asyncio.sleep(0.05)
     assert hci.sent
+
+
+async def test_ssp_link_key_request_reply_when_bond_exists(tmp_path):
+    """Link_Key_Request for a known peer → HCI_Link_Key_Request_Reply(addr, link_key)."""
+    hci = FakeHCI()
+    storage = JsonBondStorage(tmp_path / "bonds.json")
+    # Pre-populate storage with a known SC bond
+    addr = BDAddress(b"\x01\x02\x03\x04\x05\x06")
+    await storage.save_bond(BondInfo(
+        peer_address=addr, address_type=0,
+        link_key=b"\xCC" * 16, link_key_type=0x07, sc=True,
+    ))
+
+    mgr = SSPManager(
+        hci=hci,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        bond_storage=storage,
+    )
+    params = bytes(reversed(addr.address))  # BT wire LE
+    evt = HCIEvent(event_code=int(EventCode.LINK_KEY_REQUEST), parameters=params)
+    await mgr.on_hci_event(evt)
+    await asyncio.sleep(0.05)
+
+    # Look for HCI_Link_Key_Request_Reply
+    from pybluehost.hci.packets import HCI_Link_Key_Request_Reply_Command
+    replies = [c for c in hci.sent if isinstance(c, HCI_Link_Key_Request_Reply_Command)]
+    assert len(replies) == 1, f"expected one Link_Key_Request_Reply; got hci.sent={hci.sent}"
+    assert replies[0].link_key == b"\xCC" * 16
+    # No negative reply
+    from pybluehost.hci.constants import HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY
+    for cmd in hci.sent:
+        opcode = getattr(cmd, "opcode", None)
+        assert opcode != HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY
+
+
+async def test_ssp_link_key_request_negative_reply_when_no_bond(tmp_path):
+    """Link_Key_Request for unknown peer → HCI_Link_Key_Request_Negative_Reply."""
+    hci = FakeHCI()
+    storage = JsonBondStorage(tmp_path / "bonds.json")
+    mgr = SSPManager(
+        hci=hci,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        bond_storage=storage,
+    )
+    addr = BDAddress(b"\x01\x02\x03\x04\x05\x06")
+    params = bytes(reversed(addr.address))
+    evt = HCIEvent(event_code=int(EventCode.LINK_KEY_REQUEST), parameters=params)
+    await mgr.on_hci_event(evt)
+    await asyncio.sleep(0.05)
+
+    from pybluehost.hci.packets import HCI_Link_Key_Request_Reply_Command
+    replies = [c for c in hci.sent if isinstance(c, HCI_Link_Key_Request_Reply_Command)]
+    assert replies == [], "must not send positive reply when no bond stored"
+    # At least one HCI command was sent (the negative reply)
+    assert hci.sent
+
+
+async def test_ssp_link_key_request_negative_reply_when_no_storage():
+    """When SSPManager has no bond_storage configured, always negative-reply."""
+    hci = FakeHCI()
+    mgr = SSPManager(
+        hci=hci,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        # bond_storage explicitly omitted → None
+    )
+    addr = BDAddress(b"\x01\x02\x03\x04\x05\x06")
+    params = bytes(reversed(addr.address))
+    evt = HCIEvent(event_code=int(EventCode.LINK_KEY_REQUEST), parameters=params)
+    await mgr.on_hci_event(evt)
+    await asyncio.sleep(0.05)
+
+    from pybluehost.hci.packets import HCI_Link_Key_Request_Reply_Command
+    replies = [c for c in hci.sent if isinstance(c, HCI_Link_Key_Request_Reply_Command)]
+    assert replies == []
+    assert hci.sent  # negative reply

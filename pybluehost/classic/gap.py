@@ -334,9 +334,7 @@ class SSPManager:
             )
             return
         if event.event_code == EventCode.LINK_KEY_REQUEST:
-            self._schedule_reply(
-                self.reply_link_key_negative(BDAddress(event.parameters[:6]))
-            )
+            self._schedule_reply(self._handle_link_key_request(event.parameters))
             return
         if event.event_code == EventCode.USER_CONFIRMATION_REQUEST:
             address = BDAddress(event.parameters[:6])
@@ -372,6 +370,25 @@ class SSPManager:
         await self._hci.send_command(
             _make_cmd(HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY, address.address)
         )
+
+    async def _handle_link_key_request(self, params: bytes) -> None:
+        """Look up bond by BD_ADDR; reply with stored link_key or negative-reply."""
+        from pybluehost.hci.packets import HCI_Link_Key_Request_Reply_Command
+        if len(params) < 6:
+            return
+        addr = BDAddress(bytes(reversed(params[:6])))  # BT wire LE → BDAddress BE
+        if self._bond_storage is not None:
+            try:
+                bond = await self._bond_storage.load_bond(addr)
+            except Exception:
+                bond = None
+            if bond is not None and bond.link_key:
+                await self._hci.send_command(HCI_Link_Key_Request_Reply_Command(
+                    bd_addr=addr, link_key=bond.link_key,
+                ))
+                return
+        # No bond / no storage: negative reply
+        await self.reply_link_key_negative(addr)
 
     async def _on_link_key_notification(self, params: bytes) -> None:
         from pybluehost.ble.smp import BondInfo
