@@ -109,3 +109,101 @@ async def test_phase3_initiator_sends_keys_then_collects_and_bonds(tmp_path, mon
     assert bond.rand == peer_rand
     assert bond.irk == peer_irk
     assert ctx.state_machine.state == SMPState.BONDED
+
+
+async def test_sc_initiator_phase3_skips_ltk_distribution(tmp_path, monkeypatch):
+    """In SC mode, Initiator does NOT send SMPEncryptionInformation/SMPMasterIdentification.
+    Bond is persisted with sc=True and ltk=ctx.ltk_sc."""
+    monkeypatch.setattr(os, "urandom", lambda n: b"\xAB" * n)
+
+    from pybluehost.ble._smp_state import register_transitions
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import (
+        PairingRole,
+        SMPIdentityAddressInformation,
+        SMPIdentityInformation,
+        SMPPairingContext,
+        SMPSigningInformation,
+    )
+
+    sent: list[bytes] = []
+
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    storage = JsonBondStorage(tmp_path / "bonds.json")
+    mgr = SMPManager(
+        local_io_caps=IOCapability.NO_INPUT_NO_OUTPUT,
+        bondable=True,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        local_address=BDAddress(b"\x0A\x0B\x0C\x0D\x0E\x0F"),
+        bond_storage=storage,
+    )
+    mgr.bind_channel(0x0040, send=send, peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"))
+
+    # Build context in SC mode + force into STK_ENCRYPTING
+    ctx = SMPPairingContext.create(
+        connection_handle=0x0040,
+        peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"),
+        role=PairingRole.INITIATOR,
+        send=send,
+    )
+    ctx.local_io_caps = IOCapability.NO_INPUT_NO_OUTPUT
+    ctx.bondable = True
+    ctx.local_address = BDAddress(b"\x0A\x0B\x0C\x0D\x0E\x0F")
+    ctx.security_config = SecurityConfig(enable_secure_connections=True)
+    ctx._bond_storage = storage
+    # In SC, EncKey bit (0x01) is typically cleared at negotiation; mask=0x06 => IdKey + Sign
+    ctx.local_init_key_dist = 0x06
+    ctx.local_resp_key_dist = 0x06
+    ctx.peer_init_key_dist = 0x06
+    ctx.peer_resp_key_dist = 0x06
+    # SC negotiated (both sides advertise SC bit 0x08):
+    ctx.local_auth_req = 0x09
+    ctx.peer_auth_req = 0x09
+    ctx.ltk_sc = b"\xDE" * 16
+    ctx.mac_key = b"\xCC" * 16
+    ctx.pairing_complete = asyncio.get_running_loop().create_future()
+    register_transitions(ctx)
+    mgr._contexts[0x0040] = ctx
+    ctx.state_machine._state = SMPState.STK_ENCRYPTING
+
+    await ctx.state_machine.fire(SMPEvent.ENCRYPTION_CHANGE_SUCCESS)
+
+    # Initiator should send IRK + IdentityAddress + CSRK — NOT EncryptionInformation/MasterIdentification
+    sent_codes = [pdu[0] for pdu in sent]
+    assert SMPCode.ENCRYPTION_INFORMATION not in sent_codes, "SC mode must NOT distribute LTK"
+    assert SMPCode.MASTER_IDENTIFICATION not in sent_codes, "SC mode must NOT distribute EDIV/RAND"
+    assert SMPCode.IDENTITY_INFORMATION in sent_codes
+    assert SMPCode.IDENTITY_ADDRESS_INFORMATION in sent_codes
+    assert SMPCode.SIGNING_INFORMATION in sent_codes
+    sent.clear()
+
+    # Receive peer's IRK + IdentityAddress + CSRK (no peer LTK in SC)
+    peer_irk = b"\xF0" * 16
+    peer_csrk = b"\xCD" * 16
+    await mgr.on_pdu(
+        SMPIdentityInformation(irk=peer_irk).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(
+        SMPIdentityAddressInformation(
+            addr_type=0, bd_addr=bytes(BDAddress(b"\x01\x02\x03\x04\x05\x06").address)
+        ).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(
+        SMPSigningInformation(signature_key=peer_csrk).to_bytes(),
+        connection_handle=0x0040,
+    )
+
+    await asyncio.wait_for(ctx.pairing_complete, timeout=1.0)
+
+    bond = await storage.load_bond(BDAddress(b"\x01\x02\x03\x04\x05\x06"))
+    assert bond is not None
+    assert bond.sc is True
+    assert bond.authenticated is False
+    assert bond.ltk == b"\xDE" * 16  # f5-derived LTK_sc
+    assert bond.irk == peer_irk
+    assert bond.csrk == peer_csrk
+    assert ctx.state_machine.state == SMPState.BONDED

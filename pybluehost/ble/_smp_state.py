@@ -623,8 +623,9 @@ async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
     )
     logger.debug("entered KEY_DISTRIBUTION on handle=0x%04X", ctx.connection_handle)
     mask = ctx.local_init_key_dist if ctx.role == PairingRole.INITIATOR else ctx.local_resp_key_dist
+    sc_mode = _sc_negotiated(ctx)
 
-    if mask & 0x01:  # EncKey: LTK + EDIV + RAND
+    if mask & 0x01 and not sc_mode:  # EncKey: LTK + EDIV + RAND (Legacy only; SC derives LTK via f5)
         ltk = os.urandom(16)
         ediv = int.from_bytes(os.urandom(2), "little")
         rand = os.urandom(8)
@@ -647,8 +648,11 @@ async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
         csrk = os.urandom(16)
         await ctx.send(SMPSigningInformation(signature_key=csrk).to_bytes())
 
-    # If we expect no keys from peer, finalize immediately
+    # If we expect no keys from peer, finalize immediately.
+    # In SC mode, strip out the EncKey bit (0x01) since we will never receive a peer LTK.
     expected = ctx.peer_resp_key_dist if ctx.role == PairingRole.INITIATOR else ctx.peer_init_key_dist
+    if sc_mode:
+        expected &= ~0x01
     if expected == 0:
         await ctx.state_machine.fire(SMPEvent.KEYS_RECEIVED)
 
@@ -688,6 +692,11 @@ async def _recv_signing_info(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
 async def _check_phase3_complete(ctx: "SMPPairingContext") -> None:
     """Fire KEYS_RECEIVED if every expected peer key has arrived."""
     expected = ctx.peer_resp_key_dist if ctx.role == PairingRole.INITIATOR else ctx.peer_init_key_dist
+    sc_mode = _sc_negotiated(ctx)
+    if sc_mode:
+        # In SC mode the peer will not send a LTK/EDIV/RAND — both sides already
+        # hold the f5-derived LTK.  Strip out the EncKey expectation.
+        expected &= ~0x01
     have_enc = (expected & 0x01) == 0 or (
         bool(ctx.received_ltk) and bool(ctx.received_rand)
     )
@@ -702,46 +711,66 @@ async def _check_phase3_complete(ctx: "SMPPairingContext") -> None:
 async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
     """Save keys to BondStorage and resolve pairing_complete Future.
 
-    LE Legacy Pairing key storage strategy:
-    - Central (Initiator): stores the LTK received from the Peripheral
+    Key storage strategy:
+    - SC mode: both sides hold the same f5-derived LTK (ctx.ltk_sc).
+      EDIV/RAND are not used in SC — stored as 0/zeros.
+    - LE Legacy — Central (Initiator): stores the LTK received from the Peripheral
       (received_ltk/ediv/rand).  At reconnect, Central issues
       HCI_LE_Start_Encryption with these values.
-    - Peripheral (Responder): stores the LTK it generated and sent to the
-      Central (local_ltk/ediv/rand).  At reconnect, Peripheral responds to
+    - LE Legacy — Peripheral (Responder): stores the LTK it generated and sent to
+      the Central (local_ltk/ediv/rand).  At reconnect, Peripheral responds to
       LE_LTK_Request with these values.
     """
     from pybluehost.ble.smp import BondInfo, PairingRole
     storage = getattr(ctx, "_bond_storage", None)
+    sc_mode = _sc_negotiated(ctx)
     if storage is None:
         logger.debug("no bond storage configured; not persisting bond")
     else:
-        if ctx.role == PairingRole.RESPONDER and ctx.local_ltk:
-            # Peripheral: use the locally generated LTK so reconnect replies work.
-            ltk_for_bond = ctx.local_ltk
-            ediv_for_bond = ctx.local_ediv
-            rand_for_bond = ctx.local_rand
+        if sc_mode:
+            # SC: both sides share the f5-derived LTK; EDIV/RAND are unused in SC.
+            bond = BondInfo(
+                peer_address=ctx.peer_address,
+                address_type=ctx.received_identity_address[0],
+                ltk=ctx.ltk_sc if ctx.ltk_sc else None,
+                irk=ctx.received_irk if ctx.received_irk else None,
+                csrk=ctx.received_csrk if ctx.received_csrk else None,
+                ediv=0,
+                rand=b"\x00" * 8,
+                key_size=16,
+                authenticated=False,  # Just Works = unauthenticated
+                sc=True,
+            )
         else:
-            # Central: use the LTK received from the Peripheral.
-            ltk_for_bond = ctx.received_ltk if ctx.received_ltk else None
-            ediv_for_bond = ctx.received_ediv
-            rand_for_bond = ctx.received_rand if ctx.received_rand else b"\x00" * 8
-        bond = BondInfo(
-            peer_address=ctx.peer_address,
-            address_type=ctx.received_identity_address[0],
-            ltk=ltk_for_bond,
-            irk=ctx.received_irk if ctx.received_irk else None,
-            csrk=ctx.received_csrk if ctx.received_csrk else None,
-            ediv=ediv_for_bond,
-            rand=rand_for_bond,
-            key_size=16,
-            authenticated=False,
-            sc=False,
-        )
+            # Legacy pairing
+            if ctx.role == PairingRole.RESPONDER and ctx.local_ltk:
+                # Peripheral: use the locally generated LTK so reconnect replies work.
+                ltk_for_bond = ctx.local_ltk
+                ediv_for_bond = ctx.local_ediv
+                rand_for_bond = ctx.local_rand
+            else:
+                # Central: use the LTK received from the Peripheral.
+                ltk_for_bond = ctx.received_ltk if ctx.received_ltk else None
+                ediv_for_bond = ctx.received_ediv
+                rand_for_bond = ctx.received_rand if ctx.received_rand else b"\x00" * 8
+            bond = BondInfo(
+                peer_address=ctx.peer_address,
+                address_type=ctx.received_identity_address[0],
+                ltk=ltk_for_bond,
+                irk=ctx.received_irk if ctx.received_irk else None,
+                csrk=ctx.received_csrk if ctx.received_csrk else None,
+                ediv=ediv_for_bond,
+                rand=rand_for_bond,
+                key_size=16,
+                authenticated=False,
+                sc=False,
+            )
+        ltk_stored = bool(bond.ltk)
         await storage.save_bond(bond)
         _log_pairing_complete(
             handle=ctx.connection_handle,
             peer_addr=str(ctx.peer_address),
-            ltk_stored=bool(ltk_for_bond),
+            ltk_stored=ltk_stored,
         )
     if ctx.pairing_complete and not ctx.pairing_complete.done():
         ctx.pairing_complete.set_result(None)
