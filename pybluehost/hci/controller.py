@@ -118,6 +118,13 @@ class HCIController:
         self._encryption_change_listeners: list = []
         self._le_ltk_request_listeners: list = []
 
+        # SC (Secure Connections / SSP) event listeners
+        self._io_capability_request_listeners: list = []
+        self._user_confirmation_request_listeners: list = []
+        self._simple_pairing_complete_listeners: list = []
+        self._link_key_notification_listeners: list = []
+        self._link_key_request_listeners: list = []
+
         # Register ourselves as the transport's sink
         if hasattr(transport, "set_sink"):
             transport.set_sink(self)  # type: ignore[union-attr]
@@ -144,6 +151,26 @@ class HCIController:
     def on_le_ltk_request(self, listener) -> None:
         """Register listener called as (handle: int, rand: bytes, ediv: int) when LE_LTK_Request subevent arrives."""
         self._le_ltk_request_listeners.append(listener)
+
+    def on_io_capability_request(self, listener) -> None:
+        """Register listener called as (addr: BDAddress) when IO_Capability_Request fires."""
+        self._io_capability_request_listeners.append(listener)
+
+    def on_user_confirmation_request(self, listener) -> None:
+        """Register listener called as (addr: BDAddress, numeric_value: int) when User_Confirmation_Request fires."""
+        self._user_confirmation_request_listeners.append(listener)
+
+    def on_simple_pairing_complete(self, listener) -> None:
+        """Register listener called as (status: int, addr: BDAddress) when Simple_Pairing_Complete fires."""
+        self._simple_pairing_complete_listeners.append(listener)
+
+    def on_link_key_notification(self, listener) -> None:
+        """Register listener called as (addr: BDAddress, link_key: bytes, key_type: int)."""
+        self._link_key_notification_listeners.append(listener)
+
+    def on_link_key_request(self, listener) -> None:
+        """Register listener called as (addr: BDAddress) when Link_Key_Request fires."""
+        self._link_key_request_listeners.append(listener)
 
     # ------------------------------------------------------------------
     # Public properties
@@ -404,6 +431,48 @@ class HCIController:
                     result = listener(handle, rand_b, ediv)
                     if asyncio.iscoroutine(result):
                         await result
+
+        # SC (SSP) event listeners
+        from pybluehost.core.address import BDAddress
+
+        if event.event_code == EventCode.IO_CAPABILITY_REQUEST and len(event.parameters) >= 6:
+            addr = BDAddress(bytes(reversed(event.parameters[:6])))
+            for listener in list(self._io_capability_request_listeners):
+                result = listener(addr)
+                if asyncio.iscoroutine(result):
+                    await result
+
+        if event.event_code == EventCode.USER_CONFIRMATION_REQUEST and len(event.parameters) >= 10:
+            addr = BDAddress(bytes(reversed(event.parameters[:6])))
+            numeric = int.from_bytes(event.parameters[6:10], "little")
+            for listener in list(self._user_confirmation_request_listeners):
+                result = listener(addr, numeric)
+                if asyncio.iscoroutine(result):
+                    await result
+
+        if event.event_code == EventCode.SIMPLE_PAIRING_COMPLETE and len(event.parameters) >= 7:
+            status = event.parameters[0]
+            addr = BDAddress(bytes(reversed(event.parameters[1:7])))
+            for listener in list(self._simple_pairing_complete_listeners):
+                result = listener(status, addr)
+                if asyncio.iscoroutine(result):
+                    await result
+
+        if event.event_code == EventCode.LINK_KEY_NOTIFICATION and len(event.parameters) >= 23:
+            addr = BDAddress(bytes(reversed(event.parameters[:6])))
+            key = event.parameters[6:22]
+            key_type = event.parameters[22]
+            for listener in list(self._link_key_notification_listeners):
+                result = listener(addr, key, key_type)
+                if asyncio.iscoroutine(result):
+                    await result
+
+        if event.event_code == EventCode.LINK_KEY_REQUEST and len(event.parameters) >= 6:
+            addr = BDAddress(bytes(reversed(event.parameters[:6])))
+            for listener in list(self._link_key_request_listeners):
+                result = listener(addr)
+                if asyncio.iscoroutine(result):
+                    await result
 
         # All other events go to the upper layer
         if self._on_hci_event is not None:
