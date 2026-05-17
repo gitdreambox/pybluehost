@@ -280,8 +280,16 @@ class ClassicConnectionManager:
 class SSPManager:
     """Secure Simple Pairing manager."""
 
-    def __init__(self, hci: object) -> None:
+    def __init__(
+        self,
+        hci: object,
+        *,
+        security_config: object | None = None,
+        bond_storage: object | None = None,
+    ) -> None:
         self._hci = hci
+        self._security_config = security_config
+        self._bond_storage = bond_storage
         self._io_capability: int = 0x03  # NoInputNoOutput
         self._confirm_handler: Callable[[BDAddress, int], bool] | None = None
         self._pending_replies: set[asyncio.Task[object]] = set()
@@ -297,9 +305,17 @@ class SSPManager:
         self._confirm_handler = handler
 
     async def reply_io_capability(
-        self, address: BDAddress, oob_present: bool = False, auth_req: int = 0x00
+        self, address: BDAddress, oob_present: bool = False, auth_req: int | None = None
     ) -> None:
         """Reply to an IO Capability Request event."""
+        if auth_req is None:
+            if (
+                self._security_config is not None
+                and self._security_config.enable_secure_connections
+            ):
+                auth_req = 0x04
+            else:
+                auth_req = 0x00
         params = (
             address.address
             + bytes([self._io_capability])
@@ -332,6 +348,10 @@ class SSPManager:
                 self._schedule_reply(self.confirm(address))
             else:
                 self._schedule_reply(self.deny(address))
+        elif event.event_code == EventCode.LINK_KEY_NOTIFICATION and len(event.parameters) >= 23:
+            self._schedule_reply(self._on_link_key_notification(event.parameters))
+        elif event.event_code == EventCode.SIMPLE_PAIRING_COMPLETE and len(event.parameters) >= 7:
+            self._schedule_reply(self._on_simple_pairing_complete(event.parameters))
 
     async def confirm(self, address: BDAddress) -> None:
         """Accept a user confirmation request (numeric comparison)."""
@@ -352,6 +372,29 @@ class SSPManager:
         await self._hci.send_command(
             _make_cmd(HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY, address.address)
         )
+
+    async def _on_link_key_notification(self, params: bytes) -> None:
+        from pybluehost.ble.smp import BondInfo
+        addr = BDAddress(bytes(reversed(params[:6])))  # BT wire LE → BDAddress BE
+        link_key = params[6:22]
+        key_type = params[22]
+        sc = key_type in {0x05, 0x06, 0x07, 0x08}
+        authenticated = key_type in {0x02, 0x04, 0x06, 0x08}
+        if self._bond_storage is None:
+            return
+        bond = BondInfo(
+            peer_address=addr,
+            address_type=0,
+            link_key=link_key,
+            link_key_type=key_type,
+            sc=sc,
+            authenticated=authenticated,
+        )
+        await self._bond_storage.save_bond(bond)
+
+    async def _on_simple_pairing_complete(self, params: bytes) -> None:
+        # status = params[0]; addr = params[1:7] (LE wire). Future Plans add signal.
+        pass
 
     def _schedule_reply(self, coro: object) -> None:
         task = asyncio.create_task(coro)
