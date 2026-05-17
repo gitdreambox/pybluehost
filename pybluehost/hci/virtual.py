@@ -17,6 +17,8 @@ from pybluehost.hci.constants import (
     HCI_ACL_PACKET,
     HCI_COMMAND_PACKET,
     HCI_HOST_BUFFER_SIZE,
+    HCI_IO_CAPABILITY_REQUEST_REPLY,
+    HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY,
     HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY,
     HCI_LE_LONG_TERM_KEY_REQUEST_REPLY,
     HCI_LE_READ_BUFFER_SIZE,
@@ -25,6 +27,8 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_RANDOM_ADDRESS,
     HCI_LE_SET_SCAN_PARAMS,
     HCI_LE_START_ENCRYPTION,
+    HCI_LINK_KEY_REQUEST_REPLY,
+    HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY,
     HCI_READ_BD_ADDR,
     HCI_READ_BUFFER_SIZE,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
@@ -32,6 +36,8 @@ from pybluehost.hci.constants import (
     HCI_READ_LOCAL_VERSION,
     HCI_RESET,
     HCI_SET_EVENT_MASK,
+    HCI_USER_CONFIRMATION_REQUEST_REPLY,
+    HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
     HCI_WRITE_LE_HOST_SUPPORTED,
     HCI_WRITE_SCAN_ENABLE,
     HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT,
@@ -89,6 +95,13 @@ class VirtualController:
             HCI_HOST_BUFFER_SIZE: self._handle_status_only,
             HCI_LE_SET_SCAN_PARAMS: self._handle_status_only,
             HCI_LE_SET_RANDOM_ADDRESS: self._handle_status_only,
+            # SSP reply commands — just acknowledge them
+            HCI_IO_CAPABILITY_REQUEST_REPLY: self._handle_status_only,
+            HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY: self._handle_status_only,
+            HCI_USER_CONFIRMATION_REQUEST_REPLY: self._handle_status_only,
+            HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY: self._handle_status_only,
+            HCI_LINK_KEY_REQUEST_REPLY: self._handle_link_key_request_reply,
+            HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY: self._handle_status_only,
         }
 
     @classmethod
@@ -275,6 +288,56 @@ class VirtualController:
         )
         asyncio.create_task(self._send_event_to_host(meta_event))
 
+    def simulate_ssp_pairing(self, *, bd_addr: bytes, key_type: int = 0x07) -> None:
+        """Test hook: inject the BR/EDR SSP event sequence.
+
+        Emits, in order, with small async gaps:
+          1. IO_Capability_Request(addr)
+          2. User_Confirmation_Request(addr, numeric=0x12345678)
+          3. Simple_Pairing_Complete(status=0, addr)
+          4. Link_Key_Notification(addr, link_key=0x88*16, key_type=key_type)
+
+        Args:
+            bd_addr: 6-byte BD_ADDR (BT wire format, little-endian).
+            key_type: Link Key type byte (default 0x07 = SC Unauthenticated P-256).
+        """
+        if len(bd_addr) != 6:
+            raise ValueError("bd_addr must be 6 bytes")
+
+        async def _emit():
+            # 1. IO_Capability_Request
+            await asyncio.sleep(0)
+            evt = HCIEvent(event_code=int(EventCode.IO_CAPABILITY_REQUEST), parameters=bd_addr)
+            await self._send_event_to_host(evt)
+
+            # 2. User_Confirmation_Request — give host time to reply to step 1 first
+            await asyncio.sleep(0.01)
+            numeric_value = (0x12345678).to_bytes(4, "little")
+            evt = HCIEvent(
+                event_code=int(EventCode.USER_CONFIRMATION_REQUEST),
+                parameters=bd_addr + numeric_value,
+            )
+            await self._send_event_to_host(evt)
+
+            # 3. Simple_Pairing_Complete
+            await asyncio.sleep(0.01)
+            evt = HCIEvent(
+                event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
+                parameters=bytes([0x00]) + bd_addr,
+            )
+            await self._send_event_to_host(evt)
+
+            # 4. Link_Key_Notification
+            await asyncio.sleep(0.01)
+            link_key = b"\x88" * 16
+            evt = HCIEvent(
+                event_code=int(EventCode.LINK_KEY_NOTIFICATION),
+                parameters=bd_addr + link_key + bytes([key_type]),
+            )
+            await self._send_event_to_host(evt)
+
+        asyncio.create_task(_emit())
+
     # -- Handlers --------------------------------------------------------------
 
     def _handle_status_only(self, cmd: HCICommand) -> bytes:
@@ -321,6 +384,12 @@ class VirtualController:
     def _handle_le_read_local_supported_features(self, cmd: HCICommand) -> bytes:
         # status + 8 bytes of LE features
         return b"\x00" + b"\x00" * 8
+
+    def _handle_link_key_request_reply(self, cmd: HCICommand) -> bytes:
+        # Return: status(1) + BD_ADDR(6) — spec vol4 part E 7.1.11
+        # The first 6 bytes of cmd.parameters are the BD_ADDR
+        bd_addr = cmd.parameters[:6] if cmd.parameters and len(cmd.parameters) >= 6 else b"\x00" * 6
+        return b"\x00" + bd_addr
 
 
 class _HCIPipe(Transport):

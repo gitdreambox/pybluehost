@@ -237,7 +237,11 @@ class Stack:
             classic_discovery=ClassicDiscovery(hci=hci),
             classic_discoverability=ClassicDiscoverability(hci=hci),
             classic_connections=ClassicConnectionManager(hci=hci),
-            classic_ssp=SSPManager(hci=hci),
+            classic_ssp=SSPManager(
+                hci=hci,
+                security_config=cfg.security,
+                bond_storage=cfg.bond_storage,
+            ),
             whitelist=WhiteList(hci=hci),
             ble_extended_advertiser=ExtendedAdvertiser(hci=hci),
             smp=smp,
