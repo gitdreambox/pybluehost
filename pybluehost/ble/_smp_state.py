@@ -95,10 +95,23 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
             action=lambda **kw: _sc_responder_recv_peer_public_key(ctx, **kw),
         )
 
+    # ---- SC Phase 2.2 — Initiator receives peer Confirm (only in SC) ----
+    # In SC Just Works the Initiator does NOT send a Confirm first; it waits for
+    # the Responder's Confirm (Cb).  This transition lives in PUBLIC_KEY_EXCHANGE
+    # (where SC Initiator stays after receiving peer's Public Key).
+    if ctx.role == PairingRole.INITIATOR:
+        sm.add_transition(
+            SMPState.PUBLIC_KEY_EXCHANGE, SMPEvent.PAIRING_CONFIRM_RX,
+            SMPState.CONFIRMING,
+            action=lambda **kw: _sc_initiator_recv_peer_confirm(ctx, **kw),
+        )
+
     # ---- Phase 2 — Confirm/Random ----
     if ctx.role == PairingRole.INITIATOR:
-        # Initiator already sent its Confirm in Phase 1 transition.
+        # Initiator already sent its Confirm in Phase 1 transition (Legacy).
         # Now waits to receive peer Confirm, then peer Random.
+        # In SC the PAIRING_CONFIRM_RX transition above already advances to
+        # CONFIRMING; from there the PAIRING_RANDOM_RX transition below fires.
         sm.add_transition(
             SMPState.CONFIRMING, SMPEvent.PAIRING_CONFIRM_RX,
             SMPState.CONFIRMING,
@@ -316,7 +329,11 @@ async def _initiator_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) 
 
 
 async def _initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
-    """Initiator: peer (Responder) Random arrived. Verify Confirm, derive STK, start encryption."""
+    """Initiator: peer (Responder) Random arrived. Branch on SC vs Legacy."""
+    if _sc_negotiated(ctx):
+        await _sc_initiator_recv_peer_random(ctx, pdu=pdu)
+        return
+    # --- Legacy path ---
     from pybluehost.hci.packets import HCI_LE_Start_Encryption_Command
     ctx.peer_random = pdu.random_value
     # Verify peer's confirm: expected = c1(tk, peer_random, preq, pres, iat, rat, ia, ra)
@@ -351,7 +368,11 @@ async def _responder_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) 
 
 
 async def _responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
-    """Responder: peer (Initiator) Random arrived. Verify peer Confirm, send own Random."""
+    """Responder: peer (Initiator) Random arrived. Branch on SC vs Legacy."""
+    if _sc_negotiated(ctx):
+        await _sc_responder_recv_peer_random(ctx, pdu=pdu)
+        return
+    # --- Legacy path ---
     from pybluehost.ble.smp import SMPPairingRandom
     ctx.peer_random = pdu.random_value
     preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
@@ -416,6 +437,59 @@ async def _sc_responder_recv_peer_public_key(ctx: "SMPPairingContext", *, pdu, *
 
     # Send Confirm(Cb)
     await ctx.send(SMPPairingConfirm(confirm_value=ctx.local_confirm).to_bytes())
+
+
+async def _sc_initiator_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Initiator: Responder's Confirm Cb arrived. Generate Na, send Pairing_Random."""
+    from pybluehost.ble.smp import SMPPairingRandom
+    ctx.peer_confirm = pdu.confirm_value
+    ctx.local_random = os.urandom(16)
+    await ctx.send(SMPPairingRandom(random_value=ctx.local_random).to_bytes())
+
+
+async def _sc_initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Initiator: Responder's Random Nb arrived. Verify Cb = f4(PKbx, PKax, Nb, 0), derive f5.
+
+    The registered transition advances to STK_ENCRYPTING (Legacy default); we
+    override _state to RANDOM_EXCHANGE here because SC does not use STK.
+    """
+    ctx.peer_random = pdu.random_value
+    # Verify Cb = f4(PKbx, PKax, Nb, 0)
+    pkbx = ctx.peer_public_key[:32]
+    pkax = ctx.local_public_key[:32]
+    expected = SMPCrypto.f4(pkbx, pkax, ctx.peer_random, 0)
+    if expected != ctx.peer_confirm:
+        await _on_failed(ctx, reason=0x04)  # CONFIRM_VALUE_FAILED
+        return
+    # Override state: SC does not use STK; advance to RANDOM_EXCHANGE instead.
+    ctx.state_machine._state = SMPState.RANDOM_EXCHANGE
+    # Derive (MacKey, LTK_sc) = f5(DHKey, Na, Nb, A1, A2)
+    # A1 = Initiator (local) addr; A2 = Responder (peer) addr
+    local_addr = _local_address_bytes(ctx)
+    peer_addr = _peer_address_bytes(ctx)
+    a1 = b"\x00" + local_addr  # type 0 = public
+    a2 = b"\x00" + peer_addr
+    mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.local_random, ctx.peer_random, a1, a2)
+    ctx.mac_key = mac_key
+    ctx.ltk_sc = ltk
+
+
+async def _sc_responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Responder: Initiator's Random Na arrived. Send own Nb, derive f5."""
+    from pybluehost.ble.smp import SMPPairingRandom
+    ctx.peer_random = pdu.random_value
+    # Responder's local_random (Nb) was generated in _sc_responder_recv_peer_public_key
+    await ctx.send(SMPPairingRandom(random_value=ctx.local_random).to_bytes())
+    # Derive (MacKey, LTK_sc) = f5(DHKey, Na, Nb, A1, A2)
+    # In SC: A1 = Initiator (peer) addr; A2 = Responder (local) addr
+    local_addr = _local_address_bytes(ctx)
+    peer_addr = _peer_address_bytes(ctx)
+    a1 = b"\x00" + peer_addr   # Initiator = peer
+    a2 = b"\x00" + local_addr  # Responder = local
+    # Na = peer_random (Initiator's); Nb = local_random (Responder's)
+    mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.peer_random, ctx.local_random, a1, a2)
+    ctx.mac_key = mac_key
+    ctx.ltk_sc = ltk
 
 
 async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:

@@ -200,3 +200,110 @@ async def test_sc_responder_handles_initiator_public_key():
     assert ctx.local_confirm  # Cb computed
     # Responder advances to CONFIRMING (waiting for Initiator's Random/Na)
     assert ctx.state_machine.state == SMPState.CONFIRMING
+
+
+async def test_sc_initiator_completes_phase2_with_f5_ltk(monkeypatch):
+    """Initiator: peer Confirm + peer Random → f4 verify pass → f5 derive (MacKey, LTK_sc)."""
+    import os
+    monkeypatch.setattr(os, "urandom", lambda n: b"\xAA" * n)
+    from pybluehost.ble._smp_sc_crypto import generate_p256_keypair
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import (
+        SMPCode, SMPCrypto, SMPManager, SMPPairingConfirm,
+        SMPPairingPublicKey, SMPPairingRandom, SMPPairingResponse, SMPState,
+    )
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.types import IOCapability
+
+    sent: list[bytes] = []
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    mgr = SMPManager(
+        local_io_caps=IOCapability.NO_INPUT_NO_OUTPUT, bondable=True,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        local_address=BDAddress(b"\x0A\x0A\x0A\x0A\x0A\x0A"),
+    )
+    mgr.bind_channel(0x0040, send=send, peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"))
+    await mgr.start_initiator(0x0040)
+    rsp = SMPPairingResponse(
+        io_capability=IOCapability.NO_INPUT_NO_OUTPUT, oob_data_flag=0,
+        auth_req=0x09, max_key_size=16, init_key_dist=0x07, resp_key_dist=0x07,
+    )
+    await mgr.on_pdu(rsp.to_bytes(), connection_handle=0x0040)
+    _, peer_pub = generate_p256_keypair()
+    await mgr.on_pdu(
+        SMPPairingPublicKey(public_key_x=peer_pub[:32], public_key_y=peer_pub[32:]).to_bytes(),
+        connection_handle=0x0040,
+    )
+    sent.clear()
+
+    # Patch f4 so peer-Confirm verification passes deterministically
+    monkeypatch.setattr(SMPCrypto, "f4", staticmethod(lambda *a, **kw: b"\x44" * 16))
+    # Patch f5 to return a deterministic (MacKey, LTK) tuple
+    monkeypatch.setattr(SMPCrypto, "f5", staticmethod(lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16)))
+
+    # Peer sends its Confirm
+    await mgr.on_pdu(SMPPairingConfirm(confirm_value=b"\x44" * 16).to_bytes(),
+                     connection_handle=0x0040)
+    # Initiator now sends Na
+    assert sent[-1][0] == SMPCode.PAIRING_RANDOM
+    sent.clear()
+
+    # Peer sends its Random (Nb)
+    await mgr.on_pdu(SMPPairingRandom(random_value=b"\x55" * 16).to_bytes(),
+                     connection_handle=0x0040)
+
+    ctx = mgr.get_context(0x0040)
+    assert ctx.state_machine.state == SMPState.RANDOM_EXCHANGE
+    assert ctx.mac_key == b"\x11" * 16
+    assert ctx.ltk_sc == b"\x22" * 16
+
+
+async def test_sc_responder_completes_phase2_with_f5_ltk(monkeypatch):
+    """Responder: receives Initiator's Random Na, sends own Nb, derives f5 (MacKey, LTK)."""
+    import os
+    monkeypatch.setattr(os, "urandom", lambda n: b"\xBB" * n)
+    from pybluehost.ble._smp_sc_crypto import generate_p256_keypair
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import (
+        SMPCode, SMPCrypto, SMPManager, SMPPairingPublicKey, SMPPairingRandom,
+        SMPPairingRequest, SMPState,
+    )
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.types import IOCapability
+
+    sent: list[bytes] = []
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    mgr = SMPManager(
+        local_io_caps=IOCapability.NO_INPUT_NO_OUTPUT, bondable=True,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        local_address=BDAddress(b"\x0A\x0A\x0A\x0A\x0A\x0A"),
+    )
+    mgr.bind_channel(0x0040, send=send, peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"))
+
+    req = SMPPairingRequest(
+        io_capability=IOCapability.NO_INPUT_NO_OUTPUT, oob_data_flag=0,
+        auth_req=0x09, max_key_size=16, init_key_dist=0x07, resp_key_dist=0x07,
+    )
+    await mgr.on_pdu(req.to_bytes(), connection_handle=0x0040)
+    _, peer_pub = generate_p256_keypair()
+    monkeypatch.setattr(SMPCrypto, "f4", staticmethod(lambda *a, **kw: b"\x44" * 16))
+    monkeypatch.setattr(SMPCrypto, "f5", staticmethod(lambda *a, **kw: (b"\x33" * 16, b"\x77" * 16)))
+    await mgr.on_pdu(
+        SMPPairingPublicKey(public_key_x=peer_pub[:32], public_key_y=peer_pub[32:]).to_bytes(),
+        connection_handle=0x0040,
+    )
+    sent.clear()
+
+    # Initiator sends Na
+    await mgr.on_pdu(SMPPairingRandom(random_value=b"\x66" * 16).to_bytes(),
+                     connection_handle=0x0040)
+    # Responder sends own Nb
+    assert sent[-1][0] == SMPCode.PAIRING_RANDOM
+    ctx = mgr.get_context(0x0040)
+    assert ctx.state_machine.state == SMPState.RANDOM_EXCHANGE
+    assert ctx.mac_key == b"\x33" * 16
+    assert ctx.ltk_sc == b"\x77" * 16
