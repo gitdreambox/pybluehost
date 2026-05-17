@@ -101,18 +101,18 @@ GROUP D — Wrap
 
 ### Step 1.1: Add ConfigurationError
 
-- [ ] **Modify `pybluehost/core/errors.py`**: add after `ReplayModeError`:
+- [x] **Modify `pybluehost/core/errors.py`**: add after `ReplayModeError`:
 
 ```python
 class ConfigurationError(PyBlueHostError):
     """Raised when StackConfig / SecurityConfig has an internally inconsistent setting."""
 ```
 
-- [ ] **Modify `pybluehost/core/__init__.py`**: add `ConfigurationError` to imports and `__all__` (alphabetical, between `CommandTimeoutError` and `Direction`).
+- [x] **Modify `pybluehost/core/__init__.py`**: add `ConfigurationError` to imports and `__all__` (alphabetical, between `CommandTimeoutError` and `Direction`).
 
 ### Step 1.2: Write failing test
 
-- [ ] **Create `tests/unit/ble/test_security_config_sc_validation.py`:**
+- [x] **Create `tests/unit/ble/test_security_config_sc_validation.py`:**
 
 ```python
 """SecurityConfig.enable_secure_connections + _validate_sc_dependencies."""
@@ -152,7 +152,7 @@ def test_validation_blocks_ctkd_without_sc():
 
 ### Step 1.3: Run test to verify it fails
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_security_config_sc_validation.py -v --transport=virtual
@@ -162,7 +162,7 @@ Expected: AttributeError / ImportError (`enable_secure_connections`, `ctkd_enabl
 
 ### Step 1.4: Implement
 
-- [ ] **Modify `pybluehost/ble/security.py`** — extend `SecurityConfig` and add validator. Read the existing dataclass first to preserve other fields:
+- [x] **Modify `pybluehost/ble/security.py`** — extend `SecurityConfig` and add validator. Read the existing dataclass first to preserve other fields:
 
 ```python
 @dataclass
@@ -210,7 +210,7 @@ def _validate_sc_dependencies(cfg: "SecurityConfig") -> None:
 
 ### Step 1.5: Wire validation into Stack._build
 
-- [ ] **Modify `pybluehost/stack.py`** — in `Stack._build`, after `cfg = config or StackConfig()`, add:
+- [x] **Modify `pybluehost/stack.py`** — in `Stack._build`, after `cfg = config or StackConfig()`, add:
 
 ```python
         from pybluehost.ble.security import _validate_sc_dependencies
@@ -219,7 +219,7 @@ def _validate_sc_dependencies(cfg: "SecurityConfig") -> None:
 
 ### Step 1.6: Verify
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_security_config_sc_validation.py -v --transport=virtual
@@ -230,7 +230,7 @@ Expected: 5 new tests PASS; full suite only the 3 pre-existing failures.
 
 ### Step 1.7: Commit
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/core/errors.py pybluehost/core/__init__.py pybluehost/ble/security.py pybluehost/stack.py tests/unit/ble/test_security_config_sc_validation.py
@@ -254,7 +254,7 @@ Numeric Comparison) as those features land."
 
 ### Step 2.1: Audit existing constants/packets
 
-- [ ] **Run** the following to determine what's already in place:
+- [x] **Run** the following to determine what's already in place:
 
 ```bash
 grep -nE "HCI_(WRITE_SECURE|IO_CAPABILITY|USER_CONFIRMATION|LINK_KEY_REQUEST|LINK_KEY_NEG|LINK_KEY_NOTIFICATION|SIMPLE_PAIRING_COMPLETE)" pybluehost/hci/constants.py
@@ -292,7 +292,7 @@ class EventCode(IntEnum):
 
 ### Step 2.2: Write failing test
 
-- [ ] **Create `tests/unit/hci/test_sc_packets.py`:**
+- [x] **Create `tests/unit/hci/test_sc_packets.py`:**
 
 ```python
 """HCI Secure Connections command + event encode/decode."""
@@ -360,7 +360,7 @@ Note: BT spec sends BD_ADDR over the wire in little-endian (LSB first), and our 
 
 ### Step 2.3: Run test to verify it fails
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_sc_packets.py -v --transport=virtual
@@ -370,7 +370,7 @@ Expected: ImportError on missing classes.
 
 ### Step 2.4: Add missing constants
 
-- [ ] **Modify `pybluehost/hci/constants.py`**: in the existing opcode region (after other 0x040x/0x042x/0x0C7x constants — match position):
+- [x] **Modify `pybluehost/hci/constants.py`**: in the existing opcode region (after other 0x040x/0x042x/0x0C7x constants — match position):
 
 ```python
 HCI_LINK_KEY_REQUEST_REPLY                = 0x040B  # if missing
@@ -381,7 +381,7 @@ Add to `EventCode` IntEnum any missing entries from the list in Step 2.1.
 
 ### Step 2.5: Add command dataclasses
 
-- [ ] **Modify `pybluehost/hci/packets.py`** — add command dataclasses. Place each in the same region as other LE / link-control commands (match existing file structure):
+- [x] **Modify `pybluehost/hci/packets.py`** — add command dataclasses. Place each in the same region as other LE / link-control commands (match existing file structure):
 
 ```python
 @PacketRegistry.register_command(HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT)
@@ -420,7 +420,7 @@ Add `from pybluehost.core.address import BDAddress` to packets.py imports if not
 
 ### Step 2.6: Verify
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_sc_packets.py -v --transport=virtual
@@ -431,7 +431,7 @@ Expected: 4 new tests PASS; no regressions.
 
 ### Step 2.7: Commit
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/hci/constants.py pybluehost/hci/packets.py tests/unit/hci/test_sc_packets.py
@@ -455,7 +455,7 @@ Foundation for BR/EDR Secure Connections (Sub-Plan 2 Task 13)."
 
 ### Step 3.1: Write failing test
 
-- [ ] **Create `tests/unit/hci/test_sc_listener_apis.py`:**
+- [x] **Create `tests/unit/hci/test_sc_listener_apis.py`:**
 
 ```python
 """HCIController listener APIs for SC HCI events."""
@@ -523,7 +523,7 @@ async def test_on_link_key_notification_fires():
 
 ### Step 3.2: Run test to verify it fails
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_sc_listener_apis.py -v --transport=virtual
@@ -533,7 +533,7 @@ Expected: AttributeError on `on_io_capability_request` etc.
 
 ### Step 3.3: Add listener APIs
 
-- [ ] **Modify `pybluehost/hci/controller.py`** — in `HCIController.__init__`, add (alongside `_encryption_change_listeners` etc.):
+- [x] **Modify `pybluehost/hci/controller.py`** — in `HCIController.__init__`, add (alongside `_encryption_change_listeners` etc.):
 
 ```python
         self._io_capability_request_listeners: list = []
@@ -615,7 +615,7 @@ In the HCI event dispatcher (search for existing dispatch — likely in `_handle
 
 ### Step 3.4: Verify
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_sc_listener_apis.py -v --transport=virtual
@@ -627,7 +627,7 @@ Expected: 3 new tests PASS; no regressions.
 
 ### Step 3.5: Commit
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/hci/controller.py tests/unit/hci/test_sc_listener_apis.py
@@ -650,7 +650,7 @@ HCI event arrives. Foundation for SSPManager extension in Task 13."
 
 ### Step 4.1: Add SC opcode to capabilities registry
 
-- [ ] **Modify `pybluehost/hci/capabilities.py`** — add to `_OPCODE_BIT_POSITIONS` (alphabetical/logical place):
+- [x] **Modify `pybluehost/hci/capabilities.py`** — add to `_OPCODE_BIT_POSITIONS` (alphabetical/logical place):
 
 ```python
     HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT: (32, 3),
@@ -660,7 +660,7 @@ Plus the import of `HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT` from constants.
 
 ### Step 4.2: Make VirtualController advertise the new bit
 
-- [ ] **Modify `pybluehost/hci/virtual.py`** — `_handle_read_local_supported_commands` already builds the bitmap from `_OPCODE_BIT_POSITIONS.values()`, so adding the entry in Step 4.1 automatically makes the VC permissive bitmap include this command. No change needed unless the VC also needs a handler.
+- [x] **Modify `pybluehost/hci/virtual.py`** — `_handle_read_local_supported_commands` already builds the bitmap from `_OPCODE_BIT_POSITIONS.values()`, so adding the entry in Step 4.1 automatically makes the VC permissive bitmap include this command. No change needed unless the VC also needs a handler.
 
 Add a handler for the new command (returns success, no return params):
 
@@ -672,7 +672,7 @@ Place in the existing `_handlers` dict where other status-only commands are regi
 
 ### Step 4.3: Write failing test
 
-- [ ] **Create `tests/unit/hci/test_initialize_sc_gating.py`:**
+- [x] **Create `tests/unit/hci/test_initialize_sc_gating.py`:**
 
 ```python
 """HCIController.initialize() conditionally enables BR/EDR Secure Connections."""
@@ -728,7 +728,7 @@ async def test_initialize_issues_write_sc_when_config_on():
 
 ### Step 4.4: Modify `HCIController.__init__` to accept security_config
 
-- [ ] **Modify `pybluehost/hci/controller.py`** — `HCIController.__init__` signature:
+- [x] **Modify `pybluehost/hci/controller.py`** — `HCIController.__init__` signature:
 
 ```python
     def __init__(
@@ -753,7 +753,7 @@ if TYPE_CHECKING:
 
 ### Step 4.5: Add SC enablement step in `initialize()`
 
-- [ ] **Modify `pybluehost/hci/controller.py`** `initialize()` — after the `Write_Simple_Pairing_Mode` command in the optional batch (or wherever in the gated-optional loop), add:
+- [x] **Modify `pybluehost/hci/controller.py`** `initialize()` — after the `Write_Simple_Pairing_Mode` command in the optional batch (or wherever in the gated-optional loop), add:
 
 The cleanest approach: keep the existing 13 optional commands list, then after the loop add a special block for SC:
 
@@ -781,7 +781,7 @@ Add the necessary imports at the top of the method body:
 
 ### Step 4.6: Update Stack._build to pass security_config to HCIController
 
-- [ ] **Modify `pybluehost/stack.py`** — in `_build`:
+- [x] **Modify `pybluehost/stack.py`** — in `_build`:
 
 ```python
         hci = HCIController(
@@ -792,7 +792,7 @@ Add the necessary imports at the top of the method body:
 
 ### Step 4.7: Verify
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/hci/test_initialize_sc_gating.py -v --transport=virtual
@@ -804,7 +804,7 @@ Expected: 2 new tests PASS; no regressions.
 
 ### Step 4.8: Commit
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/hci/ pybluehost/stack.py tests/unit/hci/test_initialize_sc_gating.py
@@ -827,7 +827,7 @@ behavior is unchanged."
 
 ### Step 5.1: Write failing tests
 
-- [ ] **Create `tests/unit/ble/test_smp_sc_crypto.py`:**
+- [x] **Create `tests/unit/ble/test_smp_sc_crypto.py`:**
 
 ```python
 """ECDH P-256 keypair + DHKey + byte-order tests using Core 5.4 Vol 3 Part H App D test vectors."""
@@ -899,7 +899,7 @@ def test_dhkey_spec_test_vector():
 
 ### Step 5.2: Run test to verify it fails
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_sc_crypto.py -v --transport=virtual
@@ -909,7 +909,7 @@ Expected: `ImportError` on `pybluehost.ble._smp_sc_crypto`.
 
 ### Step 5.3: Implement `_smp_sc_crypto.py`
 
-- [ ] **Create `pybluehost/ble/_smp_sc_crypto.py`:**
+- [x] **Create `pybluehost/ble/_smp_sc_crypto.py`:**
 
 ```python
 """ECDH P-256 primitives for LE Secure Connections.
@@ -977,7 +977,7 @@ def compute_dhkey(local_private: bytes, peer_public: bytes) -> bytes:
 
 ### Step 5.4: Verify
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_sc_crypto.py -v --transport=virtual
@@ -992,7 +992,7 @@ If `test_dhkey_spec_test_vector` fails, the byte-order conversion is off somewhe
 
 ### Step 5.5: Commit
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/ble/_smp_sc_crypto.py tests/unit/ble/test_smp_sc_crypto.py
@@ -1014,7 +1014,7 @@ against Core 5.4 Vol 3 Part H Appendix D test vector."
 
 ### Step 6.1: Write failing test
 
-- [ ] **Create `tests/unit/ble/test_smp_sc_pdus.py`:**
+- [x] **Create `tests/unit/ble/test_smp_sc_pdus.py`:**
 
 ```python
 """SMP Secure Connections PDU encode/decode."""
@@ -1085,7 +1085,7 @@ def test_context_has_sc_fields():
 
 ### Step 6.2: Run test to verify it fails
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_sc_pdus.py -v --transport=virtual
@@ -1095,7 +1095,7 @@ Expected: ImportError / AttributeError on new PDUs / states / events / fields.
 
 ### Step 6.3: Add SMPCode entries + PDU classes
 
-- [ ] **Modify `pybluehost/ble/smp.py`** `SMPCode` enum:
+- [x] **Modify `pybluehost/ble/smp.py`** `SMPCode` enum:
 
 ```python
 class SMPCode(IntEnum):
@@ -1156,7 +1156,7 @@ Update `decode_smp_pdu` to dispatch the new opcodes to these classes.
 
 ### Step 6.4: Extend SMPState / SMPEvent / SMPPairingContext
 
-- [ ] **Modify `pybluehost/ble/smp.py`**:
+- [x] **Modify `pybluehost/ble/smp.py`**:
 
 ```python
 class SMPState(IntEnum):
@@ -1197,7 +1197,7 @@ Update the SC-aware `_pdu_to_event` mapping in `SMPManager`:
 
 ### Step 6.5: Verify
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 uv run --frozen pytest tests/unit/ble/test_smp_sc_pdus.py tests/unit/ble/test_smp_state_machine.py -v --transport=virtual
@@ -1207,7 +1207,7 @@ Expected: 5 new tests PASS; existing state-machine tests still PASS.
 
 ### Step 6.6: Commit
 
-- [ ] **Run:**
+- [x] **Run:**
 
 ```bash
 git add pybluehost/ble/smp.py tests/unit/ble/test_smp_sc_pdus.py
@@ -1233,11 +1233,11 @@ These five tasks implement the SC pairing flow inside `_smp_state.py`. The state
 Update `register_transitions(ctx)` to inspect `ctx.security_config.enable_secure_connections` and the peer's `auth_req` SC bit (0x08). If both set → register SC transitions; else → register Legacy transitions (existing behavior).
 
 Steps:
-- [ ] Add `security_config` field to `SMPPairingContext.create()`; default `None`
-- [ ] `SMPManager.start_initiator` and the Responder-create path pass `self._security_config` (new field on SMPManager from Task 1)
-- [ ] In `_initiator_send_pairing_request`: when `ctx.security_config and ctx.security_config.enable_secure_connections`, set `auth_req |= 0x08` (SC bit)
-- [ ] In `_initiator_recv_pairing_response`: observe `pdu.auth_req & 0x08`. If both local AND peer SC bits set, branch to `_sc_initiator_send_public_key` instead of `_initiator_recv_pairing_response`'s legacy Confirm path
-- [ ] Same fork in `_responder_recv_pairing_request`
+- [x] Add `security_config` field to `SMPPairingContext.create()`; default `None`
+- [x] `SMPManager.start_initiator` and the Responder-create path pass `self._security_config` (new field on SMPManager from Task 1)
+- [x] In `_initiator_send_pairing_request`: when `ctx.security_config and ctx.security_config.enable_secure_connections`, set `auth_req |= 0x08` (SC bit)
+- [x] In `_initiator_recv_pairing_response`: observe `pdu.auth_req & 0x08`. If both local AND peer SC bits set, branch to `_sc_initiator_send_public_key` instead of `_initiator_recv_pairing_response`'s legacy Confirm path
+- [x] Same fork in `_responder_recv_pairing_request`
 
 Test: `tests/unit/ble/test_smp_sc_legacy_fallback.py` — when config off, SC bit never set; when peer offers SC but config off, ignore peer's SC bit and continue Legacy.
 
@@ -1250,10 +1250,10 @@ Add transitions:
 - `PUBLIC_KEY_EXCHANGE → PUBLIC_KEY_EXCHANGE` on `PAIRING_PUBLIC_KEY_RX` (peer's key received → compute DHKey → wait for Responder Confirm)
 
 Steps:
-- [ ] `_sc_send_public_key(ctx)`: generate keypair, store local_private/public, send `SMPPairingPublicKey`
-- [ ] `_sc_recv_public_key(ctx, pdu)`: store peer_public_key, compute DHKey via `compute_dhkey(local_private, peer_public)`
-- [ ] On Responder side: after sending its own public key in response to Initiator's, also generate Nb, compute Cb = `f4(PKbx, PKax, Nb, 0)`, send `SMPPairingConfirm(Cb)` → state advances to `CONFIRMING`
-- [ ] Initiator: after receiving peer's public key, wait in `PUBLIC_KEY_EXCHANGE` for `PAIRING_CONFIRM_RX` (Responder's Cb)
+- [x] `_sc_send_public_key(ctx)`: generate keypair, store local_private/public, send `SMPPairingPublicKey`
+- [x] `_sc_recv_public_key(ctx, pdu)`: store peer_public_key, compute DHKey via `compute_dhkey(local_private, peer_public)`
+- [x] On Responder side: after sending its own public key in response to Initiator's, also generate Nb, compute Cb = `f4(PKbx, PKax, Nb, 0)`, send `SMPPairingConfirm(Cb)` → state advances to `CONFIRMING`
+- [x] Initiator: after receiving peer's public key, wait in `PUBLIC_KEY_EXCHANGE` for `PAIRING_CONFIRM_RX` (Responder's Cb)
 
 Test: `tests/unit/ble/test_smp_le_sc_state_machine.py` — drive both sides through public key exchange + assert DHKey computed + Cb sent (Responder) / Confirm awaited (Initiator).
 
@@ -1266,8 +1266,8 @@ Add transitions:
 - `CONFIRMING → RANDOM_EXCHANGE` on `PAIRING_RANDOM_RX` (Na for Responder, Nb for Initiator): generate own Random, send, verify peer Cb (Initiator only — Responder didn't receive a Cb), derive (MacKey, LTK) = f5(DHKey, Na, Nb, A, B)
 
 Actions:
-- [ ] `_sc_initiator_recv_responder_confirm(ctx, pdu)`: store Cb, send Na (already generated locally or generate now)
-- [ ] `_sc_recv_random(ctx, pdu)`: store peer_random, if Initiator verify Cb == f4(PKbx, PKax, Nb, 0). On mismatch fail with reason=0x04 (DHKEY_CHECK_FAILED is for Phase 2.3; Confirm Value Failed = 0x04 fits here). On success derive MacKey + LTK_sc via SMPCrypto.f5.
+- [x] `_sc_initiator_recv_responder_confirm(ctx, pdu)`: store Cb, send Na (already generated locally or generate now)
+- [x] `_sc_recv_random(ctx, pdu)`: store peer_random, if Initiator verify Cb == f4(PKbx, PKax, Nb, 0). On mismatch fail with reason=0x04 (DHKEY_CHECK_FAILED is for Phase 2.3; Confirm Value Failed = 0x04 fits here). On success derive MacKey + LTK_sc via SMPCrypto.f5.
 
 Test: drive both sides through full Phase 2.2; assert LTK derived; assert correct failure on tampered Cb.
 
@@ -1291,10 +1291,10 @@ Commit: `feat(ble/smp): SC Phase 2.3 DHKey check + LTK encryption start`
 ### Task 11: SC Phase 3 — skip LTK distribution + BondInfo(sc=True)
 
 In SC mode, `_start_phase3` should:
-- [ ] NOT distribute LTK (both sides already have the f5-derived LTK)
-- [ ] Still distribute IRK + IdentityAddress per masks (if mask & 0x02)
-- [ ] Still distribute CSRK per masks (if mask & 0x04)
-- [ ] `_persist_bond` sets `BondInfo.sc=True`, `BondInfo.ltk=ctx.ltk_sc` (the f5-derived LTK), `BondInfo.authenticated=False` (Just Works)
+- [x] NOT distribute LTK (both sides already have the f5-derived LTK)
+- [x] Still distribute IRK + IdentityAddress per masks (if mask & 0x02)
+- [x] Still distribute CSRK per masks (if mask & 0x04)
+- [x] `_persist_bond` sets `BondInfo.sc=True`, `BondInfo.ltk=ctx.ltk_sc` (the f5-derived LTK), `BondInfo.authenticated=False` (Just Works)
 
 Add a branch in `_start_phase3` based on `ctx.role == PairingRole.INITIATOR` (existing) + `ctx.security_config.enable_secure_connections AND (ctx.local_auth_req & 0x08) AND (ctx.peer_auth_req & 0x08)`:
 
@@ -1380,21 +1380,21 @@ Commit: `test(integration): LE SC Just Works loopback E2E`
 ### Task 13: SSPManager handles Simple_Pairing_Complete + Link_Key_Notification
 
 Extend `pybluehost/classic/gap.py:SSPManager`:
-- [ ] Add `_io_capability_request_listeners` not needed — register directly via `HCIController.on_io_capability_request(self._on_io_cap_req)` in `__init__`
-- [ ] Existing `on_hci_event` handles IO_Capability_Request, Link_Key_Request, User_Confirmation_Request via if/elif. **NEW**: also handle `LINK_KEY_NOTIFICATION` and `SIMPLE_PAIRING_COMPLETE`
-- [ ] When `enable_secure_connections=True`, set `authentication_requirements=0x04` (MITM Not Required + General Bonding + SC bit) in IO Capability reply
-- [ ] On `SIMPLE_PAIRING_COMPLETE` with status=0 → emit a stack-level event "classic pairing complete"
-- [ ] On `LINK_KEY_NOTIFICATION` → derive sc flag from key_type:
+- [x] Add `_io_capability_request_listeners` not needed — register directly via `HCIController.on_io_capability_request(self._on_io_cap_req)` in `__init__`
+- [x] Existing `on_hci_event` handles IO_Capability_Request, Link_Key_Request, User_Confirmation_Request via if/elif. **NEW**: also handle `LINK_KEY_NOTIFICATION` and `SIMPLE_PAIRING_COMPLETE`
+- [x] When `enable_secure_connections=True`, set `authentication_requirements=0x04` (MITM Not Required + General Bonding + SC bit) in IO Capability reply
+- [x] On `SIMPLE_PAIRING_COMPLETE` with status=0 → emit a stack-level event "classic pairing complete"
+- [x] On `LINK_KEY_NOTIFICATION` → derive sc flag from key_type:
   - key_type 0x05 = Unauthenticated Combination Key from P-256 (SC, unauthenticated) → `sc=True, authenticated=False`
   - key_type 0x06 = Authenticated Combination Key from P-256 (SC, authenticated) → `sc=True, authenticated=True`
   - key_type 0x07 = General Bonding (newer naming; spec-version dependent) → `sc=True, authenticated=False`
   - key_type 0x08 = Authenticated Linked Key from P-256 → `sc=True, authenticated=True`
   - any 0x00-0x04 = Legacy SSP → `sc=False`
-- [ ] Persist `BondInfo(peer_address, link_key, link_key_type, sc, authenticated)` to BondStorage
+- [x] Persist `BondInfo(peer_address, link_key, link_key_type, sc, authenticated)` to BondStorage
 
 ### Task 14: SSPManager Link_Key_Request reply lookup
 
-- [ ] On `LINK_KEY_REQUEST`, look up bond by peer address. If `bond.link_key` exists → `HCI_Link_Key_Request_Reply(addr, link_key)`. Else → existing negative reply.
+- [x] On `LINK_KEY_REQUEST`, look up bond by peer address. If `bond.link_key` exists → `HCI_Link_Key_Request_Reply(addr, link_key)`. Else → existing negative reply.
 
 Tests for Tasks 13-14: `tests/unit/classic/test_ssp_secure_connections.py` — inject the 5 SSP events synthesized as `HCIEvent`s, drive `SSPManager.on_hci_event()`, assert correct HCI command replies, assert `BondInfo` persistence with correct `sc` and `link_key_type` fields.
 
@@ -1411,9 +1411,9 @@ Commits:
 
 Inject a full SSP event sequence (IO_Capability_Request → IO_Capability_Response → User_Confirmation_Request → Simple_Pairing_Complete → Link_Key_Notification) into a Stack with `enable_secure_connections=True`. Use `VirtualController.simulate_ssp_pairing(bd_addr, key_type)` test hook added in this task (extends `simulate_le_ltk_request`-style mechanism for Classic SSP).
 
-- [ ] Add `VirtualController.simulate_ssp_pairing(bd_addr, key_type=0x07)` method that emits the 5 events with proper timing
-- [ ] Assert SSPManager replies arrive in correct order with correct parameters
-- [ ] Assert BondInfo persisted with `sc=True`, `link_key_type=0x07`
+- [x] Add `VirtualController.simulate_ssp_pairing(bd_addr, key_type=0x07)` method that emits the 5 events with proper timing
+- [x] Assert SSPManager replies arrive in correct order with correct parameters
+- [x] Assert BondInfo persisted with `sc=True`, `link_key_type=0x07`
 
 Commit: `test(integration): BR/EDR SC HCI-event-driven integration`
 
@@ -1454,16 +1454,16 @@ git commit -m "docs(progress): Secure Connections (LE SC + BR/EDR SC) Plan compl
 
 ## 验收清单
 
-- [ ] `SecurityConfig.enable_secure_connections` defaults False; opt-in via config
-- [ ] `_validate_sc_dependencies` raises `ConfigurationError` when CTKD enabled without SC
-- [ ] LE SC Just Works pairing succeeds via loopback E2E with two `Stack.virtual()` instances
-- [ ] LE SC bond persisted with `sc=True`, `authenticated=False`; both sides have identical f5-derived LTK
-- [ ] When `enable_secure_connections=False`, SC bit never set in `auth_req` — Legacy path used
-- [ ] BR/EDR SC HCI commands + events round-trip
-- [ ] `HCIController.initialize()` issues `Write_Secure_Connections_Host_Support` when config-on AND controller supports it; warns and skips otherwise
-- [ ] `SSPManager` handles full SSP event sequence; persists `BondInfo` with `link_key_type ∈ {0x05, 0x06, 0x07, 0x08}` and `sc=True` for P-256 keys
-- [ ] `SSPManager` `Link_Key_Request` lookup works for SC reconnect
-- [ ] Full suite: only 3 pre-existing USB diagnostics failures; coverage ≥ 85%
+- [x] `SecurityConfig.enable_secure_connections` defaults False; opt-in via config
+- [x] `_validate_sc_dependencies` raises `ConfigurationError` when CTKD enabled without SC
+- [x] LE SC Just Works pairing succeeds via loopback E2E with two `Stack.virtual()` instances
+- [x] LE SC bond persisted with `sc=True`, `authenticated=False`; both sides have identical f5-derived LTK
+- [x] When `enable_secure_connections=False`, SC bit never set in `auth_req` — Legacy path used
+- [x] BR/EDR SC HCI commands + events round-trip
+- [x] `HCIController.initialize()` issues `Write_Secure_Connections_Host_Support` when config-on AND controller supports it; warns and skips otherwise
+- [x] `SSPManager` handles full SSP event sequence; persists `BondInfo` with `link_key_type ∈ {0x05, 0x06, 0x07, 0x08}` and `sc=True` for P-256 keys
+- [x] `SSPManager` `Link_Key_Request` lookup works for SC reconnect
+- [x] Full suite: only 3 pre-existing USB diagnostics failures; coverage ≥ 85%
 
 ## Known risks / Troubleshooting
 
