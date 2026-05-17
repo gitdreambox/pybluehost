@@ -135,6 +135,8 @@ class Stack:
         from pybluehost.l2cap.manager import L2CAPManager
 
         cfg = config or StackConfig()
+        from pybluehost.ble.security import _validate_sc_dependencies
+        _validate_sc_dependencies(cfg.security)
         stack = cls()
         stack._transport = transport
         stack._mode = mode

@@ -61,6 +61,10 @@ class ReplayModeError(PyBlueHostError):
     """Raised when a write/transmit operation is attempted on a REPLAY-mode Stack."""
 
 
+class ConfigurationError(PyBlueHostError):
+    """Raised when StackConfig / SecurityConfig has an internally inconsistent setting."""
+
+
 class CommandTimeoutError(HCIError):
     """Raised when an HCI command does not receive a response within the timeout."""
 
