@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：SMP Sub-Plan 2 (LE Secure Connections) — 🔄 Task 10 完成，Task 11 待做
-**下一步**：Task 11（SC Phase 3 skip LTK distribution + BondInfo.sc=True）→ Task 12（E2E loopback）
+**当前进行中**：Secure Connections (LE SC + BR/EDR SC) — ✅ 完成
+**下一步**：SMP Sub-Plan 3 (Numeric Comparison / Passkey / OOB) / 断线重连闭环 / e2e 覆盖
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -47,9 +47,9 @@
 | SMP Sub-Plan 1 (Legacy JW) | Legacy Just Works 配对完整路径 + 绑定 + 重连自动加密 | ✅ 完成 | [2026-05-13-smp-pairing-legacy-jw](plans/2026-05-13-smp-pairing-legacy-jw.md) | `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/hci/virtual_link.py`, `pybluehost/stack.py`, `pybluehost/ble/gatt.py` |
 | SMP Sub-Plan 1 收尾 | TIMEOUT/DISCONNECTED/PAIRING_FAILED_RX 单测 + Stack.encrypt 等事件 + BondInfo.rand 兼容 + register_peer_address + Plan checkbox | ✅ 完成 | [2026-05-16-smp-sub-plan-1-followups](plans/2026-05-16-smp-sub-plan-1-followups.md) | `pybluehost/ble/smp.py`, `pybluehost/stack.py` |
 | HCI 容错初始化 | initialize() 按 Supported_Commands bitmap 跳过不支持的命令；Read_BD_ADDR 硬要求 | ✅ 完成 | [2026-05-16-hci-tolerant-initialization](plans/2026-05-16-hci-tolerant-initialization.md) | `pybluehost/hci/capabilities.py`, `pybluehost/hci/controller.py`, `pybluehost/hci/virtual.py` |
-| SMP Sub-Plan 2 (LE Secure Connections) | P-256 DH密钥交换 + SC Just Works 配对完整路径 + f4/f5/f6 加密原语 | 🔄 进行中（Task 10 完成，Task 11 待做） | [2026-05-17-secure-connections](plans/2026-05-17-secure-connections.md) | `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/ble/_smp_sc_crypto.py`, `pybluehost/stack.py` |
+| Secure Connections | LE SC (ECDH P-256 + f4/f5/f6) + BR/EDR SC (HCI SSP events) Just Works；opt-in via SecurityConfig.enable_secure_connections | ✅ 完成 | [2026-05-17-secure-connections](plans/2026-05-17-secure-connections.md) | `pybluehost/ble/_smp_sc_crypto.py`, `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/ble/security.py`, `pybluehost/hci/{packets,controller,virtual,capabilities}.py`, `pybluehost/classic/gap.py`, `pybluehost/stack.py` |
 
-**总计：24 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + SMP Sub-Plan 2）**
+**总计：24 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections）**
 
 ---
 
@@ -288,6 +288,32 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
   - 新 init command 顺序：Reset → Read_Local_Supported_Commands → Read_BD_ADDR → 13 optional 命令（按 bitmap 跳过）
 - 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
 - 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS；6 个 new capability tests + 3 new tolerant-init tests；1137 passed, 20 skipped，coverage 87%
+
+### ✅ Secure Connections (LE SC + BR/EDR SC)
+- 完成时间：2026-05-17
+- Plan 文档：[2026-05-17-secure-connections.md](plans/2026-05-17-secure-connections.md)
+- 设计基线：[2026-05-17-secure-connections-design.md](../specs/2026-05-17-secure-connections-design.md)
+- 关键变化：
+  - `SecurityConfig.enable_secure_connections: bool = False` (opt-in) + `_validate_sc_dependencies` blocks CTKD-without-SC + `ConfigurationError`
+  - 新 `pybluehost/ble/_smp_sc_crypto.py`: ECDH P-256 keygen + DHKey computation with little-endian wire format
+  - 新 SMP PDUs: `SMPPairingPublicKey` (0x0C), `SMPPairingDHKeyCheck` (0x0D)
+  - `SMPState` 加 `PUBLIC_KEY_EXCHANGE`, `DHKEY_CHECK`; `SMPEvent` 加对应 RX events
+  - `SMPPairingContext` 加 8 个 SC fields (local/peer keys, DHKey, MacKey, LTK_sc, dhkey_checks)
+  - `_smp_state.register_transitions` 按 `_sc_negotiated(ctx)` 在 action-time 分流 Legacy / SC 路径
+  - SC Phase 2 flow: Public Key exchange → DHKey via ECDH → Responder Cb = f4(...) → Initiator Na, Responder Nb → f5(DHKey, Na, Nb, A, B) → (MacKey, LTK_sc) → f6 DHKey Check Ea/Eb → 验证通过 Initiator 用 ltk_sc 启动加密（跳过 STK 中间态）
+  - SC Phase 3 skips LTK distribution (both sides have f5-derived LTK); IRK + IdentityAddress + CSRK 仍按 mask 分发
+  - `BondInfo(sc=True, authenticated=False, ltk=ctx.ltk_sc)` 持久化
+  - Stack `_on_le_ltk_request` 兼容 LTK_sc 和 Legacy STK
+  - 新 HCI commands: `HCI_Write_Secure_Connections_Host_Support` (0x0C7A), `HCI_Link_Key_Request_Reply` (0x040B)
+  - `HCIController` 加 5 个 SC event listener API: `on_io_capability_request`, `on_user_confirmation_request`, `on_simple_pairing_complete`, `on_link_key_notification`, `on_link_key_request`
+  - `HCIController.initialize()` 当 SC config-on 且 controller 支持时发 `Write_SC_Host_Support(enabled=1)`
+  - `SSPManager` 扩展: 处理 `Link_Key_Notification` (持久化 BondInfo with sc=key_type∈{0x05-0x08})、`Simple_Pairing_Complete` (stub)、`Link_Key_Request` (查找已存 bond reply)
+  - `VirtualController.simulate_ssp_pairing(bd_addr, key_type)` test hook
+  - 22 个新单测 + 5 个新集成测试
+- 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
+- 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS；LE SC loopback E2E + BR/EDR SC HCI integration tests 全绿
+- 不在范围：Numeric Comparison / Passkey Entry / OOB → Sub-Plan 3
+- 不在范围：两-controller Classic loopback bridge → 独立 Plan
 
 ---
 
