@@ -34,6 +34,7 @@ from pybluehost.hci.constants import (
     HCI_SET_EVENT_MASK,
     HCI_WRITE_LE_HOST_SUPPORTED,
     HCI_WRITE_SCAN_ENABLE,
+    HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT,
     HCI_WRITE_SIMPLE_PAIRING_MODE,
     LEMetaSubEvent,
 )
@@ -83,6 +84,7 @@ class VirtualController:
             HCI_LE_SET_EVENT_MASK: self._handle_status_only,
             HCI_WRITE_LE_HOST_SUPPORTED: self._handle_status_only,
             HCI_WRITE_SIMPLE_PAIRING_MODE: self._handle_status_only,
+            HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT: self._handle_status_only,
             HCI_WRITE_SCAN_ENABLE: self._handle_status_only,
             HCI_HOST_BUFFER_SIZE: self._handle_status_only,
             HCI_LE_SET_SCAN_PARAMS: self._handle_status_only,

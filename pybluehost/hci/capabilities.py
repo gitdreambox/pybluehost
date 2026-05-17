@@ -26,6 +26,7 @@ from pybluehost.hci.constants import (
     HCI_SET_EVENT_MASK,
     HCI_WRITE_LE_HOST_SUPPORTED,
     HCI_WRITE_SCAN_ENABLE,
+    HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT,
     HCI_WRITE_SIMPLE_PAIRING_MODE,
 )
 
@@ -45,6 +46,7 @@ _OPCODE_BIT_POSITIONS: dict[int, tuple[int, int]] = {
     HCI_READ_BD_ADDR:                       (15, 1),
     HCI_WRITE_SIMPLE_PAIRING_MODE:          (17, 6),
     HCI_WRITE_LE_HOST_SUPPORTED:            (24, 6),
+    HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT: (32, 3),
     HCI_LE_SET_EVENT_MASK:                  (25, 0),
     HCI_LE_SET_RANDOM_ADDRESS:              (25, 4),
     HCI_LE_READ_BUFFER_SIZE:                (25, 7),

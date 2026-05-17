@@ -12,7 +12,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import logging
 import time
-from typing import Callable, Awaitable
+from typing import TYPE_CHECKING, Callable, Awaitable
+
+if TYPE_CHECKING:
+    from pybluehost.ble.security import SecurityConfig
 
 # Controller-wide logger used by initialize() to debug-log skipped commands.
 logger = logging.getLogger(__name__)
@@ -97,10 +100,13 @@ class HCIController:
         transport: object,  # Transport (duck-typed to avoid circular import)
         trace: TraceSystem | None = None,
         command_timeout: float = 5.0,
+        *,
+        security_config: "SecurityConfig | None" = None,
     ) -> None:
         self._transport = transport
         self._trace = trace
         self._command_timeout = command_timeout
+        self._security_config = security_config
 
         self._cmd_flow = CommandFlowController(initial_credits=1)
         self._acl_flow = ACLFlowController()
@@ -352,6 +358,20 @@ class HCIController:
                 )
                 continue
             await self.send_command(cmd)
+
+        # BR/EDR Secure Connections — gated on config AND controller support
+        if self._security_config is not None and self._security_config.enable_secure_connections:
+            from pybluehost.hci.constants import HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT
+            from pybluehost.hci.packets import HCI_Write_Secure_Connections_Host_Support_Command
+            if self._supported_commands.has(HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT):
+                await self.send_command(HCI_Write_Secure_Connections_Host_Support_Command(
+                    secure_connections_host_support=0x01,
+                ))
+            else:
+                logger.warning(
+                    "controller does not support BR/EDR Secure Connections "
+                    "(Write_Secure_Connections_Host_Support unsupported); falling back to Legacy SSP"
+                )
 
     # ------------------------------------------------------------------
     # ACL data sending

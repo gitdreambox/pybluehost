@@ -156,6 +156,7 @@ class Stack:
             transport=transport,
             trace=trace,
             command_timeout=cfg.command_timeout,
+            security_config=cfg.security,
         )
         stack._hci = hci
 
