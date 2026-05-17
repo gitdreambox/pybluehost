@@ -48,6 +48,7 @@ HCI_REMOTE_NAME_REQUEST = make_opcode(OGF.LINK_CONTROL, 0x19)
 HCI_IO_CAPABILITY_REQUEST_REPLY = make_opcode(OGF.LINK_CONTROL, 0x2B)
 HCI_USER_CONFIRMATION_REQUEST_REPLY = make_opcode(OGF.LINK_CONTROL, 0x2C)
 HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY = make_opcode(OGF.LINK_CONTROL, 0x2D)
+HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY = make_opcode(OGF.LINK_CONTROL, 0x34)
 
 # ---------------------------------------------------------------------------
 # Controller & Baseband (OGF=0x03)

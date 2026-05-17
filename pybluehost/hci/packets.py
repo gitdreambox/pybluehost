@@ -10,6 +10,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from pybluehost.core.address import BDAddress
 from pybluehost.hci.constants import (
     HCI_ACL_PACKET,
     HCI_COMMAND_PACKET,
@@ -36,6 +37,8 @@ from pybluehost.hci.constants import (
     HCI_LE_START_ENCRYPTION,
     HCI_LE_LONG_TERM_KEY_REQUEST_REPLY,
     HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY,
+    HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT,
+    HCI_LINK_KEY_REQUEST_REPLY,
     EventCode,
 )
 
@@ -595,6 +598,36 @@ class HCI_LE_LTK_Request_Negative_Reply_Command(HCICommand):
 
     def __post_init__(self) -> None:
         self.parameters = struct.pack("<H", self.connection_handle)
+
+
+@PacketRegistry.register_command(HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT)
+@dataclass
+class HCI_Write_Secure_Connections_Host_Support_Command(HCICommand):
+    """HCI_Write_Secure_Connections_Host_Support (Core 5.4 Vol 4 Part E §7.3.92)."""
+
+    secure_connections_host_support: int = 0
+    opcode: int = field(default=HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT)
+
+    def __post_init__(self) -> None:
+        self.parameters = bytes([self.secure_connections_host_support])
+
+
+@PacketRegistry.register_command(HCI_LINK_KEY_REQUEST_REPLY)
+@dataclass
+class HCI_Link_Key_Request_Reply_Command(HCICommand):
+    """HCI_Link_Key_Request_Reply (Core 5.4 Vol 4 Part E §7.1.10)."""
+
+    bd_addr: "BDAddress | None" = None
+    link_key: bytes = field(default_factory=lambda: bytes(16))
+    opcode: int = field(default=HCI_LINK_KEY_REQUEST_REPLY)
+
+    def __post_init__(self) -> None:
+        if self.bd_addr is None:
+            raise ValueError("bd_addr is required")
+        if len(self.link_key) != 16:
+            raise ValueError("link_key must be 16 bytes")
+        # BT wire is little-endian; BDAddress.address is big-endian
+        self.parameters = bytes(self.bd_addr.address[::-1]) + self.link_key
 
 
 # ---------------------------------------------------------------------------
