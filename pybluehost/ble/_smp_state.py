@@ -4,10 +4,12 @@ Phase 1 — Feature Exchange:
     Initiator path:
         IDLE  --(LOCAL_PAIR_REQUEST)--> FEATURE_EXCHANGE  [send PairingRequest]
         FEATURE_EXCHANGE --(PAIRING_RSP_RX)--> CONFIRMING [compute+send local Confirm]
+            (SC path: action overrides state to PUBLIC_KEY_EXCHANGE and sends Public Key)
     Responder path:
         IDLE  --(PAIRING_REQ_RX)--> CONFIRMING            [send PairingResponse; wait for Confirm]
+            (SC path: action overrides state to PUBLIC_KEY_EXCHANGE and waits for peer Public Key)
 
-Phase 2 — Confirm/Random/STK:
+Phase 2 Legacy — Confirm/Random/STK:
     Initiator path:
         CONFIRMING --(PAIRING_CONFIRM_RX)--> CONFIRMING   [store peer Confirm, send local Random]
         CONFIRMING --(PAIRING_RANDOM_RX)--> STK_ENCRYPTING
@@ -16,6 +18,14 @@ Phase 2 — Confirm/Random/STK:
         CONFIRMING --(PAIRING_CONFIRM_RX)--> CONFIRMING   [gen Srand, compute+send own Confirm]
         CONFIRMING --(PAIRING_RANDOM_RX)--> RANDOM_EXCHANGE
             [verify peer Confirm, send own Random, derive STK]
+
+Phase 2 SC — Public Key Exchange (Task 8):
+    Initiator path:
+        PUBLIC_KEY_EXCHANGE --(PAIRING_PUBLIC_KEY_RX)--> PUBLIC_KEY_EXCHANGE
+            [compute DHKey, wait for peer Confirm]
+    Responder path:
+        PUBLIC_KEY_EXCHANGE --(PAIRING_PUBLIC_KEY_RX)--> CONFIRMING
+            [gen keypair, send Public Key + Cb, advance to CONFIRMING]
 
 Phase 3 transitions land in Task 7. Universal failure transitions
 (PAIRING_FAILED_RX / TIMEOUT / DISCONNECTED → FAILED) are registered for all
@@ -67,6 +77,22 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
             SMPState.IDLE, SMPEvent.PAIRING_REQ_RX,
             SMPState.CONFIRMING,
             action=lambda **kw: _responder_recv_pairing_request(ctx, **kw),
+        )
+
+    # ---- SC Phase 2.1 — Public Key Exchange ----
+    # These transitions fire only when the action in Phase 1 has already
+    # overridden ctx.state_machine._state to PUBLIC_KEY_EXCHANGE.
+    if ctx.role == PairingRole.INITIATOR:
+        sm.add_transition(
+            SMPState.PUBLIC_KEY_EXCHANGE, SMPEvent.PAIRING_PUBLIC_KEY_RX,
+            SMPState.PUBLIC_KEY_EXCHANGE,  # stay; wait for peer Confirm next
+            action=lambda **kw: _sc_initiator_recv_peer_public_key(ctx, **kw),
+        )
+    else:
+        sm.add_transition(
+            SMPState.PUBLIC_KEY_EXCHANGE, SMPEvent.PAIRING_PUBLIC_KEY_RX,
+            SMPState.CONFIRMING,  # advance; will await Initiator's Random in CONFIRMING
+            action=lambda **kw: _sc_responder_recv_peer_public_key(ctx, **kw),
         )
 
     # ---- Phase 2 — Confirm/Random ----
@@ -161,6 +187,7 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
     for state in (
         SMPState.IDLE, SMPState.FEATURE_EXCHANGE, SMPState.CONFIRMING,
         SMPState.RANDOM_EXCHANGE, SMPState.STK_ENCRYPTING, SMPState.KEY_DISTRIBUTION,
+        SMPState.PUBLIC_KEY_EXCHANGE,
     ):
         sm.add_transition(
             state, SMPEvent.PAIRING_FAILED_RX, SMPState.FAILED,
@@ -176,7 +203,7 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
         )
 
     # 30-second cumulative timeout (Core 5.4 Vol 3 Part H §3.4)
-    for state in (SMPState.FEATURE_EXCHANGE, SMPState.CONFIRMING):
+    for state in (SMPState.FEATURE_EXCHANGE, SMPState.CONFIRMING, SMPState.PUBLIC_KEY_EXCHANGE):
         sm.set_timeout(state, 30.0, SMPEvent.TIMEOUT)
 
 
@@ -211,7 +238,23 @@ async def _initiator_recv_pairing_response(ctx: "SMPPairingContext", *, pdu: SMP
     ctx.peer_max_key_size = pdu.max_key_size
     ctx.peer_init_key_dist = pdu.init_key_dist
     ctx.peer_resp_key_dist = pdu.resp_key_dist
-    # Just Works → tk = 0
+
+    if _sc_negotiated(ctx):
+        # SC path: generate our P-256 keypair, send Pairing_Public_Key.
+        # The state machine already set state to CONFIRMING per the registered
+        # transition; override it to PUBLIC_KEY_EXCHANGE for SC mode.
+        from pybluehost.ble._smp_sc_crypto import generate_p256_keypair
+        from pybluehost.ble.smp import SMPPairingPublicKey
+        priv, pub = generate_p256_keypair()
+        ctx.local_private_key = priv
+        ctx.local_public_key = pub
+        ctx.state_machine._state = SMPState.PUBLIC_KEY_EXCHANGE
+        await ctx.send(SMPPairingPublicKey(
+            public_key_x=pub[:32], public_key_y=pub[32:],
+        ).to_bytes())
+        return
+
+    # Legacy path: Just Works → tk = 0
     ctx.tk = b"\x00" * 16
     # Generate local random
     ctx.local_random = os.urandom(16)
@@ -253,6 +296,11 @@ async def _responder_recv_pairing_request(ctx: "SMPPairingContext", *, pdu: SMPP
     ctx.local_resp_key_dist = rsp.resp_key_dist
     ctx.tk = b"\x00" * 16
     await ctx.send(raw)
+
+    if _sc_negotiated(ctx):
+        # SC path: override state to PUBLIC_KEY_EXCHANGE to await Initiator's Public Key.
+        # The state machine already set state to CONFIRMING per the registered transition.
+        ctx.state_machine._state = SMPState.PUBLIC_KEY_EXCHANGE
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +364,58 @@ async def _responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -
     # Derive STK locally too (Responder computes the same STK once it has both randoms).
     # s1(TK, Srand, Mrand) — Responder's local_random = Srand; peer_random = Mrand.
     ctx.stk = SMPCrypto.s1(ctx.tk, ctx.local_random, ctx.peer_random)
+
+
+async def _sc_initiator_recv_peer_public_key(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Initiator: peer's Public Key arrived → compute DHKey, stay in PUBLIC_KEY_EXCHANGE.
+
+    Initiator does NOT send a Confirm in SC Just Works; it waits for the
+    Responder's Confirm (Task 9 will handle that transition).
+    """
+    from pybluehost.ble._smp_sc_crypto import compute_dhkey
+    ctx.peer_public_key = pdu.public_key_x + pdu.public_key_y
+    ctx.dhkey = compute_dhkey(ctx.local_private_key, ctx.peer_public_key)
+
+
+async def _sc_responder_recv_peer_public_key(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Responder: Initiator's Public Key arrived.
+
+    1. Store peer public key.
+    2. Generate own P-256 keypair, send Pairing_Public_Key.
+    3. Compute DHKey.
+    4. Generate Nb (random 16 bytes), compute Cb = f4(PKbx, PKax, Nb, 0).
+    5. Send Pairing_Confirm(Cb).
+    State advances to CONFIRMING (will await Initiator's Random Na in Task 9).
+    """
+    import os
+    from pybluehost.ble._smp_sc_crypto import compute_dhkey, generate_p256_keypair
+    from pybluehost.ble.smp import SMPPairingConfirm, SMPPairingPublicKey
+
+    ctx.peer_public_key = pdu.public_key_x + pdu.public_key_y
+
+    # Generate own keypair
+    priv, pub = generate_p256_keypair()
+    ctx.local_private_key = priv
+    ctx.local_public_key = pub
+
+    # Send own Public Key
+    await ctx.send(SMPPairingPublicKey(
+        public_key_x=pub[:32], public_key_y=pub[32:],
+    ).to_bytes())
+
+    # Compute DHKey
+    ctx.dhkey = compute_dhkey(priv, ctx.peer_public_key)
+
+    # Generate Nb and compute Cb = f4(PKbx, PKax, Nb, 0)
+    # PKbx = our public X (first 32 LE bytes); PKax = peer's public X
+    ctx.local_random = os.urandom(16)
+    pkbx = ctx.local_public_key[:32]
+    pkax = ctx.peer_public_key[:32]
+    # f4(U, V, X, Z): U=PKbx, V=PKax, X=Nb(16 bytes), Z=0 (int)
+    ctx.local_confirm = SMPCrypto.f4(pkbx, pkax, ctx.local_random, 0)
+
+    # Send Confirm(Cb)
+    await ctx.send(SMPPairingConfirm(confirm_value=ctx.local_confirm).to_bytes())
 
 
 async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
