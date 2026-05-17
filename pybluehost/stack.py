@@ -470,14 +470,17 @@ class Stack:
             HCI_LE_LTK_Request_Negative_Reply_Command,
             HCI_LE_LTK_Request_Reply_Command,
         )
-        # Pairing-time STK request: rand=0, ediv=0
+        # Pairing-time LTK request: rand=0, ediv=0
+        # SC sessions use the f5-derived ltk_sc; Legacy sessions use STK.
         if ediv == 0 and rand == b"\x00" * 8 and self._smp is not None:
             ctx = self._smp.get_context(handle)
-            if ctx is not None and ctx.stk:
-                await self._hci.send_command(HCI_LE_LTK_Request_Reply_Command(
-                    connection_handle=handle, long_term_key=ctx.stk,
-                ))
-                return
+            if ctx is not None:
+                ltk = ctx.ltk_sc if ctx.ltk_sc else ctx.stk
+                if ltk:
+                    await self._hci.send_command(HCI_LE_LTK_Request_Reply_Command(
+                        connection_handle=handle, long_term_key=ltk,
+                    ))
+                    return
         # Reconnection LTK request: look up bond by EDIV/RAND
         if self._config.bond_storage is not None:
             for bond in await self._config.bond_storage.list_bonds():

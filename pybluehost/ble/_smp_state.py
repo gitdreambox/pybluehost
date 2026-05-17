@@ -27,6 +27,17 @@ Phase 2 SC — Public Key Exchange (Task 8):
         PUBLIC_KEY_EXCHANGE --(PAIRING_PUBLIC_KEY_RX)--> CONFIRMING
             [gen keypair, send Public Key + Cb, advance to CONFIRMING]
 
+Phase 2 SC — DHKey Check (Task 10):
+    Initiator path:
+        RANDOM_EXCHANGE → (action appended in _sc_initiator_recv_peer_random): send Ea, state → DHKEY_CHECK
+        DHKEY_CHECK --(PAIRING_DHKEY_CHECK_RX)--> STK_ENCRYPTING
+            [verify peer Eb; on match issue HCI_LE_Start_Encryption with ltk_sc]
+    Responder path:
+        RANDOM_EXCHANGE --(PAIRING_DHKEY_CHECK_RX)--> DHKEY_CHECK
+            [verify peer Ea, compute+send Eb; await controller Encryption_Change]
+        DHKEY_CHECK --(ENCRYPTION_CHANGE_SUCCESS)--> KEY_DISTRIBUTION
+            [same as STK_ENCRYPTING path]
+
 Phase 3 transitions land in Task 7. Universal failure transitions
 (PAIRING_FAILED_RX / TIMEOUT / DISCONNECTED → FAILED) are registered for all
 states Phases 1–2 can reach.
@@ -137,6 +148,23 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
             action=lambda **kw: _responder_recv_peer_random(ctx, **kw),
         )
 
+    # ---- SC Phase 2.3 — DHKey Check ----
+    # Initiator: after _sc_initiator_recv_peer_random sends Ea and overrides state
+    # to DHKEY_CHECK, it waits for peer Eb here.
+    # Responder: still in RANDOM_EXCHANGE when Initiator's Ea arrives.
+    if ctx.role == PairingRole.INITIATOR:
+        sm.add_transition(
+            SMPState.DHKEY_CHECK, SMPEvent.PAIRING_DHKEY_CHECK_RX,
+            SMPState.STK_ENCRYPTING,  # SC reuses STK_ENCRYPTING = "encryption pending"
+            action=lambda **kw: _sc_initiator_recv_peer_dhkey_check(ctx, **kw),
+        )
+    else:
+        sm.add_transition(
+            SMPState.RANDOM_EXCHANGE, SMPEvent.PAIRING_DHKEY_CHECK_RX,
+            SMPState.DHKEY_CHECK,  # Responder verifies Ea, sends Eb, waits for Encryption_Change
+            action=lambda **kw: _sc_responder_recv_peer_dhkey_check(ctx, **kw),
+        )
+
     # Encryption-change advancement (both roles use the same target state)
     sm.add_transition(
         SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
@@ -149,12 +177,22 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
         action=lambda **kw: _start_phase3(ctx, **kw),
     )
     sm.add_transition(
+        SMPState.DHKEY_CHECK, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
+        SMPState.KEY_DISTRIBUTION,
+        action=lambda **kw: _start_phase3(ctx, **kw),
+    )
+    sm.add_transition(
         SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_FAILED,
         SMPState.FAILED,
         action=lambda **kw: _on_failed(ctx, reason=0x08, **kw),
     )
     sm.add_transition(
         SMPState.RANDOM_EXCHANGE, SMPEvent.ENCRYPTION_CHANGE_FAILED,
+        SMPState.FAILED,
+        action=lambda **kw: _on_failed(ctx, reason=0x08, **kw),
+    )
+    sm.add_transition(
+        SMPState.DHKEY_CHECK, SMPEvent.ENCRYPTION_CHANGE_FAILED,
         SMPState.FAILED,
         action=lambda **kw: _on_failed(ctx, reason=0x08, **kw),
     )
@@ -195,12 +233,13 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
     # Phase-2 timeouts
     sm.set_timeout(SMPState.RANDOM_EXCHANGE, 30.0, SMPEvent.TIMEOUT)
     sm.set_timeout(SMPState.STK_ENCRYPTING, 30.0, SMPEvent.TIMEOUT)
+    sm.set_timeout(SMPState.DHKEY_CHECK, 30.0, SMPEvent.TIMEOUT)
 
     # Universal failure transitions
     for state in (
         SMPState.IDLE, SMPState.FEATURE_EXCHANGE, SMPState.CONFIRMING,
         SMPState.RANDOM_EXCHANGE, SMPState.STK_ENCRYPTING, SMPState.KEY_DISTRIBUTION,
-        SMPState.PUBLIC_KEY_EXCHANGE,
+        SMPState.PUBLIC_KEY_EXCHANGE, SMPState.DHKEY_CHECK,
     ):
         sm.add_transition(
             state, SMPEvent.PAIRING_FAILED_RX, SMPState.FAILED,
@@ -452,7 +491,10 @@ async def _sc_initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
 
     The registered transition advances to STK_ENCRYPTING (Legacy default); we
     override _state to RANDOM_EXCHANGE here because SC does not use STK.
+    After deriving f5 keys, immediately compute and send Ea = f6(MacKey, Na, Nb, 0, IOcapA, A, B)
+    and advance state to DHKEY_CHECK.
     """
+    from pybluehost.ble.smp import SMPPairingDHKeyCheck
     ctx.peer_random = pdu.random_value
     # Verify Cb = f4(PKbx, PKax, Nb, 0)
     pkbx = ctx.peer_public_key[:32]
@@ -473,6 +515,16 @@ async def _sc_initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
     ctx.mac_key = mac_key
     ctx.ltk_sc = ltk
 
+    # Phase 2.3: compute and send Ea immediately
+    # Ea = f6(MacKey, Na, Nb, ra=0, IOcapA, A1, A2)
+    # IOcapA = (Auth_Req || OOB_Flag || IO_Capability), 3 bytes — Initiator's
+    io_cap_a = bytes([ctx.local_auth_req, 0x00, int(ctx.local_io_caps)])
+    ea = SMPCrypto.f6(ctx.mac_key, ctx.local_random, ctx.peer_random, b"\x00" * 16, io_cap_a, a1, a2)
+    ctx.local_dhkey_check = ea
+    await ctx.send(SMPPairingDHKeyCheck(dhkey_check=ea).to_bytes())
+    # Advance to DHKEY_CHECK (waiting for peer's Eb)
+    ctx.state_machine._state = SMPState.DHKEY_CHECK
+
 
 async def _sc_responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
     """SC Responder: Initiator's Random Na arrived. Send own Nb, derive f5."""
@@ -490,6 +542,77 @@ async def _sc_responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
     mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.peer_random, ctx.local_random, a1, a2)
     ctx.mac_key = mac_key
     ctx.ltk_sc = ltk
+
+
+async def _sc_initiator_recv_peer_dhkey_check(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Initiator: peer's Eb arrived in DHKEY_CHECK state.
+
+    Verify Eb = f6(MacKey, Nb, Na, 0, IOcapB, B, A), then issue
+    HCI_LE_Start_Encryption with the f5-derived ltk_sc (not STK).
+
+    Note: the state machine has already advanced the state to STK_ENCRYPTING
+    before calling this action.  On failure we must force the state back to
+    FAILED manually (same pattern as other "verify-inside-action" paths).
+    """
+    from pybluehost.hci.packets import HCI_LE_Start_Encryption_Command
+
+    ctx.peer_dhkey_check = pdu.dhkey_check
+    # Expected Eb = f6(MacKey, Nb, Na, rb=0, IOcapB, B, A)
+    # IOcapB = (Auth_Req || OOB_Flag || IO_Capability) of Responder (peer)
+    io_cap_b = bytes([ctx.peer_auth_req, 0x00, int(ctx.peer_io_caps)])
+    local_addr = _local_address_bytes(ctx)
+    peer_addr = _peer_address_bytes(ctx)
+    a1 = b"\x00" + local_addr  # Initiator = us
+    a2 = b"\x00" + peer_addr   # Responder = peer
+    expected_eb = SMPCrypto.f6(ctx.mac_key, ctx.peer_random, ctx.local_random, b"\x00" * 16, io_cap_b, a2, a1)
+    if expected_eb != ctx.peer_dhkey_check:
+        ctx.state_machine._state = SMPState.FAILED  # override the pre-set to_state
+        await _on_failed(ctx, reason=0x0B)  # DHKEY_CHECK_FAILED
+        return
+    # Drive encryption with the f5 LTK directly
+    if ctx._hci is None:
+        ctx.state_machine._state = SMPState.FAILED
+        await _on_failed(ctx, reason=0x08)
+        return
+    await ctx._hci.send_command(HCI_LE_Start_Encryption_Command(
+        connection_handle=ctx.connection_handle,
+        random_number=b"\x00" * 8,
+        encrypted_diversifier=0,
+        long_term_key=ctx.ltk_sc,
+    ))
+
+
+async def _sc_responder_recv_peer_dhkey_check(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Responder: Initiator's Ea arrived in RANDOM_EXCHANGE state.
+
+    Verify Ea = f6(MacKey, Na, Nb, 0, IOcapA, A, B), then compute and send
+    Eb = f6(MacKey, Nb, Na, 0, IOcapB, B, A). State advances to DHKEY_CHECK
+    (awaiting the controller's LE_LTK_Request / Encryption_Change).
+
+    Note: the state machine has already advanced the state to DHKEY_CHECK
+    before calling this action.  On failure we force state back to FAILED.
+    """
+    from pybluehost.ble.smp import SMPPairingDHKeyCheck
+
+    ctx.peer_dhkey_check = pdu.dhkey_check
+    # IOcapA = Initiator's (peer); IOcapB = Responder's (local)
+    io_cap_a = bytes([ctx.peer_auth_req, 0x00, int(ctx.peer_io_caps)])
+    io_cap_b = bytes([ctx.local_auth_req, 0x00, int(ctx.local_io_caps)])
+    local_addr = _local_address_bytes(ctx)
+    peer_addr = _peer_address_bytes(ctx)
+    a1 = b"\x00" + peer_addr   # Initiator = peer
+    a2 = b"\x00" + local_addr  # Responder = us
+    # Verify Ea = f6(MacKey, Na, Nb, ra=0, IOcapA, A, B)
+    # Na = peer_random; Nb = local_random
+    expected_ea = SMPCrypto.f6(ctx.mac_key, ctx.peer_random, ctx.local_random, b"\x00" * 16, io_cap_a, a1, a2)
+    if expected_ea != ctx.peer_dhkey_check:
+        ctx.state_machine._state = SMPState.FAILED  # override the pre-set to_state
+        await _on_failed(ctx, reason=0x0B)  # DHKEY_CHECK_FAILED
+        return
+    # Compute and send Eb = f6(MacKey, Nb, Na, rb=0, IOcapB, B, A)
+    eb = SMPCrypto.f6(ctx.mac_key, ctx.local_random, ctx.peer_random, b"\x00" * 16, io_cap_b, a2, a1)
+    ctx.local_dhkey_check = eb
+    await ctx.send(SMPPairingDHKeyCheck(dhkey_check=eb).to_bytes())
 
 
 async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:

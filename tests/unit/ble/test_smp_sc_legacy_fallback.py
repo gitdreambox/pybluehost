@@ -203,7 +203,11 @@ async def test_sc_responder_handles_initiator_public_key():
 
 
 async def test_sc_initiator_completes_phase2_with_f5_ltk(monkeypatch):
-    """Initiator: peer Confirm + peer Random → f4 verify pass → f5 derive (MacKey, LTK_sc)."""
+    """Initiator: peer Confirm + peer Random → f4 verify pass → f5 derive (MacKey, LTK_sc).
+
+    After Phase 2.2 the Initiator also immediately computes and sends Ea = f6(...)
+    and advances to DHKEY_CHECK (waiting for peer Eb).
+    """
     import os
     monkeypatch.setattr(os, "urandom", lambda n: b"\xAA" * n)
     from pybluehost.ble._smp_sc_crypto import generate_p256_keypair
@@ -255,9 +259,15 @@ async def test_sc_initiator_completes_phase2_with_f5_ltk(monkeypatch):
                      connection_handle=0x0040)
 
     ctx = mgr.get_context(0x0040)
-    assert ctx.state_machine.state == SMPState.RANDOM_EXCHANGE
+    # After Phase 2.2: Initiator has derived f5 keys AND immediately sent Ea,
+    # so state is now DHKEY_CHECK (waiting for peer Eb), not RANDOM_EXCHANGE.
+    assert ctx.state_machine.state == SMPState.DHKEY_CHECK
     assert ctx.mac_key == b"\x11" * 16
     assert ctx.ltk_sc == b"\x22" * 16
+    # Ea was sent as Pairing_DHKey_Check
+    assert len(sent) == 1
+    assert sent[0][0] == SMPCode.PAIRING_DHKEY_CHECK
+    assert ctx.local_dhkey_check  # Ea was stored
 
 
 async def test_sc_responder_completes_phase2_with_f5_ltk(monkeypatch):
@@ -307,3 +317,149 @@ async def test_sc_responder_completes_phase2_with_f5_ltk(monkeypatch):
     assert ctx.state_machine.state == SMPState.RANDOM_EXCHANGE
     assert ctx.mac_key == b"\x33" * 16
     assert ctx.ltk_sc == b"\x77" * 16
+
+
+async def test_sc_initiator_sends_dhkey_check_and_starts_encryption(monkeypatch):
+    """Initiator: after receiving peer Random (Phase 2.2), immediately sends Ea = f6(...).
+    Then on receiving peer Eb, issues HCI_LE_Start_Encryption(ltk=ltk_sc).
+    """
+    import os
+    monkeypatch.setattr(os, "urandom", lambda n: b"\xAA" * n)
+    from pybluehost.ble._smp_sc_crypto import generate_p256_keypair
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import (
+        SMPCode, SMPCrypto, SMPManager, SMPPairingConfirm, SMPPairingDHKeyCheck,
+        SMPPairingPublicKey, SMPPairingRandom, SMPPairingResponse, SMPState,
+    )
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.types import IOCapability
+    from pybluehost.hci.packets import HCI_LE_Start_Encryption_Command
+
+    sent: list = []
+
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    class FakeHCI:
+        async def send_command(self, cmd):
+            sent.append(("HCI", cmd))
+
+    mgr = SMPManager(
+        local_io_caps=IOCapability.NO_INPUT_NO_OUTPUT, bondable=True,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        local_address=BDAddress(b"\x0A\x0A\x0A\x0A\x0A\x0A"),
+        hci=FakeHCI(),
+    )
+    mgr.bind_channel(0x0040, send=send, peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"))
+
+    monkeypatch.setattr(SMPCrypto, "f4", staticmethod(lambda *a, **kw: b"\x44" * 16))
+    monkeypatch.setattr(SMPCrypto, "f5", staticmethod(lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16)))
+    monkeypatch.setattr(SMPCrypto, "f6", staticmethod(lambda *a, **kw: b"\x66" * 16))
+
+    await mgr.start_initiator(0x0040)
+    rsp = SMPPairingResponse(
+        io_capability=IOCapability.NO_INPUT_NO_OUTPUT, oob_data_flag=0,
+        auth_req=0x09, max_key_size=16, init_key_dist=0x07, resp_key_dist=0x07,
+    )
+    await mgr.on_pdu(rsp.to_bytes(), connection_handle=0x0040)
+    _, peer_pub = generate_p256_keypair()
+    await mgr.on_pdu(
+        SMPPairingPublicKey(public_key_x=peer_pub[:32], public_key_y=peer_pub[32:]).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(SMPPairingConfirm(confirm_value=b"\x44" * 16).to_bytes(),
+                     connection_handle=0x0040)
+    sent.clear()
+
+    # Peer sends its Random (Nb) — triggers f5 derivation + Ea send in same action
+    await mgr.on_pdu(SMPPairingRandom(random_value=b"\x55" * 16).to_bytes(),
+                     connection_handle=0x0040)
+
+    # Initiator must have sent Ea immediately after receiving Nb
+    dhkc_sent = [s for s in sent if isinstance(s, bytes) and s[0] == SMPCode.PAIRING_DHKEY_CHECK]
+    assert len(dhkc_sent) == 1, f"Initiator must send Pairing_DHKey_Check after Nb; sent={sent}"
+    ctx = mgr.get_context(0x0040)
+    assert ctx.state_machine.state == SMPState.DHKEY_CHECK
+
+    sent.clear()
+
+    # Receive peer's Eb — f6 is patched to always return 0x66*16, so verification passes
+    await mgr.on_pdu(SMPPairingDHKeyCheck(dhkey_check=b"\x66" * 16).to_bytes(),
+                     connection_handle=0x0040)
+
+    # Should have issued HCI_LE_Start_Encryption with ltk_sc
+    hci_starts = [c for s in sent if isinstance(s, tuple) and s[0] == "HCI"
+                  for c in [s[1]] if isinstance(c, HCI_LE_Start_Encryption_Command)]
+
+    assert len(hci_starts) == 1, f"Initiator must issue HCI_LE_Start_Encryption; sent={sent}"
+    assert hci_starts[0].long_term_key == b"\x22" * 16, "SC uses f5-derived ltk_sc, not STK"
+    ctx = mgr.get_context(0x0040)
+    assert ctx.state_machine.state == SMPState.STK_ENCRYPTING
+
+
+async def test_sc_dhkey_check_mismatch_fails(monkeypatch):
+    """Initiator: peer DHKey check Eb doesn't match expected → state goes FAILED."""
+    import os
+    monkeypatch.setattr(os, "urandom", lambda n: b"\xAA" * n)
+    from pybluehost.ble._smp_sc_crypto import generate_p256_keypair
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import (
+        SMPCode, SMPCrypto, SMPManager, SMPPairingConfirm, SMPPairingDHKeyCheck,
+        SMPPairingPublicKey, SMPPairingRandom, SMPPairingResponse, SMPState,
+        decode_smp_pdu, SMPPairingFailed,
+    )
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.types import IOCapability
+
+    sent: list[bytes] = []
+
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    mgr = SMPManager(
+        local_io_caps=IOCapability.NO_INPUT_NO_OUTPUT, bondable=True,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        local_address=BDAddress(b"\x0A\x0A\x0A\x0A\x0A\x0A"),
+    )
+    mgr.bind_channel(0x0040, send=send, peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"))
+
+    monkeypatch.setattr(SMPCrypto, "f4", staticmethod(lambda *a, **kw: b"\x44" * 16))
+    monkeypatch.setattr(SMPCrypto, "f5", staticmethod(lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16)))
+    # f6 returns 0x66*16 for Ea (first call), 0x99*16 for expected Eb (second call)
+    call_count = {"n": 0}
+
+    def fake_f6(*a, **kw):
+        call_count["n"] += 1
+        return b"\x66" * 16 if call_count["n"] == 1 else b"\x99" * 16
+
+    monkeypatch.setattr(SMPCrypto, "f6", staticmethod(fake_f6))
+
+    await mgr.start_initiator(0x0040)
+    rsp = SMPPairingResponse(
+        io_capability=IOCapability.NO_INPUT_NO_OUTPUT, oob_data_flag=0,
+        auth_req=0x09, max_key_size=16, init_key_dist=0x07, resp_key_dist=0x07,
+    )
+    await mgr.on_pdu(rsp.to_bytes(), connection_handle=0x0040)
+    _, peer_pub = generate_p256_keypair()
+    await mgr.on_pdu(
+        SMPPairingPublicKey(public_key_x=peer_pub[:32], public_key_y=peer_pub[32:]).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(SMPPairingConfirm(confirm_value=b"\x44" * 16).to_bytes(),
+                     connection_handle=0x0040)
+    await mgr.on_pdu(SMPPairingRandom(random_value=b"\x55" * 16).to_bytes(),
+                     connection_handle=0x0040)
+    sent.clear()
+
+    # Peer sends wrong Eb (0x77, but expected Eb is 0x99 per fake_f6 second call)
+    await mgr.on_pdu(SMPPairingDHKeyCheck(dhkey_check=b"\x77" * 16).to_bytes(),
+                     connection_handle=0x0040)
+
+    ctx = mgr.get_context(0x0040)
+    assert ctx.state_machine.state == SMPState.FAILED
+    # Should have sent SMPPairingFailed with reason=0x0B
+    failed = [s for s in sent if isinstance(s, bytes) and s[0] == SMPCode.PAIRING_FAILED]
+    assert failed, f"Must send Pairing_Failed; sent={sent}"
+    failed_pdu = decode_smp_pdu(failed[0])
+    assert isinstance(failed_pdu, SMPPairingFailed)
+    assert failed_pdu.reason == 0x0B

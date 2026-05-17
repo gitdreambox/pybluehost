@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：HCI 容错初始化 — ✅ 完成
-**下一步**：SMP Sub-Plan 2 (LE Secure Connections) / 断线重连闭环 / e2e 覆盖
+**当前进行中**：SMP Sub-Plan 2 (LE Secure Connections) — 🔄 Task 10 完成，Task 11 待做
+**下一步**：Task 11（SC Phase 3 skip LTK distribution + BondInfo.sc=True）→ Task 12（E2E loopback）
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -47,8 +47,9 @@
 | SMP Sub-Plan 1 (Legacy JW) | Legacy Just Works 配对完整路径 + 绑定 + 重连自动加密 | ✅ 完成 | [2026-05-13-smp-pairing-legacy-jw](plans/2026-05-13-smp-pairing-legacy-jw.md) | `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/hci/virtual_link.py`, `pybluehost/stack.py`, `pybluehost/ble/gatt.py` |
 | SMP Sub-Plan 1 收尾 | TIMEOUT/DISCONNECTED/PAIRING_FAILED_RX 单测 + Stack.encrypt 等事件 + BondInfo.rand 兼容 + register_peer_address + Plan checkbox | ✅ 完成 | [2026-05-16-smp-sub-plan-1-followups](plans/2026-05-16-smp-sub-plan-1-followups.md) | `pybluehost/ble/smp.py`, `pybluehost/stack.py` |
 | HCI 容错初始化 | initialize() 按 Supported_Commands bitmap 跳过不支持的命令；Read_BD_ADDR 硬要求 | ✅ 完成 | [2026-05-16-hci-tolerant-initialization](plans/2026-05-16-hci-tolerant-initialization.md) | `pybluehost/hci/capabilities.py`, `pybluehost/hci/controller.py`, `pybluehost/hci/virtual.py` |
+| SMP Sub-Plan 2 (LE Secure Connections) | P-256 DH密钥交换 + SC Just Works 配对完整路径 + f4/f5/f6 加密原语 | 🔄 进行中（Task 10 完成，Task 11 待做） | [2026-05-17-secure-connections](plans/2026-05-17-secure-connections.md) | `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/ble/_smp_sc_crypto.py`, `pybluehost/stack.py` |
 
-**总计：23 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化）**
+**总计：24 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + SMP Sub-Plan 2）**
 
 ---
 
