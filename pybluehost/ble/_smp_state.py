@@ -185,10 +185,13 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
 # ---------------------------------------------------------------------------
 
 async def _initiator_send_pairing_request(ctx: "SMPPairingContext", **_kw) -> None:
+    auth_req = 0x01 if ctx.bondable else 0
+    if ctx.security_config is not None and ctx.security_config.enable_secure_connections:
+        auth_req |= 0x08  # SC bit
     req = SMPPairingRequest(
         io_capability=ctx.local_io_caps,
         oob_data_flag=0,
-        auth_req=0x01 if ctx.bondable else 0,
+        auth_req=auth_req,
         max_key_size=16,
         init_key_dist=0x07,  # EncKey | IdKey | Sign
         resp_key_dist=0x07,
@@ -232,10 +235,13 @@ async def _responder_recv_pairing_request(ctx: "SMPPairingContext", *, pdu: SMPP
     ctx.peer_max_key_size = pdu.max_key_size
     ctx.peer_init_key_dist = pdu.init_key_dist
     ctx.peer_resp_key_dist = pdu.resp_key_dist
+    resp_auth_req = 0x01 if ctx.bondable else 0
+    if ctx.security_config is not None and ctx.security_config.enable_secure_connections:
+        resp_auth_req |= 0x08  # SC bit
     rsp = SMPPairingResponse(
         io_capability=ctx.local_io_caps,
         oob_data_flag=0,
-        auth_req=0x01 if ctx.bondable else 0,
+        auth_req=resp_auth_req,
         max_key_size=16,
         init_key_dist=0x07,
         resp_key_dist=0x07,
@@ -442,6 +448,23 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
         )
     if ctx.pairing_complete and not ctx.pairing_complete.done():
         ctx.pairing_complete.set_result(None)
+
+
+# ---------------------------------------------------------------------------
+# SC negotiation helper (used by Tasks 8-11)
+# ---------------------------------------------------------------------------
+
+def _sc_negotiated(ctx: "SMPPairingContext") -> bool:
+    """True iff both local config and peer auth_req advertise SC.
+
+    Used by Phase 2 transition routing in Tasks 8-11.
+    """
+    return (
+        ctx.security_config is not None
+        and ctx.security_config.enable_secure_connections
+        and bool(ctx.local_auth_req & 0x08)
+        and bool(ctx.peer_auth_req & 0x08)
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -187,6 +187,7 @@ class Stack:
             local_io_caps=cfg.le_io_capability,
             bondable=cfg.bondable,
             local_address=stack._local_address,
+            security_config=cfg.security,
         )
         stack._smp = smp
 

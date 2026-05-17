@@ -734,6 +734,7 @@ class SMPPairingContext:
     send: "Callable[[bytes], Awaitable[None]] | None" = None
     _hci: object | None = None
     _bond_storage: "BondStorage | None" = None
+    security_config: object | None = None  # SecurityConfig (avoid import cycle)
 
     @classmethod
     def create(
@@ -772,6 +773,7 @@ class SMPManager:
         local_io_caps: IOCapability = IOCapability.NO_INPUT_NO_OUTPUT,
         bondable: bool = True,
         local_address: BDAddress | None = None,
+        security_config: object | None = None,  # SecurityConfig
     ) -> None:
         self._hci = hci
         self._bond_storage = bond_storage
@@ -779,6 +781,7 @@ class SMPManager:
         self._local_io_caps = local_io_caps
         self._bondable = bondable
         self._local_address = local_address
+        self._security_config = security_config
         self._senders: dict[int, Callable[[bytes], Awaitable[None]]] = {}
         self._peer_addrs: dict[int, BDAddress] = {}
         self._contexts: dict[int, SMPPairingContext] = {}
@@ -849,6 +852,7 @@ class SMPManager:
         ctx.local_address = self._local_address
         ctx._hci = self._hci
         ctx._bond_storage = self._bond_storage
+        ctx.security_config = self._security_config
         ctx.pairing_complete = asyncio.get_running_loop().create_future()
         register_transitions(ctx)
         self._contexts[connection_handle] = ctx
@@ -884,6 +888,7 @@ class SMPManager:
             ctx.local_address = self._local_address
             ctx._hci = self._hci
             ctx._bond_storage = self._bond_storage
+            ctx.security_config = self._security_config
             ctx.pairing_complete = asyncio.get_running_loop().create_future()
             from pybluehost.ble._smp_state import register_transitions
             register_transitions(ctx)
