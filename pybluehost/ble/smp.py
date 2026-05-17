@@ -260,6 +260,37 @@ class SMPSecurityRequest(SMPPdu):
         return cls(auth_req=data[0])
 
 
+@dataclass
+class SMPPairingPublicKey(SMPPdu):
+    """Pairing Public Key PDU (Core 5.4 Vol 3 Part H §3.5.6)."""
+    public_key_x: bytes = b""
+    public_key_y: bytes = b""
+
+    def to_bytes(self) -> bytes:
+        if len(self.public_key_x) != 32 or len(self.public_key_y) != 32:
+            raise ValueError("public_key_x and public_key_y must each be 32 bytes")
+        return bytes([SMPCode.PAIRING_PUBLIC_KEY]) + self.public_key_x + self.public_key_y
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> SMPPairingPublicKey:
+        return cls(public_key_x=data[:32], public_key_y=data[32:64])
+
+
+@dataclass
+class SMPPairingDHKeyCheck(SMPPdu):
+    """Pairing DHKey Check PDU (Core 5.4 Vol 3 Part H §3.5.7)."""
+    dhkey_check: bytes = b""
+
+    def to_bytes(self) -> bytes:
+        if len(self.dhkey_check) != 16:
+            raise ValueError("dhkey_check must be 16 bytes")
+        return bytes([SMPCode.PAIRING_DHKEY_CHECK]) + self.dhkey_check
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> SMPPairingDHKeyCheck:
+        return cls(dhkey_check=data[:16])
+
+
 _PDU_MAP: dict[int, type[SMPPdu]] = {
     SMPCode.PAIRING_REQUEST: SMPPairingRequest,
     SMPCode.PAIRING_RESPONSE: SMPPairingResponse,
@@ -272,6 +303,8 @@ _PDU_MAP: dict[int, type[SMPPdu]] = {
     SMPCode.IDENTITY_ADDRESS_INFORMATION: SMPIdentityAddressInformation,
     SMPCode.SIGNING_INFORMATION: SMPSigningInformation,
     SMPCode.SECURITY_REQUEST: SMPSecurityRequest,
+    SMPCode.PAIRING_PUBLIC_KEY: SMPPairingPublicKey,
+    SMPCode.PAIRING_DHKEY_CHECK: SMPPairingDHKeyCheck,
 }
 
 
@@ -606,6 +639,8 @@ class SMPState(IntEnum):
     KEY_DISTRIBUTION = 5
     BONDED = 6
     FAILED = 7
+    PUBLIC_KEY_EXCHANGE = 8
+    DHKEY_CHECK         = 9
 
 
 class SMPEvent(IntEnum):
@@ -625,6 +660,8 @@ class SMPEvent(IntEnum):
     PAIRING_FAILED_RX = 13
     TIMEOUT = 14
     DISCONNECTED = 15
+    PAIRING_PUBLIC_KEY_RX  = 16
+    PAIRING_DHKEY_CHECK_RX = 17
 
 
 class PairingRole(IntEnum):
@@ -679,6 +716,16 @@ class SMPPairingContext:
     local_ltk: bytes = b""
     local_ediv: int = 0
     local_rand: bytes = b""
+
+    # SC working state (Sub-Plan 2)
+    local_private_key: bytes = b""
+    local_public_key: bytes = b""
+    peer_public_key: bytes = b""
+    dhkey: bytes = b""
+    mac_key: bytes = b""
+    ltk_sc: bytes = b""
+    local_dhkey_check: bytes = b""
+    peer_dhkey_check: bytes = b""
 
     # Bookkeeping
     bondable: bool = True
@@ -866,7 +913,9 @@ def _pdu_to_event(pdu: SMPPdu) -> "SMPEvent | None":
         SMPIdentityInformation,
         SMPMasterIdentification,
         SMPPairingConfirm,
+        SMPPairingDHKeyCheck,
         SMPPairingFailed,
+        SMPPairingPublicKey,
         SMPPairingRandom,
         SMPPairingRequest,
         SMPPairingResponse,
@@ -892,4 +941,8 @@ def _pdu_to_event(pdu: SMPPdu) -> "SMPEvent | None":
         return SMPEvent.IDENTITY_ADDR_RX
     if isinstance(pdu, SMPSigningInformation):
         return SMPEvent.SIGNING_INFO_RX
+    if isinstance(pdu, SMPPairingPublicKey):
+        return SMPEvent.PAIRING_PUBLIC_KEY_RX
+    if isinstance(pdu, SMPPairingDHKeyCheck):
+        return SMPEvent.PAIRING_DHKEY_CHECK_RX
     return None
