@@ -793,6 +793,30 @@ def _sc_negotiated(ctx: "SMPPairingContext") -> bool:
     )
 
 
+def _association_model(ctx: "SMPPairingContext") -> str:
+    """Return 'numeric_comparison' or 'just_works' for the current SC pairing.
+
+    Passkey Entry -> Sub-Plan 3b; OOB -> Sub-Plan 3c.
+
+    NC requires:
+      * SC negotiated (both sides advertise SC bit in auth_req)
+      * Both sides have MITM bit (0x04) set in auth_req
+      * Both sides have IO capability in {DISPLAY_YES_NO, KEYBOARD_DISPLAY}
+    Otherwise -> "just_works".
+    """
+    from pybluehost.core.types import IOCapability
+
+    if not _sc_negotiated(ctx):
+        return "just_works"
+    both_mitm = bool(ctx.local_auth_req & 0x04) and bool(ctx.peer_auth_req & 0x04)
+    if not both_mitm:
+        return "just_works"
+    nc_caps = {int(IOCapability.DISPLAY_YES_NO), int(IOCapability.KEYBOARD_DISPLAY)}
+    if int(ctx.local_io_caps) in nc_caps and int(ctx.peer_io_caps) in nc_caps:
+        return "numeric_comparison"
+    return "just_works"
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
