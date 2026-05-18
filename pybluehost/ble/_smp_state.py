@@ -282,6 +282,8 @@ async def _initiator_send_pairing_request(ctx: "SMPPairingContext", **_kw) -> No
     auth_req = 0x01 if ctx.bondable else 0
     if ctx.security_config is not None and ctx.security_config.enable_secure_connections:
         auth_req |= 0x08  # SC bit
+    if ctx.security_config is not None and getattr(ctx.security_config, "mitm_required", False):
+        auth_req |= 0x04  # MITM bit
     req = SMPPairingRequest(
         io_capability=ctx.local_io_caps,
         oob_data_flag=0,
@@ -348,6 +350,8 @@ async def _responder_recv_pairing_request(ctx: "SMPPairingContext", *, pdu: SMPP
     resp_auth_req = 0x01 if ctx.bondable else 0
     if ctx.security_config is not None and ctx.security_config.enable_secure_connections:
         resp_auth_req |= 0x08  # SC bit
+    if ctx.security_config is not None and getattr(ctx.security_config, "mitm_required", False):
+        resp_auth_req |= 0x04  # MITM bit
     rsp = SMPPairingResponse(
         io_capability=ctx.local_io_caps,
         oob_data_flag=0,

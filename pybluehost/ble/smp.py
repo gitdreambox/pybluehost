@@ -857,6 +857,7 @@ class SMPManager:
         ctx._hci = self._hci
         ctx._bond_storage = self._bond_storage
         ctx.security_config = self._security_config
+        ctx._delegate = self._delegate
         ctx.pairing_complete = asyncio.get_running_loop().create_future()
         register_transitions(ctx)
         self._contexts[connection_handle] = ctx
@@ -893,6 +894,7 @@ class SMPManager:
             ctx._hci = self._hci
             ctx._bond_storage = self._bond_storage
             ctx.security_config = self._security_config
+            ctx._delegate = self._delegate
             ctx.pairing_complete = asyncio.get_running_loop().create_future()
             from pybluehost.ble._smp_state import register_transitions
             register_transitions(ctx)

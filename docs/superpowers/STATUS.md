@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：Secure Connections (LE SC + BR/EDR SC) — ✅ 完成
-**下一步**：SMP Sub-Plan 3 (Numeric Comparison / Passkey / OOB) / 断线重连闭环 / e2e 覆盖
+**当前进行中**：SMP Sub-Plan 3a (Numeric Comparison) — ✅ 完成
+**下一步**：SMP Sub-Plan 3b (Passkey Entry) / 3c (OOB) / 断线重连闭环 / e2e 覆盖
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -48,8 +48,9 @@
 | SMP Sub-Plan 1 收尾 | TIMEOUT/DISCONNECTED/PAIRING_FAILED_RX 单测 + Stack.encrypt 等事件 + BondInfo.rand 兼容 + register_peer_address + Plan checkbox | ✅ 完成 | [2026-05-16-smp-sub-plan-1-followups](plans/2026-05-16-smp-sub-plan-1-followups.md) | `pybluehost/ble/smp.py`, `pybluehost/stack.py` |
 | HCI 容错初始化 | initialize() 按 Supported_Commands bitmap 跳过不支持的命令；Read_BD_ADDR 硬要求 | ✅ 完成 | [2026-05-16-hci-tolerant-initialization](plans/2026-05-16-hci-tolerant-initialization.md) | `pybluehost/hci/capabilities.py`, `pybluehost/hci/controller.py`, `pybluehost/hci/virtual.py` |
 | Secure Connections | LE SC (ECDH P-256 + f4/f5/f6) + BR/EDR SC (HCI SSP events) Just Works；opt-in via SecurityConfig.enable_secure_connections | ✅ 完成 | [2026-05-17-secure-connections](plans/2026-05-17-secure-connections.md) | `pybluehost/ble/_smp_sc_crypto.py`, `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/ble/security.py`, `pybluehost/hci/{packets,controller,virtual,capabilities}.py`, `pybluehost/classic/gap.py`, `pybluehost/stack.py` |
+| SMP Sub-Plan 3a (Numeric Comparison) | LE SC Numeric Comparison association model：g2 计算 + PairingDelegate.confirm_numeric + auth_req MITM 位 + 双端 authenticated 持久化 + LE SC NC loopback E2E | ✅ 完成 | [2026-05-18-smp-sub-plan-3a-numeric-comparison](plans/2026-05-18-smp-sub-plan-3a-numeric-comparison.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py`, `pybluehost/ble/security.py`, `pybluehost/classic/gap.py`, `pybluehost/stack.py` |
 
-**总计：24 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections）**
+**总计：25 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a）**
 
 ---
 
@@ -314,6 +315,26 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 验收：`uv run --frozen pytest tests/ -q --transport=virtual --cov-fail-under=85` PASS；LE SC loopback E2E + BR/EDR SC HCI integration tests 全绿
 - 不在范围：Numeric Comparison / Passkey Entry / OOB → Sub-Plan 3
 - 不在范围：两-controller Classic loopback bridge → 独立 Plan
+
+### ✅ SMP Sub-Plan 3a (Numeric Comparison)
+- 完成时间：2026-05-18
+- Plan 文档：[2026-05-18-smp-sub-plan-3a-numeric-comparison.md](plans/2026-05-18-smp-sub-plan-3a-numeric-comparison.md)
+- 关键变化：
+  - `SecurityConfig.mitm_required: bool = False` 字段（opt-in MITM）
+  - `PairingDelegate.confirm_numeric(peer_addr, value) -> bool` 协议方法 + `AutoAcceptDelegate.confirm_numeric` 默认 True
+  - `SMPState.NUMERIC_COMPARE_PENDING` + `SMPEvent.NUMERIC_COMPARE_USER_CONFIRMED/REJECTED`
+  - `_association_model(ctx)` 返回 `"numeric_comparison"` 当 SC 协商 + 双端 MITM + 双端 IO cap ∈ {DisplayYesNo, KeyboardDisplay}；否则 `"just_works"`
+  - `_sc_compute_and_await_nc(ctx)`：计算 `g2(PKax, PKbx, Na, Nb) mod 10^6`，通过 delegate 异步获取用户确认（fire-and-forget task），confirmed → `NUMERIC_COMPARE_USER_CONFIRMED`、拒绝 → `NUMERIC_COMPARE_USER_REJECTED` (Pairing_Failed reason=0x03)
+  - SC Random 接收路径在 action-time 分流：NC → `NUMERIC_COMPARE_PENDING`，JW → 直接进入 DHKey Check
+  - `_persist_bond` 按 `_association_model() == "numeric_comparison"` 设 `BondInfo.authenticated=True`
+  - `SSPManager(__init__, delegate=...)` + `Stack._build` 通过 `SSPManager(delegate=cfg.pairing_delegate)` 转发（为 Classic SSP Numeric Comparison 预留 dispatch path；当前实现回应 confirmation request 时调用 delegate.confirm_numeric）
+  - **Task 8 收尾**：
+    - `_initiator_send_pairing_request` / `_responder_recv_pairing_request` 现在按 `cfg.mitm_required` 在 auth_req 中设置 MITM 位 (0x04)（之前缺失导致 NC 永远无法在 wire 上选中）
+    - `SMPManager` 在 INITIATOR 与 RESPONDER 两条路径上把 `self._delegate` 注入到 `ctx._delegate`（之前未注入，导致 `_sc_compute_and_await_nc` 总是回落到 AutoAcceptDelegate，`set_delegate` 公开 API 实际无效果）
+    - LE SC NC loopback E2E（`tests/integration/test_pairing_le_sc_nc_loopback.py`）：双端 DisplayYesNo + mitm_required=True + AutoAcceptDelegate → NC 选中 → `BondInfo.authenticated=True` 双向持久化 + f5 LTK 一致；拒绝路径：peripheral 注入 RejectingDelegate → `stack.pair()` 抛出 (Pairing_Failed reason=0x03)
+- 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
+- 验收：`uv run pytest tests/ -q --transport=virtual` PASS (1226 passed, 20 skipped, 3 pre-existing USB diagnostics failed)
+- 不在范围：Passkey Entry → Sub-Plan 3b；OOB → Sub-Plan 3c
 
 ---
 
