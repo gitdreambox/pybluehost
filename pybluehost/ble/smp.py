@@ -640,8 +640,9 @@ class SMPState(IntEnum):
     KEY_DISTRIBUTION = 5
     BONDED = 6
     FAILED = 7
-    PUBLIC_KEY_EXCHANGE = 8
-    DHKEY_CHECK         = 9
+    PUBLIC_KEY_EXCHANGE     = 8
+    DHKEY_CHECK             = 9
+    NUMERIC_COMPARE_PENDING = 10
 
 
 class SMPEvent(IntEnum):
@@ -661,8 +662,10 @@ class SMPEvent(IntEnum):
     PAIRING_FAILED_RX = 13
     TIMEOUT = 14
     DISCONNECTED = 15
-    PAIRING_PUBLIC_KEY_RX  = 16
-    PAIRING_DHKEY_CHECK_RX = 17
+    PAIRING_PUBLIC_KEY_RX             = 16
+    PAIRING_DHKEY_CHECK_RX            = 17
+    NUMERIC_COMPARE_USER_CONFIRMED    = 18
+    NUMERIC_COMPARE_USER_REJECTED     = 19
 
 
 class PairingRole(IntEnum):

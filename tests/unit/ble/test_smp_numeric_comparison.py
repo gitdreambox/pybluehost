@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from pybluehost.ble.security import SecurityConfig
-from pybluehost.ble.smp import AutoAcceptDelegate, PairingDelegate
+from pybluehost.ble.smp import AutoAcceptDelegate, PairingDelegate, SMPEvent, SMPState
 from pybluehost.core.address import BDAddress
 
 
@@ -27,3 +27,12 @@ async def test_auto_accept_delegate_confirm_numeric_returns_true():
 
 def test_pairing_delegate_protocol_has_confirm_numeric():
     assert "confirm_numeric" in PairingDelegate.__dict__
+
+
+def test_smp_state_numeric_compare_pending_exists():
+    assert SMPState.NUMERIC_COMPARE_PENDING == 10
+
+
+def test_smp_event_numeric_compare_values():
+    assert SMPEvent.NUMERIC_COMPARE_USER_CONFIRMED == 18
+    assert SMPEvent.NUMERIC_COMPARE_USER_REJECTED == 19
