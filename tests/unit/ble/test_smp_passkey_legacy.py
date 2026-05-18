@@ -305,3 +305,101 @@ def test_passkey_input_pending_timeout_set():
     src = inspect.getsource(state_mod.register_transitions)
     assert "set_timeout(SMPState.PASSKEY_INPUT_PENDING" in src
     assert "60.0" in src
+
+
+@pytest.mark.asyncio
+async def test_initiator_pairing_response_display_role_generates_displays_and_sends_confirm(monkeypatch):
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPPairingResponse, SMPState
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+    monkeypatch.setattr(state_mod, "_passkey_local_role", lambda _ctx: "display")
+    monkeypatch.setattr(state_mod, "secrets",
+                        SimpleNamespace(randbelow=lambda _n: 246813))
+    monkeypatch.setattr(state_mod.SMPCrypto, "c1",
+                        staticmethod(lambda *a, **k: b"\xbb" * 16))
+
+    displayed: list = []
+
+    class _CapturingDisplay:
+        async def display_passkey(self, peer_addr, passkey):
+            displayed.append((peer_addr, passkey))
+
+    class _FakeSM:
+        def __init__(self):
+            self._state = SMPState.FEATURE_EXCHANGE
+        async def fire(self, ev): pass
+
+    sm = _FakeSM()
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+    pdu = SMPPairingResponse(
+        io_capability=0x02, oob_data_flag=0, auth_req=0x05,
+        max_key_size=16, init_key_dist=0x07, resp_key_dist=0x07,
+    )
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        peer_io_caps=0x02, peer_auth_req=0x05, peer_max_key_size=16,
+        peer_init_key_dist=0x07, peer_resp_key_dist=0x07,
+        local_io_caps=0x01, local_auth_req=0x05,
+        peer_address=BDAddress(b"\x0B" * 6),
+        local_address=BDAddress(b"\x0A" * 6),
+        saved_pairing_request=b"\x01" + b"\x00" * 6,
+        saved_pairing_response=b"\x02" + b"\x00" * 6,
+        security_config=SimpleNamespace(
+            enable_secure_connections=False, mitm_required=True,
+        ),
+        state_machine=sm,
+        _delegate=_CapturingDisplay(),
+        send=_send,
+    )
+    await state_mod._initiator_recv_pairing_response(ctx, pdu=pdu)
+    assert ctx.passkey == 246813
+    assert displayed == [(BDAddress(b"\x0B" * 6), 246813)]
+    assert ctx.tk == (246813).to_bytes(16, "little")
+    assert len(sent) == 1 and sent[0][0] == 0x03
+    # action does not override state; SM transition target is CONFIRMING
+    assert sm._state == SMPState.FEATURE_EXCHANGE
+
+
+@pytest.mark.asyncio
+async def test_initiator_pairing_response_input_role_overrides_state_to_passkey_pending(monkeypatch):
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPPairingResponse, SMPState
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+    monkeypatch.setattr(state_mod, "_passkey_local_role", lambda _ctx: "input")
+
+    class _FakeSM:
+        def __init__(self):
+            self._state = SMPState.FEATURE_EXCHANGE
+        async def fire(self, ev): pass
+
+    sm = _FakeSM()
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+    pdu = SMPPairingResponse(
+        io_capability=0x01, oob_data_flag=0, auth_req=0x05,
+        max_key_size=16, init_key_dist=0x07, resp_key_dist=0x07,
+    )
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        peer_io_caps=0x01, peer_auth_req=0x05, peer_max_key_size=16,
+        peer_init_key_dist=0x07, peer_resp_key_dist=0x07,
+        local_io_caps=0x02, local_auth_req=0x05,
+        peer_address=BDAddress(b"\x0B" * 6),
+        local_address=BDAddress(b"\x0A" * 6),
+        saved_pairing_request=b"\x01" + b"\x00" * 6,
+        saved_pairing_response=b"\x02" + b"\x00" * 6,
+        security_config=SimpleNamespace(
+            enable_secure_connections=False, mitm_required=True,
+        ),
+        state_machine=sm,
+        _delegate=_GoodPasskeyDelegate(),
+        send=_send,
+    )
+    await state_mod._initiator_recv_pairing_response(ctx, pdu=pdu)
+    assert sm._state == SMPState.PASSKEY_INPUT_PENDING
+    assert sent == []

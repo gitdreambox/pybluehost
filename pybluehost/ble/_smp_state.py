@@ -47,6 +47,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
 from typing import TYPE_CHECKING
 
 from pybluehost.ble.smp import (
@@ -340,6 +341,37 @@ async def _initiator_recv_pairing_response(ctx: "SMPPairingContext", *, pdu: SMP
         await ctx.send(SMPPairingPublicKey(
             public_key_x=pub[:32], public_key_y=pub[32:],
         ).to_bytes())
+        return
+
+    # Sub-Plan 3b-1: Legacy Passkey Entry branch
+    model = _association_model(ctx)
+    if model == "passkey_entry":
+        role = _passkey_local_role(ctx)
+        if role == "display":
+            # Display role: generate 6-digit passkey, show to user, compute c1
+            # inline and send Pairing_Confirm. SM transition target (CONFIRMING)
+            # is left in place — no state override needed.
+            ctx.passkey = secrets.randbelow(1_000_000)
+            delegate = getattr(ctx, "_delegate", None)
+            if delegate is not None:
+                try:
+                    await delegate.display_passkey(ctx.peer_address, ctx.passkey)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "delegate.display_passkey raised: %s; proceeding", exc,
+                    )
+            ctx.tk = ctx.passkey.to_bytes(16, "little")
+            ctx.local_random = os.urandom(16)
+            preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
+            ctx.local_confirm = SMPCrypto.c1(
+                ctx.tk, ctx.local_random, preq, pres, iat, rat, ia, ra,
+            )
+            await ctx.send(SMPPairingConfirm(confirm_value=ctx.local_confirm).to_bytes())
+            return
+        # Input role: override state to PASSKEY_INPUT_PENDING and spawn the
+        # delegate task; the user-entered handler will send our Confirm later.
+        ctx.state_machine._state = SMPState.PASSKEY_INPUT_PENDING
+        await _passkey_await_user_input(ctx)
         return
 
     # Legacy path: Just Works → tk = 0
