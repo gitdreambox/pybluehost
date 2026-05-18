@@ -843,27 +843,98 @@ def _sc_negotiated(ctx: "SMPPairingContext") -> bool:
 
 
 def _association_model(ctx: "SMPPairingContext") -> str:
-    """Return 'numeric_comparison' or 'just_works' for the current SC pairing.
+    """Return 'numeric_comparison' | 'passkey_entry' | 'just_works'.
 
-    Passkey Entry -> Sub-Plan 3b; OOB -> Sub-Plan 3c.
-
-    NC requires:
-      * SC negotiated (both sides advertise SC bit in auth_req)
-      * Both sides have MITM bit (0x04) set in auth_req
-      * Both sides have IO capability in {DISPLAY_YES_NO, KEYBOARD_DISPLAY}
-    Otherwise -> "just_works".
+    SC modes (Sub-Plan 3a + 3b-2): NC vs JW.
+    Legacy mode (Sub-Plan 3b-1): Passkey Entry vs JW.
+    Passkey Entry (SC) and OOB deferred to Sub-Plans 3b-2 and 3c.
     """
     from pybluehost.core.types import IOCapability
 
-    if not _sc_negotiated(ctx):
-        return "just_works"
     both_mitm = bool(ctx.local_auth_req & 0x04) and bool(ctx.peer_auth_req & 0x04)
+
+    if _sc_negotiated(ctx):
+        if not both_mitm:
+            return "just_works"
+        nc_caps = {int(IOCapability.DISPLAY_YES_NO), int(IOCapability.KEYBOARD_DISPLAY)}
+        if int(ctx.local_io_caps) in nc_caps and int(ctx.peer_io_caps) in nc_caps:
+            return "numeric_comparison"
+        return "just_works"
+
+    # Legacy path — Sub-Plan 3b-1 addition
     if not both_mitm:
         return "just_works"
-    nc_caps = {int(IOCapability.DISPLAY_YES_NO), int(IOCapability.KEYBOARD_DISPLAY)}
-    if int(ctx.local_io_caps) in nc_caps and int(ctx.peer_io_caps) in nc_caps:
-        return "numeric_comparison"
-    return "just_works"
+    if not _passkey_capable(int(ctx.local_io_caps), int(ctx.peer_io_caps)):
+        return "just_works"
+    return "passkey_entry"
+
+
+def _passkey_capable(local_io: int, peer_io: int) -> bool:
+    """True if the IO-cap pair supports Legacy Passkey Entry (Sub-Plan 3b-1 scope).
+
+    Rules:
+      * Neither side may be NO_INPUT_NO_OUTPUT.
+      * At least one side must be able to display
+        (DISPLAY_ONLY, DISPLAY_YES_NO, KEYBOARD_DISPLAY).
+      * At least one side must be able to input
+        (KEYBOARD_ONLY, KEYBOARD_DISPLAY).
+      * Both-KeyboardOnly falls through to Just Works (out of scope; very rare).
+    """
+    from pybluehost.core.types import IOCapability
+    NO = int(IOCapability.NO_INPUT_NO_OUTPUT)
+    KO = int(IOCapability.KEYBOARD_ONLY)
+    if local_io == NO or peer_io == NO:
+        return False
+    display_caps = {int(IOCapability.DISPLAY_ONLY),
+                    int(IOCapability.DISPLAY_YES_NO),
+                    int(IOCapability.KEYBOARD_DISPLAY)}
+    input_caps = {int(IOCapability.KEYBOARD_ONLY),
+                  int(IOCapability.KEYBOARD_DISPLAY)}
+    has_display = local_io in display_caps or peer_io in display_caps
+    has_input = local_io in input_caps or peer_io in input_caps
+    if not (has_display and has_input):
+        return False
+    if local_io == KO and peer_io == KO:
+        return False
+    return True
+
+
+def _passkey_local_role(ctx: "SMPPairingContext") -> str:
+    """Return 'display' or 'input' for the local side.
+
+    Only meaningful when _association_model(ctx) == 'passkey_entry'.
+    """
+    from pybluehost.core.types import IOCapability
+    local = int(ctx.local_io_caps)
+    peer = int(ctx.peer_io_caps)
+    display_caps = {int(IOCapability.DISPLAY_ONLY),
+                    int(IOCapability.DISPLAY_YES_NO),
+                    int(IOCapability.KEYBOARD_DISPLAY)}
+    input_caps = {int(IOCapability.KEYBOARD_ONLY),
+                  int(IOCapability.KEYBOARD_DISPLAY)}
+    local_can_display = local in display_caps
+    local_can_input = local in input_caps
+    peer_can_display = peer in display_caps
+    peer_can_input = peer in input_caps
+
+    # Both-KeyboardDisplay: spec says Initiator displays, Responder inputs.
+    if local == int(IOCapability.KEYBOARD_DISPLAY) and peer == int(IOCapability.KEYBOARD_DISPLAY):
+        return "display" if ctx.role == PairingRole.INITIATOR else "input"
+
+    # If local can display and peer can't (i.e. peer is KeyboardOnly), local displays.
+    if local_can_display and not peer_can_display:
+        return "display"
+    # If local can input and peer can't (peer is DisplayOnly/DisplayYesNo), local inputs.
+    if local_can_input and not peer_can_input:
+        return "input"
+    # Local is KeyboardDisplay; peer is either DisplayOnly/DisplayYesNo or KeyboardOnly:
+    if local == int(IOCapability.KEYBOARD_DISPLAY):
+        if peer in (int(IOCapability.DISPLAY_ONLY), int(IOCapability.DISPLAY_YES_NO)):
+            return "input"
+        if peer == int(IOCapability.KEYBOARD_ONLY):
+            return "display"
+    # Defensive fallback
+    return "display" if local_can_display else "input"
 
 
 async def _sc_compute_and_await_nc(ctx: "SMPPairingContext") -> None:
