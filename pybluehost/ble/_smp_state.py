@@ -178,6 +178,23 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
         action=lambda **kw: _on_failed(ctx, reason=0x03, **kw),
     )
 
+    # ---- Sub-Plan 3b-1 — Legacy Passkey Entry transitions ----
+    sm.add_transition(
+        SMPState.PASSKEY_INPUT_PENDING, SMPEvent.PAIRING_CONFIRM_RX,
+        SMPState.PASSKEY_INPUT_PENDING,
+        action=lambda **kw: _passkey_buffer_peer_confirm(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.PASSKEY_INPUT_PENDING, SMPEvent.PASSKEY_USER_ENTERED,
+        SMPState.CONFIRMING,
+        action=lambda **kw: _passkey_user_entered(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.PASSKEY_INPUT_PENDING, SMPEvent.PASSKEY_USER_REJECTED,
+        SMPState.FAILED,
+        action=lambda **kw: _on_failed(ctx, reason=0x01, **kw),
+    )
+
     # Encryption-change advancement (both roles use the same target state)
     sm.add_transition(
         SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
@@ -248,6 +265,7 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
     sm.set_timeout(SMPState.STK_ENCRYPTING, 30.0, SMPEvent.TIMEOUT)
     sm.set_timeout(SMPState.DHKEY_CHECK, 30.0, SMPEvent.TIMEOUT)
     sm.set_timeout(SMPState.NUMERIC_COMPARE_PENDING, 30.0, SMPEvent.TIMEOUT)
+    sm.set_timeout(SMPState.PASSKEY_INPUT_PENDING, 60.0, SMPEvent.TIMEOUT)
 
     # Universal failure transitions
     for state in (
@@ -255,6 +273,7 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
         SMPState.RANDOM_EXCHANGE, SMPState.STK_ENCRYPTING, SMPState.KEY_DISTRIBUTION,
         SMPState.PUBLIC_KEY_EXCHANGE, SMPState.DHKEY_CHECK,
         SMPState.NUMERIC_COMPARE_PENDING,
+        SMPState.PASSKEY_INPUT_PENDING,
     ):
         sm.add_transition(
             state, SMPEvent.PAIRING_FAILED_RX, SMPState.FAILED,
@@ -1010,6 +1029,33 @@ async def _passkey_await_user_input(ctx: "SMPPairingContext") -> None:
         await ctx.state_machine.fire(SMPEvent.PASSKEY_USER_ENTERED)
 
     asyncio.create_task(_await())
+
+
+async def _passkey_buffer_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """Input-side helper: stash peer's Pairing_Confirm while we wait on the user.
+
+    Once PASSKEY_USER_ENTERED fires, the existing Phase-2 flow validates this
+    buffered value against the recomputed c1 once both randoms are exchanged.
+    """
+    ctx.peer_confirm = pdu.confirm_value
+
+
+async def _passkey_user_entered(ctx: "SMPPairingContext", **_kw) -> None:
+    """Input-side helper: user entered passkey → set TK, send our Pairing_Confirm.
+
+    For Initiator Input: peer Confirm has NOT yet arrived; we send first.
+    For Responder Input: peer Confirm may already be in ctx.peer_confirm (buffered);
+      we still just send our own Confirm — c1 verification of the peer's value
+      happens later in _responder_recv_peer_random against ctx.peer_confirm.
+    """
+    from pybluehost.ble.smp import SMPPairingConfirm
+    ctx.tk = ctx.passkey.to_bytes(16, "little")
+    ctx.local_random = os.urandom(16)
+    preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
+    ctx.local_confirm = SMPCrypto.c1(
+        ctx.tk, ctx.local_random, preq, pres, iat, rat, ia, ra,
+    )
+    await ctx.send(SMPPairingConfirm(confirm_value=ctx.local_confirm).to_bytes())
 
 
 # ---------------------------------------------------------------------------

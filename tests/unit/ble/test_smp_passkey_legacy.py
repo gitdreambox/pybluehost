@@ -244,3 +244,64 @@ async def test_passkey_await_user_input_uses_autoaccept_when_no_delegate():
         await asyncio.sleep(0)
     assert sm.fired == [SMPEvent.PASSKEY_USER_ENTERED]
     assert ctx.passkey == 0
+
+
+@pytest.mark.asyncio
+async def test_passkey_buffer_peer_confirm_stashes_value():
+    from pybluehost.ble._smp_state import _passkey_buffer_peer_confirm
+
+    ctx = SimpleNamespace(peer_confirm=None)
+    pdu = SimpleNamespace(confirm_value=b"\x12" * 16)
+    await _passkey_buffer_peer_confirm(ctx, pdu=pdu)
+    assert ctx.peer_confirm == b"\x12" * 16
+
+
+@pytest.mark.asyncio
+async def test_passkey_user_entered_initiator_computes_and_sends_confirm(monkeypatch):
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "c1",
+                        staticmethod(lambda *a, **k: b"\xaa" * 16))
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        passkey=314159,
+        saved_pairing_request=b"\x01" + b"\x00" * 6,
+        saved_pairing_response=b"\x02" + b"\x00" * 6,
+        peer_address=BDAddress(b"\x0B" * 6),
+        local_address=BDAddress(b"\x0A" * 6),
+        connection_handle=1,
+        send=_send,
+        peer_confirm=None,
+    )
+    await state_mod._passkey_user_entered(ctx)
+    assert ctx.tk == (314159).to_bytes(16, "little")
+    assert isinstance(ctx.local_random, bytes) and len(ctx.local_random) == 16
+    assert ctx.local_confirm == b"\xaa" * 16
+    assert len(sent) == 1
+    assert sent[0][0] == 0x03
+
+
+def test_passkey_input_pending_in_universal_failure_loop():
+    """register_transitions must include PASSKEY_INPUT_PENDING in the universal
+    failure-transition loop (PAIRING_FAILED_RX, TIMEOUT, DISCONNECTED → FAILED)."""
+    import inspect
+    from pybluehost.ble import _smp_state as state_mod
+    src = inspect.getsource(state_mod.register_transitions)
+    assert "PASSKEY_INPUT_PENDING" in src
+    universal_loop_segment = src[src.find("Universal failure"):]
+    assert "PASSKEY_INPUT_PENDING" in universal_loop_segment
+
+
+def test_passkey_input_pending_timeout_set():
+    """register_transitions must set a 60s timeout on PASSKEY_INPUT_PENDING."""
+    import inspect
+    from pybluehost.ble import _smp_state as state_mod
+    src = inspect.getsource(state_mod.register_transitions)
+    assert "set_timeout(SMPState.PASSKEY_INPUT_PENDING" in src
+    assert "60.0" in src
