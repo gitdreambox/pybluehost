@@ -403,3 +403,127 @@ async def test_initiator_pairing_response_input_role_overrides_state_to_passkey_
     await state_mod._initiator_recv_pairing_response(ctx, pdu=pdu)
     assert sm._state == SMPState.PASSKEY_INPUT_PENDING
     assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_responder_pairing_request_display_role_displays_and_sends_response(monkeypatch):
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPPairingRequest, SMPState
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+    monkeypatch.setattr(state_mod, "_passkey_local_role", lambda _ctx: "display")
+    monkeypatch.setattr(state_mod, "secrets",
+                        SimpleNamespace(randbelow=lambda _n: 135790))
+
+    displayed: list = []
+    class _CapturingDisplay:
+        async def display_passkey(self, peer_addr, passkey):
+            displayed.append((peer_addr, passkey))
+
+    class _FakeSM:
+        def __init__(self):
+            self._state = SMPState.IDLE
+        async def fire(self, ev): pass
+
+    sm = _FakeSM()
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+    pdu = SMPPairingRequest(
+        io_capability=0x02, oob_data_flag=0, auth_req=0x05,
+        max_key_size=16, init_key_dist=0x07, resp_key_dist=0x07,
+    )
+    ctx = SimpleNamespace(
+        role=PairingRole.RESPONDER,
+        peer_io_caps=0x02, peer_auth_req=0x05, peer_max_key_size=16,
+        peer_init_key_dist=0x07, peer_resp_key_dist=0x07,
+        local_io_caps=0x01, bondable=True,
+        peer_address=BDAddress(b"\x0B" * 6),
+        local_address=BDAddress(b"\x0A" * 6),
+        security_config=SimpleNamespace(
+            enable_secure_connections=False, mitm_required=True,
+        ),
+        state_machine=sm,
+        _delegate=_CapturingDisplay(),
+        send=_send,
+    )
+    await state_mod._responder_recv_pairing_request(ctx, pdu=pdu)
+    assert len(sent) == 1 and sent[0][0] == 0x02  # Pairing_Response sent
+    assert ctx.passkey == 135790
+    assert displayed == [(BDAddress(b"\x0B" * 6), 135790)]
+    assert ctx.tk == (135790).to_bytes(16, "little")
+    # action does not override state; SM transition target is CONFIRMING
+    assert sm._state == SMPState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_responder_pairing_request_input_role_overrides_to_passkey_pending(monkeypatch):
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPPairingRequest, SMPState
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+    monkeypatch.setattr(state_mod, "_passkey_local_role", lambda _ctx: "input")
+
+    class _FakeSM:
+        def __init__(self):
+            self._state = SMPState.IDLE
+        async def fire(self, ev): pass
+
+    sm = _FakeSM()
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+    pdu = SMPPairingRequest(
+        io_capability=0x01, oob_data_flag=0, auth_req=0x05,
+        max_key_size=16, init_key_dist=0x07, resp_key_dist=0x07,
+    )
+    ctx = SimpleNamespace(
+        role=PairingRole.RESPONDER,
+        peer_io_caps=0x01, peer_auth_req=0x05, peer_max_key_size=16,
+        peer_init_key_dist=0x07, peer_resp_key_dist=0x07,
+        local_io_caps=0x02, bondable=True,
+        peer_address=BDAddress(b"\x0B" * 6),
+        local_address=BDAddress(b"\x0A" * 6),
+        security_config=SimpleNamespace(
+            enable_secure_connections=False, mitm_required=True,
+        ),
+        state_machine=sm,
+        _delegate=_GoodPasskeyDelegate(),
+        send=_send,
+    )
+    await state_mod._responder_recv_pairing_request(ctx, pdu=pdu)
+    # Pairing_Response sent BEFORE state override
+    assert len(sent) == 1 and sent[0][0] == 0x02
+    assert sm._state == SMPState.PASSKEY_INPUT_PENDING
+
+
+@pytest.mark.asyncio
+async def test_persist_bond_authenticated_true_for_legacy_passkey(monkeypatch):
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import BondInfo, PairingRole
+
+    saved: list = []
+    class _MemStorage:
+        async def save_bond(self, bond):
+            saved.append(bond)
+
+    monkeypatch.setattr(state_mod, "_sc_negotiated", lambda _ctx: False)
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+
+    fut = asyncio.get_event_loop().create_future()
+    ctx = SimpleNamespace(
+        peer_address=BDAddress(bytes(6)),
+        received_identity_address=(0, bytes(6)),
+        role=PairingRole.INITIATOR,
+        received_ltk=b"\x33" * 16,
+        received_ediv=0,
+        received_rand=b"\x00" * 8,
+        local_ltk=None, local_ediv=0, local_rand=b"\x00" * 8,
+        received_irk=None, received_csrk=None,
+        connection_handle=1,
+        _bond_storage=_MemStorage(),
+        pairing_complete=fut,
+    )
+    await state_mod._persist_bond(ctx)
+    assert saved[0].authenticated is True
+    assert saved[0].sc is False

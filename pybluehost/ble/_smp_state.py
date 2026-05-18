@@ -423,6 +423,28 @@ async def _responder_recv_pairing_request(ctx: "SMPPairingContext", *, pdu: SMPP
         # SC path: override state to PUBLIC_KEY_EXCHANGE to await Initiator's Public Key.
         # The state machine already set state to CONFIRMING per the registered transition.
         ctx.state_machine._state = SMPState.PUBLIC_KEY_EXCHANGE
+        return
+
+    # Sub-Plan 3b-1: Legacy Passkey branch
+    model = _association_model(ctx)
+    if model == "passkey_entry":
+        role = _passkey_local_role(ctx)
+        if role == "display":
+            ctx.passkey = secrets.randbelow(1_000_000)
+            delegate = getattr(ctx, "_delegate", None)
+            if delegate is not None:
+                try:
+                    await delegate.display_passkey(ctx.peer_address, ctx.passkey)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "delegate.display_passkey raised: %s; proceeding", exc,
+                    )
+            ctx.tk = ctx.passkey.to_bytes(16, "little")
+            # No PDU to send — Responder waits for Initiator's Pairing_Confirm.
+            return
+        # role == "input": override state and spawn delegate task
+        ctx.state_machine._state = SMPState.PASSKEY_INPUT_PENDING
+        await _passkey_await_user_input(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -853,6 +875,8 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
                 ltk_for_bond = ctx.received_ltk if ctx.received_ltk else None
                 ediv_for_bond = ctx.received_ediv
                 rand_for_bond = ctx.received_rand if ctx.received_rand else b"\x00" * 8
+            # Sub-Plan 3b-1: Passkey provides MITM authentication; Just Works does not.
+            authenticated = _association_model(ctx) == "passkey_entry"
             bond = BondInfo(
                 peer_address=ctx.peer_address,
                 address_type=ctx.received_identity_address[0],
@@ -862,7 +886,7 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
                 ediv=ediv_for_bond,
                 rand=rand_for_bond,
                 key_size=16,
-                authenticated=False,
+                authenticated=authenticated,
                 sc=False,
             )
         ltk_stored = bool(bond.ltk)
