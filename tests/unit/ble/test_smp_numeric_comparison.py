@@ -26,7 +26,4 @@ async def test_auto_accept_delegate_confirm_numeric_returns_true():
 
 
 def test_pairing_delegate_protocol_has_confirm_numeric():
-    # AutoAcceptDelegate must satisfy the runtime structure
-    assert hasattr(PairingDelegate, "confirm_numeric") or hasattr(AutoAcceptDelegate, "confirm_numeric")
-    # explicit attribute check on AutoAcceptDelegate
-    assert callable(getattr(AutoAcceptDelegate, "confirm_numeric"))
+    assert "confirm_numeric" in PairingDelegate.__dict__
