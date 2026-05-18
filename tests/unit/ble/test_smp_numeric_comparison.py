@@ -210,3 +210,106 @@ async def test_sc_compute_and_await_nc_falls_back_to_autoaccept_when_no_delegate
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     assert sm.fired == [SMPEvent.NUMERIC_COMPARE_USER_CONFIRMED]
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — Branch SC Random handlers on association model
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_initiator_random_branches_to_nc_when_selected(monkeypatch):
+    """When _association_model returns NC, initiator does NOT immediately send Ea;
+    instead it transitions to NUMERIC_COMPARE_PENDING."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import SMPState
+    sent_pdus: list[bytes] = []
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "numeric_comparison")
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(lambda *a, **k: b"\x00" * 16))
+    monkeypatch.setattr(state_mod.SMPCrypto, "f5", staticmethod(lambda *a, **k: (b"\x11" * 16, b"\x22" * 16)))
+
+    class _FakeSM:
+        def __init__(self):
+            self._state = SMPState.CONFIRMING
+        async def fire(self, ev):
+            pass
+
+    sm = _FakeSM()
+    from pybluehost.core.address import BDAddress
+    async def _send(data):
+        sent_pdus.append(data)
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        local_random=bytes(16),
+        peer_random=bytes(16),
+        peer_confirm=b"\x00" * 16,
+        dhkey=bytes(32),
+        local_auth_req=0x0D,
+        peer_auth_req=0x0D,
+        local_io_caps=0x01,
+        peer_io_caps=0x01,
+        peer_address=BDAddress(bytes(6)),
+        local_address=BDAddress(bytes(6)),
+        state_machine=sm,
+        _delegate=_CapturingDelegate(),
+        _hci=None,
+        send=_send,
+    )
+
+    pdu = SimpleNamespace(random_value=bytes(16))
+    await state_mod._sc_initiator_recv_peer_random(ctx, pdu=pdu)
+    # No DHKey Check PDU should have been sent yet (opcode 0x0D)
+    assert all(not b.startswith(bytes([0x0D])) for b in sent_pdus)
+    # State must be NUMERIC_COMPARE_PENDING
+    assert sm._state == SMPState.NUMERIC_COMPARE_PENDING
+
+
+@pytest.mark.asyncio
+async def test_initiator_random_just_works_path_still_sends_ea(monkeypatch):
+    """When _association_model returns just_works, initiator immediately sends Ea
+    and advances to DHKEY_CHECK (existing Sub-Plan 2 behavior)."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import SMPState
+    sent_pdus: list[bytes] = []
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "just_works")
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(lambda *a, **k: b"\x00" * 16))
+    monkeypatch.setattr(state_mod.SMPCrypto, "f5", staticmethod(lambda *a, **k: (b"\x11" * 16, b"\x22" * 16)))
+    monkeypatch.setattr(state_mod.SMPCrypto, "f6", staticmethod(lambda *a, **k: b"\xee" * 16))
+
+    class _FakeSM:
+        def __init__(self):
+            self._state = SMPState.CONFIRMING
+        async def fire(self, ev): pass
+
+    sm = _FakeSM()
+    from pybluehost.core.address import BDAddress
+    async def _send(data):
+        sent_pdus.append(data)
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        local_random=bytes(16),
+        peer_random=bytes(16),
+        peer_confirm=b"\x00" * 16,
+        dhkey=bytes(32),
+        local_auth_req=0x0D,
+        peer_auth_req=0x0D,
+        local_io_caps=0x01,
+        peer_io_caps=0x01,
+        peer_address=BDAddress(bytes(6)),
+        local_address=BDAddress(bytes(6)),
+        state_machine=sm,
+        _delegate=None,
+        _hci=None,
+        send=_send,
+    )
+    pdu = SimpleNamespace(random_value=bytes(16))
+    await state_mod._sc_initiator_recv_peer_random(ctx, pdu=pdu)
+    assert sm._state == SMPState.DHKEY_CHECK
+    # DHKey Check PDU (opcode 0x0D) should have been sent
+    assert any(b.startswith(bytes([0x0D])) for b in sent_pdus)

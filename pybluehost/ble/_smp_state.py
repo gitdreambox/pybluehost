@@ -166,6 +166,18 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
             action=lambda **kw: _sc_responder_recv_peer_dhkey_check(ctx, **kw),
         )
 
+    # ---- SC Sub-Plan 3a — Numeric Comparison transitions ----
+    sm.add_transition(
+        SMPState.NUMERIC_COMPARE_PENDING, SMPEvent.NUMERIC_COMPARE_USER_CONFIRMED,
+        SMPState.DHKEY_CHECK,
+        action=lambda **kw: _nc_user_confirmed(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.NUMERIC_COMPARE_PENDING, SMPEvent.NUMERIC_COMPARE_USER_REJECTED,
+        SMPState.FAILED,
+        action=lambda **kw: _on_failed(ctx, reason=0x03, **kw),
+    )
+
     # Encryption-change advancement (both roles use the same target state)
     sm.add_transition(
         SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
@@ -235,12 +247,14 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
     sm.set_timeout(SMPState.RANDOM_EXCHANGE, 30.0, SMPEvent.TIMEOUT)
     sm.set_timeout(SMPState.STK_ENCRYPTING, 30.0, SMPEvent.TIMEOUT)
     sm.set_timeout(SMPState.DHKEY_CHECK, 30.0, SMPEvent.TIMEOUT)
+    sm.set_timeout(SMPState.NUMERIC_COMPARE_PENDING, 30.0, SMPEvent.TIMEOUT)
 
     # Universal failure transitions
     for state in (
         SMPState.IDLE, SMPState.FEATURE_EXCHANGE, SMPState.CONFIRMING,
         SMPState.RANDOM_EXCHANGE, SMPState.STK_ENCRYPTING, SMPState.KEY_DISTRIBUTION,
         SMPState.PUBLIC_KEY_EXCHANGE, SMPState.DHKEY_CHECK,
+        SMPState.NUMERIC_COMPARE_PENDING,
     ):
         sm.add_transition(
             state, SMPEvent.PAIRING_FAILED_RX, SMPState.FAILED,
@@ -487,15 +501,27 @@ async def _sc_initiator_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_k
     await ctx.send(SMPPairingRandom(random_value=ctx.local_random).to_bytes())
 
 
-async def _sc_initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
-    """SC Initiator: Responder's Random Nb arrived. Verify Cb = f4(PKbx, PKax, Nb, 0), derive f5.
+async def _sc_send_dhkey_check_initiator(ctx: "SMPPairingContext") -> None:
+    """Initiator Phase 2.3: compute and send Ea, advance to DHKEY_CHECK.
 
-    The registered transition advances to STK_ENCRYPTING (Legacy default); we
-    override _state to RANDOM_EXCHANGE here because SC does not use STK.
-    After deriving f5 keys, immediately compute and send Ea = f6(MacKey, Na, Nb, 0, IOcapA, A, B)
-    and advance state to DHKEY_CHECK.
+    Extracted from _sc_initiator_recv_peer_random so that NC pairing can defer
+    this until the user confirms the numeric value.
     """
     from pybluehost.ble.smp import SMPPairingDHKeyCheck
+    local_addr = _local_address_bytes(ctx)
+    peer_addr = _peer_address_bytes(ctx)
+    a1 = b"\x00" + local_addr
+    a2 = b"\x00" + peer_addr
+    io_cap_a = bytes([ctx.local_auth_req, 0x00, int(ctx.local_io_caps)])
+    ea = SMPCrypto.f6(ctx.mac_key, ctx.local_random, ctx.peer_random, b"\x00" * 16, io_cap_a, a1, a2)
+    ctx.local_dhkey_check = ea
+    await ctx.send(SMPPairingDHKeyCheck(dhkey_check=ea).to_bytes())
+    ctx.state_machine._state = SMPState.DHKEY_CHECK
+
+
+async def _sc_initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Initiator: Responder's Random Nb arrived. Verify Cb, derive f5,
+    then branch on association model (NC -> NUMERIC_COMPARE_PENDING, JW -> send Ea)."""
     ctx.peer_random = pdu.random_value
     # Verify Cb = f4(PKbx, PKax, Nb, 0)
     pkbx = ctx.peer_public_key[:32]
@@ -516,19 +542,16 @@ async def _sc_initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
     ctx.mac_key = mac_key
     ctx.ltk_sc = ltk
 
-    # Phase 2.3: compute and send Ea immediately
-    # Ea = f6(MacKey, Na, Nb, ra=0, IOcapA, A1, A2)
-    # IOcapA = (Auth_Req || OOB_Flag || IO_Capability), 3 bytes — Initiator's
-    io_cap_a = bytes([ctx.local_auth_req, 0x00, int(ctx.local_io_caps)])
-    ea = SMPCrypto.f6(ctx.mac_key, ctx.local_random, ctx.peer_random, b"\x00" * 16, io_cap_a, a1, a2)
-    ctx.local_dhkey_check = ea
-    await ctx.send(SMPPairingDHKeyCheck(dhkey_check=ea).to_bytes())
-    # Advance to DHKEY_CHECK (waiting for peer's Eb)
-    ctx.state_machine._state = SMPState.DHKEY_CHECK
+    if _association_model(ctx) == "numeric_comparison":
+        ctx.state_machine._state = SMPState.NUMERIC_COMPARE_PENDING
+        await _sc_compute_and_await_nc(ctx)
+        return
+    await _sc_send_dhkey_check_initiator(ctx)
 
 
 async def _sc_responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
-    """SC Responder: Initiator's Random Na arrived. Send own Nb, derive f5."""
+    """SC Responder: Initiator's Random Na arrived. Send own Nb, derive f5,
+    then for NC enter NUMERIC_COMPARE_PENDING and await user confirm."""
     from pybluehost.ble.smp import SMPPairingRandom
     ctx.peer_random = pdu.random_value
     # Responder's local_random (Nb) was generated in _sc_responder_recv_peer_public_key
@@ -543,6 +566,22 @@ async def _sc_responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
     mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.peer_random, ctx.local_random, a1, a2)
     ctx.mac_key = mac_key
     ctx.ltk_sc = ltk
+
+    if _association_model(ctx) == "numeric_comparison":
+        ctx.state_machine._state = SMPState.NUMERIC_COMPARE_PENDING
+        await _sc_compute_and_await_nc(ctx)
+
+
+async def _nc_user_confirmed(ctx: "SMPPairingContext", **_kw) -> None:
+    """User confirmed NC; resume SC Phase 2.3.
+
+    Initiator: send Ea (the registered transition has already advanced state to DHKEY_CHECK
+    target, but _sc_send_dhkey_check_initiator will also set _state explicitly).
+    Responder: nothing to send -- DHKEY_CHECK_RX will arrive and trigger Eb via existing path.
+    """
+    from pybluehost.ble.smp import PairingRole
+    if ctx.role == PairingRole.INITIATOR:
+        await _sc_send_dhkey_check_initiator(ctx)
 
 
 async def _sc_initiator_recv_peer_dhkey_check(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
