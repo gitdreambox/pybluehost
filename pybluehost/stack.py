@@ -241,6 +241,7 @@ class Stack:
                 hci=hci,
                 security_config=cfg.security,
                 bond_storage=cfg.bond_storage,
+                delegate=smp._delegate,
             ),
             whitelist=WhiteList(hci=hci),
             ble_extended_advertiser=ExtendedAdvertiser(hci=hci),

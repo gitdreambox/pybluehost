@@ -286,10 +286,12 @@ class SSPManager:
         *,
         security_config: object | None = None,
         bond_storage: object | None = None,
+        delegate: object | None = None,
     ) -> None:
         self._hci = hci
         self._security_config = security_config
         self._bond_storage = bond_storage
+        self._delegate = delegate
         self._io_capability: int = 0x03  # NoInputNoOutput
         self._confirm_handler: Callable[[BDAddress, int], bool] | None = None
         self._pending_replies: set[asyncio.Task[object]] = set()
@@ -339,14 +341,11 @@ class SSPManager:
         if event.event_code == EventCode.USER_CONFIRMATION_REQUEST:
             address = BDAddress(event.parameters[:6])
             numeric_value = int.from_bytes(event.parameters[6:10], "little")
-            accepted = True
-            if self._confirm_handler is not None:
-                accepted = self._confirm_handler(address, numeric_value)
-            if accepted:
-                self._schedule_reply(self.confirm(address))
-            else:
-                self._schedule_reply(self.deny(address))
-        elif event.event_code == EventCode.LINK_KEY_NOTIFICATION and len(event.parameters) >= 23:
+            self._schedule_reply(
+                self._dispatch_user_confirmation(address, numeric_value)
+            )
+            return
+        if event.event_code == EventCode.LINK_KEY_NOTIFICATION and len(event.parameters) >= 23:
             self._schedule_reply(self._on_link_key_notification(event.parameters))
         elif event.event_code == EventCode.SIMPLE_PAIRING_COMPLETE and len(event.parameters) >= 7:
             self._schedule_reply(self._on_simple_pairing_complete(event.parameters))
@@ -417,3 +416,36 @@ class SSPManager:
         task = asyncio.create_task(coro)
         self._pending_replies.add(task)
         task.add_done_callback(self._pending_replies.discard)
+
+    async def _dispatch_user_confirmation(
+        self, address: BDAddress, numeric_value: int
+    ) -> None:
+        """Dispatch User_Confirmation_Request through delegate, legacy sync handler, or auto-accept.
+
+        Preference order:
+          1. Async delegate.confirm_numeric(addr, value) if a delegate with that method is set.
+          2. Legacy sync self._confirm_handler(addr, value) (pre-Sub-Plan-3a callback).
+          3. Auto-accept (backward compat / Just-Works equivalent for BR/EDR NC).
+
+        If the delegate raises, the request is denied (fail-closed) to preserve
+        the security posture: an unhandled exception in user code must never
+        silently complete pairing.
+        """
+        if self._delegate is not None and hasattr(self._delegate, "confirm_numeric"):
+            try:
+                accepted = bool(
+                    await self._delegate.confirm_numeric(address, numeric_value)
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "SSP delegate.confirm_numeric raised; denying request"
+                )
+                accepted = False
+        elif self._confirm_handler is not None:
+            accepted = bool(self._confirm_handler(address, numeric_value))
+        else:
+            accepted = True
+        if accepted:
+            await self.confirm(address)
+        else:
+            await self.deny(address)
