@@ -34,3 +34,15 @@ def test_pairing_delegate_protocol_passkey_methods_present():
     assert "display_passkey" in PairingDelegate.__dict__
     assert "get_passkey" in PairingDelegate.__dict__
     assert "confirm_passkey" in PairingDelegate.__dict__
+
+
+from pybluehost.ble.smp import SMPEvent, SMPState
+
+
+def test_smp_state_passkey_input_pending_exists():
+    assert SMPState.PASSKEY_INPUT_PENDING == 11
+
+
+def test_smp_event_passkey_values():
+    assert SMPEvent.PASSKEY_USER_ENTERED == 20
+    assert SMPEvent.PASSKEY_USER_REJECTED == 21

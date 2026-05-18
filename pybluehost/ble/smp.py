@@ -643,6 +643,7 @@ class SMPState(IntEnum):
     PUBLIC_KEY_EXCHANGE     = 8
     DHKEY_CHECK             = 9
     NUMERIC_COMPARE_PENDING = 10
+    PASSKEY_INPUT_PENDING   = 11
 
 
 class SMPEvent(IntEnum):
@@ -666,6 +667,8 @@ class SMPEvent(IntEnum):
     PAIRING_DHKEY_CHECK_RX            = 17
     NUMERIC_COMPARE_USER_CONFIRMED    = 18
     NUMERIC_COMPARE_USER_REJECTED     = 19
+    PASSKEY_USER_ENTERED              = 20
+    PASSKEY_USER_REJECTED             = 21
 
 
 class PairingRole(IntEnum):
