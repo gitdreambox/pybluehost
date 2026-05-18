@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：SMP Sub-Plan 3a (Numeric Comparison) — ✅ 完成
-**下一步**：SMP Sub-Plan 3b (Passkey Entry) / 3c (OOB) / 断线重连闭环 / e2e 覆盖
+**当前进行中**：SMP Sub-Plan 3b-1 (Legacy Passkey Entry) — ✅ 完成
+**下一步**：SMP Sub-Plan 3b-2 (SC Passkey Entry) / 3c (OOB) / 断线重连闭环 / e2e 覆盖
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -49,8 +49,9 @@
 | HCI 容错初始化 | initialize() 按 Supported_Commands bitmap 跳过不支持的命令；Read_BD_ADDR 硬要求 | ✅ 完成 | [2026-05-16-hci-tolerant-initialization](plans/2026-05-16-hci-tolerant-initialization.md) | `pybluehost/hci/capabilities.py`, `pybluehost/hci/controller.py`, `pybluehost/hci/virtual.py` |
 | Secure Connections | LE SC (ECDH P-256 + f4/f5/f6) + BR/EDR SC (HCI SSP events) Just Works；opt-in via SecurityConfig.enable_secure_connections | ✅ 完成 | [2026-05-17-secure-connections](plans/2026-05-17-secure-connections.md) | `pybluehost/ble/_smp_sc_crypto.py`, `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/ble/security.py`, `pybluehost/hci/{packets,controller,virtual,capabilities}.py`, `pybluehost/classic/gap.py`, `pybluehost/stack.py` |
 | SMP Sub-Plan 3a (Numeric Comparison) | LE SC Numeric Comparison association model：g2 计算 + PairingDelegate.confirm_numeric + auth_req MITM 位 + 双端 authenticated 持久化 + LE SC NC loopback E2E | ✅ 完成 | [2026-05-18-smp-sub-plan-3a-numeric-comparison](plans/2026-05-18-smp-sub-plan-3a-numeric-comparison.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py`, `pybluehost/ble/security.py`, `pybluehost/classic/gap.py`, `pybluehost/stack.py` |
+| SMP Sub-Plan 3b-1 (Legacy Passkey Entry) | Legacy Passkey Entry association model：`SMPState.PASSKEY_INPUT_PENDING` + `PairingDelegate.display_passkey`/`get_passkey` 规范化 + Display/Input role 选择 + IO-cap 适配 + c1 共享 TK + 双端 authenticated 持久化 + Legacy Passkey loopback E2E | ✅ 完成 | [2026-05-18-smp-sub-plan-3b-1-legacy-passkey](plans/2026-05-18-smp-sub-plan-3b-1-legacy-passkey.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py` |
 
-**总计：25 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a）**
+**总计：26 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1）**
 
 ---
 
@@ -335,6 +336,28 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
 - 验收：`uv run pytest tests/ -q --transport=virtual` PASS (1226 passed, 20 skipped, 3 pre-existing USB diagnostics failed)
 - 不在范围：Passkey Entry → Sub-Plan 3b；OOB → Sub-Plan 3c
+
+### ✅ SMP Sub-Plan 3b-1 (Legacy Passkey Entry)
+- 完成时间：2026-05-18
+- Plan 文档：[2026-05-18-smp-sub-plan-3b-1-legacy-passkey.md](plans/2026-05-18-smp-sub-plan-3b-1-legacy-passkey.md)
+- 关键变化：
+  - `PairingDelegate` Passkey 方法签名规范化：`display_passkey(peer_addr, passkey)` / `get_passkey(peer_addr)` / `confirm_passkey(peer_addr, passkey)` 均加 `peer_addr`，与 NC `confirm_numeric` 一致
+  - `SMPState.PASSKEY_INPUT_PENDING` + `SMPEvent.PASSKEY_USER_ENTERED` / `PASSKEY_USER_REJECTED` 状态/事件
+  - `_association_model(ctx)`：Legacy + 双端 MITM + IO-cap 可走 Passkey 时返回 `"passkey_entry"`；否则回落 Just Works
+  - `_passkey_capable(local_io, peer_io)`：NO_INPUT_NO_OUTPUT / 双端 KeyboardOnly 等不合规 IO-cap 组合直接回落 JW
+  - `_passkey_local_role(ctx)`：基于双端 IO-cap 选择 `"display"` 或 `"input"`（含 KeyboardDisplay 双端时 Initiator-displays 规则）
+  - 新增 transition 表：PASSKEY_INPUT_PENDING ⟶ PAIRING_CONFIRM_RX（buffer peer Confirm）/ PASSKEY_USER_ENTERED ⟶ CONFIRMING（送出本端 Confirm）/ PASSKEY_USER_REJECTED ⟶ FAILED (reason=0x01) / TIMEOUT 60s
+  - `_passkey_resolve_display_value(ctx)`：Display 端优先用 delegate 上的 `passkey: int` preset（test/脚本场景同步两端值），否则 `secrets.randbelow(1_000_000)`
+  - `_passkey_await_user_input(ctx)`：Input 端 spawn delegate.get_passkey 任务，结果归一化（int 0–999_999）后 fire user-entered；其余路径 fire user-rejected
+  - `_passkey_buffer_peer_confirm(ctx, pdu)`：Initiator 的 Pairing_Confirm 比用户输入早到时仅 stash `ctx.peer_confirm`，不响应
+  - `_passkey_user_entered(ctx)`：用户输入到位后 `ctx.tk = passkey.to_bytes(16, "little")`，computes c1 with full preq/pres/iat/rat/ia/ra params，送 Pairing_Confirm
+  - **Task 8 收尾**：
+    - `_responder_recv_peer_confirm` 增加 Passkey Input 路径守卫：当 `_association_model=="passkey_entry"` 且 `_passkey_local_role=="input"` 且我们已在 `_passkey_user_entered` 中发出 Confirm 时，仅缓存 peer_confirm，不再生成新 local_random / 重发 Confirm（否则 scripted delegate 即时返回会让 PASSKEY_USER_ENTERED 抢在 Initiator 的 Confirm RX 之前 fire，进入 CONFIRMING 后 `_responder_recv_peer_confirm` 会重复发送 Confirm 导致 Initiator 多收一份 Sconfirm、多发一份 Mrand、Responder 多收一份 Mrand 撞上 RANDOM_EXCHANGE 无 transition、c1 也对不上）
+    - `_persist_bond` 在 Legacy MITM 路径 (`_association_model == "passkey_entry"`) 双端持久化 `BondInfo.authenticated=True`
+    - Legacy Passkey loopback E2E (`tests/integration/test_pairing_legacy_passkey_loopback.py`)：Central=DisplayYesNo + Peripheral=KeyboardOnly + `mitm_required=True` + `_FixedPasskeyDelegate(passkey=271828)` 两端 → Display 端通过 delegate preset 用 271828，Input 端 get_passkey 返回 271828 → 双端 `BondInfo.authenticated=True && sc=False`；passkey 不匹配（111111 vs 222222）→ Initiator 的 `stack.pair()` 抛出 (Pairing_Failed reason=0x04, Confirm Value Failed)
+- 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
+- 验收：`uv run --frozen pytest tests/ -q --transport=virtual` PASS (1257 passed, 20 skipped, 3 pre-existing USB diagnostics failed)
+- 不在范围：SC Passkey Entry → Sub-Plan 3b-2；OOB → Sub-Plan 3c
 
 ---
 

@@ -348,10 +348,10 @@ async def _initiator_recv_pairing_response(ctx: "SMPPairingContext", *, pdu: SMP
     if model == "passkey_entry":
         role = _passkey_local_role(ctx)
         if role == "display":
-            # Display role: generate 6-digit passkey, show to user, compute c1
-            # inline and send Pairing_Confirm. SM transition target (CONFIRMING)
-            # is left in place — no state override needed.
-            ctx.passkey = secrets.randbelow(1_000_000)
+            # Display role: obtain a 6-digit passkey (delegate may preset one for
+            # scripted/test scenarios; otherwise generate randomly), show it to
+            # the user, then compute c1 and send Pairing_Confirm.
+            ctx.passkey = await _passkey_resolve_display_value(ctx)
             delegate = getattr(ctx, "_delegate", None)
             if delegate is not None:
                 try:
@@ -430,7 +430,7 @@ async def _responder_recv_pairing_request(ctx: "SMPPairingContext", *, pdu: SMPP
     if model == "passkey_entry":
         role = _passkey_local_role(ctx)
         if role == "display":
-            ctx.passkey = secrets.randbelow(1_000_000)
+            ctx.passkey = await _passkey_resolve_display_value(ctx)
             delegate = getattr(ctx, "_delegate", None)
             if delegate is not None:
                 try:
@@ -489,9 +489,24 @@ async def _initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -
 
 
 async def _responder_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
-    """Responder: peer (Initiator) Confirm arrived. Generate Srand and own Confirm."""
+    """Responder: peer (Initiator) Confirm arrived. Generate Srand and own Confirm.
+
+    Sub-Plan 3b-1: in Legacy Passkey Input role we already sent our Confirm in
+    ``_passkey_user_entered`` once the user typed the passkey. If the user input
+    races ahead of the Initiator's Confirm (e.g. an instant scripted delegate
+    in tests), this handler runs in CONFIRMING after we already transmitted —
+    so we must only buffer the peer's value, not generate a fresh local_random
+    and send a duplicate Confirm.
+    """
     from pybluehost.ble.smp import SMPPairingConfirm
     ctx.peer_confirm = pdu.confirm_value
+    if (
+        _association_model(ctx) == "passkey_entry"
+        and _passkey_local_role(ctx) == "input"
+        and ctx.local_confirm is not None
+    ):
+        # Already sent our Confirm via _passkey_user_entered; nothing more to do.
+        return
     ctx.local_random = os.urandom(16)
     preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
     ctx.local_confirm = SMPCrypto.c1(ctx.tk, ctx.local_random, preq, pres, iat, rat, ia, ra)
@@ -1056,6 +1071,24 @@ async def _sc_compute_and_await_nc(ctx: "SMPPairingContext") -> None:
             await ctx.state_machine.fire(SMPEvent.NUMERIC_COMPARE_USER_REJECTED)
 
     asyncio.create_task(_await_user_confirm())
+
+
+async def _passkey_resolve_display_value(ctx: "SMPPairingContext") -> int:
+    """Return the 6-digit passkey the Display side should present.
+
+    If the delegate exposes a ``passkey: int`` attribute (e.g. a scripted /
+    test fixture), that value is used; otherwise a fresh random 6-digit value
+    is drawn. The delegate's ``get_passkey()`` is intentionally NOT consulted
+    here — that method belongs to the Input role and may return 0 (e.g.
+    AutoAcceptDelegate's default) which is unsuitable as a fresh display
+    challenge.
+    """
+    delegate = getattr(ctx, "_delegate", None)
+    if delegate is not None:
+        preset = getattr(delegate, "passkey", None)
+        if isinstance(preset, int) and 0 <= preset <= 999_999:
+            return preset
+    return secrets.randbelow(1_000_000)
 
 
 async def _passkey_await_user_input(ctx: "SMPPairingContext") -> None:
