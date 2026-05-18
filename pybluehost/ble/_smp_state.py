@@ -575,13 +575,16 @@ async def _sc_responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
 async def _nc_user_confirmed(ctx: "SMPPairingContext", **_kw) -> None:
     """User confirmed NC; resume SC Phase 2.3.
 
-    Initiator: send Ea (the registered transition has already advanced state to DHKEY_CHECK
-    target, but _sc_send_dhkey_check_initiator will also set _state explicitly).
-    Responder: nothing to send -- DHKEY_CHECK_RX will arrive and trigger Eb via existing path.
+    Initiator: send Ea (which advances state to DHKEY_CHECK).
+    Responder: no PDU to send -- reset state back to RANDOM_EXCHANGE so the
+    existing PAIRING_DHKEY_CHECK_RX transition (registered from RANDOM_EXCHANGE)
+    fires when the Initiator's Ea arrives.
     """
     from pybluehost.ble.smp import PairingRole
     if ctx.role == PairingRole.INITIATOR:
         await _sc_send_dhkey_check_initiator(ctx)
+    else:
+        ctx.state_machine._state = SMPState.RANDOM_EXCHANGE
 
 
 async def _sc_initiator_recv_peer_dhkey_check(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:

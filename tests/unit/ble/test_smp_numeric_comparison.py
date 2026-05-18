@@ -313,3 +313,56 @@ async def test_initiator_random_just_works_path_still_sends_ea(monkeypatch):
     assert sm._state == SMPState.DHKEY_CHECK
     # DHKey Check PDU (opcode 0x0D) should have been sent
     assert any(b.startswith(bytes([0x0D])) for b in sent_pdus)
+
+
+@pytest.mark.asyncio
+async def test_nc_user_confirmed_responder_returns_to_random_exchange():
+    """Responder side: after NC confirm, state must reset to RANDOM_EXCHANGE so
+    the existing Ea-receive transition (registered from RANDOM_EXCHANGE) fires."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import SMPState
+
+    class _FakeSM:
+        def __init__(self):
+            self._state = SMPState.NUMERIC_COMPARE_PENDING
+
+    sm = _FakeSM()
+    ctx = SimpleNamespace(role=PairingRole.RESPONDER, state_machine=sm)
+    await state_mod._nc_user_confirmed(ctx)
+    assert sm._state == SMPState.RANDOM_EXCHANGE
+
+
+@pytest.mark.asyncio
+async def test_nc_user_confirmed_initiator_sends_ea(monkeypatch):
+    """Initiator side: after NC confirm, _sc_send_dhkey_check_initiator is called
+    so Ea is transmitted and state advances to DHKEY_CHECK."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import SMPState
+
+    sent: list[bytes] = []
+
+    class _FakeSM:
+        def __init__(self):
+            self._state = SMPState.NUMERIC_COMPARE_PENDING
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f6", staticmethod(lambda *a, **k: b"\xee" * 16))
+
+    sm = _FakeSM()
+    from pybluehost.core.address import BDAddress
+    async def _send(data):
+        sent.append(data)
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        state_machine=sm,
+        local_random=bytes(16),
+        peer_random=bytes(16),
+        mac_key=bytes(16),
+        local_auth_req=0x0D,
+        local_io_caps=0x01,
+        local_address=BDAddress(bytes(6)),
+        peer_address=BDAddress(bytes(6)),
+        send=_send,
+    )
+    await state_mod._nc_user_confirmed(ctx)
+    assert sm._state == SMPState.DHKEY_CHECK
+    assert any(b.startswith(bytes([0x0D])) for b in sent)
