@@ -392,7 +392,7 @@ class TestAutoAcceptDelegate:
         delegate = AutoAcceptDelegate()
         assert await delegate.confirm_pairing(0x03, 0x01) is True
         assert await delegate.confirm_passkey(123456) is True
-        assert await delegate.confirm_numeric_comparison(999999) is True
+        assert await delegate.confirm_numeric(BDAddress(bytes(6)), 999999) is True
         passkey = await delegate.get_passkey()
         assert isinstance(passkey, int)
         assert 0 <= passkey <= 999999

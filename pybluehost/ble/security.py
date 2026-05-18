@@ -38,6 +38,7 @@ class SecurityConfig:
     # NEW:
     enable_secure_connections: bool = False
     ctkd_enable: bool = False
+    mitm_required: bool = False     # Sub-Plan 3a: triggers NC when IO caps + SC permit
     # Future hooks (commented stubs):
     # lea_enable: bool = False
     # le_security_mode: str = "1_2"
