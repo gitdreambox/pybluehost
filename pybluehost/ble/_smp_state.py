@@ -44,6 +44,7 @@ states Phases 1–2 can reach.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import TYPE_CHECKING
@@ -815,6 +816,52 @@ def _association_model(ctx: "SMPPairingContext") -> str:
     if int(ctx.local_io_caps) in nc_caps and int(ctx.peer_io_caps) in nc_caps:
         return "numeric_comparison"
     return "just_works"
+
+
+async def _sc_compute_and_await_nc(ctx: "SMPPairingContext") -> None:
+    """Compute g2 value for NC, present to delegate, fire confirm/reject event.
+
+    Va = g2(PKax, PKbx, Na, Nb) where PKax/PKbx are the X coordinates of
+    Initiator/Responder public keys (32 bytes each). Both sides compute the
+    same Va. Numeric value displayed to user is Va mod 10^6 (6 digits).
+    """
+    from pybluehost.ble.smp import (
+        AutoAcceptDelegate,
+        PairingRole,
+        SMPCrypto,
+        SMPEvent,
+    )
+
+    if ctx.role == PairingRole.INITIATOR:
+        pkax = ctx.local_public_key[:32]
+        pkbx = ctx.peer_public_key[:32]
+        na = ctx.local_random
+        nb = ctx.peer_random
+    else:
+        pkax = ctx.peer_public_key[:32]
+        pkbx = ctx.local_public_key[:32]
+        na = ctx.peer_random
+        nb = ctx.local_random
+
+    g2_value = SMPCrypto.g2(pkax, pkbx, na, nb)
+    numeric_value = g2_value % 1_000_000
+
+    delegate = getattr(ctx, "_delegate", None) or AutoAcceptDelegate()
+
+    async def _await_user_confirm() -> None:
+        try:
+            confirmed = await delegate.confirm_numeric(ctx.peer_address, numeric_value)
+        except AttributeError:
+            confirmed = True  # backward compat: older delegate without confirm_numeric
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("delegate.confirm_numeric raised: %s; rejecting NC", exc)
+            confirmed = False
+        if confirmed:
+            await ctx.state_machine.fire(SMPEvent.NUMERIC_COMPARE_USER_CONFIRMED)
+        else:
+            await ctx.state_machine.fire(SMPEvent.NUMERIC_COMPARE_USER_REJECTED)
+
+    asyncio.create_task(_await_user_confirm())
 
 
 # ---------------------------------------------------------------------------

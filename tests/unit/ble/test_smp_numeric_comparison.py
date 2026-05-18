@@ -87,3 +87,126 @@ def test_association_model_just_works_when_sc_not_negotiated():
 
 def test_association_model_just_works_when_io_caps_insufficient():
     assert _association_model(_ctx(io_peer=IOCapability.NO_INPUT_NO_OUTPUT)) == "just_works"
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — _sc_compute_and_await_nc()
+# ---------------------------------------------------------------------------
+
+import asyncio
+
+from pybluehost.ble._smp_state import _sc_compute_and_await_nc
+from pybluehost.ble.smp import PairingRole, SMPCrypto
+
+
+class _RecordingSM:
+    def __init__(self):
+        self.fired: list[SMPEvent] = []
+
+    async def fire(self, event):
+        self.fired.append(event)
+
+
+class _RejectingDelegate:
+    async def confirm_numeric(self, peer_addr, value):
+        return False
+
+
+class _CapturingDelegate:
+    def __init__(self):
+        self.received: tuple | None = None
+    async def confirm_numeric(self, peer_addr, value):
+        self.received = (peer_addr, value)
+        return True
+
+
+@pytest.mark.asyncio
+async def test_sc_compute_and_await_nc_initiator_fires_confirmed_event():
+    pkax = bytes(range(32))
+    pkbx = bytes(range(32, 64))
+    na = bytes(range(64, 80))
+    nb = bytes(range(80, 96))
+    expected_value = SMPCrypto.g2(pkax, pkbx, na, nb) % 1_000_000
+
+    captured = _CapturingDelegate()
+    peer = BDAddress(bytes(reversed(bytes.fromhex("AABBCCDDEEFF"))))
+    sm = _RecordingSM()
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=pkax + bytes(32),
+        peer_public_key=pkbx + bytes(32),
+        local_random=na,
+        peer_random=nb,
+        peer_address=peer,
+        state_machine=sm,
+        _delegate=captured,
+    )
+    await _sc_compute_and_await_nc(ctx)
+    # Give the spawned task time to run
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert captured.received == (peer, expected_value)
+    assert sm.fired == [SMPEvent.NUMERIC_COMPARE_USER_CONFIRMED]
+
+
+@pytest.mark.asyncio
+async def test_sc_compute_and_await_nc_responder_uses_peer_pubkey_as_pkax():
+    pkax = bytes(range(32))
+    pkbx = bytes(range(32, 64))
+    na = bytes(range(64, 80))
+    nb = bytes(range(80, 96))
+    expected = SMPCrypto.g2(pkax, pkbx, na, nb) % 1_000_000
+
+    captured = _CapturingDelegate()
+    ctx = SimpleNamespace(
+        role=PairingRole.RESPONDER,
+        local_public_key=pkbx + bytes(32),
+        peer_public_key=pkax + bytes(32),
+        local_random=nb,
+        peer_random=na,
+        peer_address=BDAddress(bytes(6)),
+        state_machine=_RecordingSM(),
+        _delegate=captured,
+    )
+    await _sc_compute_and_await_nc(ctx)
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert captured.received[1] == expected
+
+
+@pytest.mark.asyncio
+async def test_sc_compute_and_await_nc_fires_rejected_when_delegate_returns_false():
+    sm = _RecordingSM()
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        local_random=bytes(16),
+        peer_random=bytes(16),
+        peer_address=BDAddress(bytes(6)),
+        state_machine=sm,
+        _delegate=_RejectingDelegate(),
+    )
+    await _sc_compute_and_await_nc(ctx)
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert sm.fired == [SMPEvent.NUMERIC_COMPARE_USER_REJECTED]
+
+
+@pytest.mark.asyncio
+async def test_sc_compute_and_await_nc_falls_back_to_autoaccept_when_no_delegate():
+    sm = _RecordingSM()
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        local_random=bytes(16),
+        peer_random=bytes(16),
+        peer_address=BDAddress(bytes(6)),
+        state_machine=sm,
+        _delegate=None,
+    )
+    await _sc_compute_and_await_nc(ctx)
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert sm.fired == [SMPEvent.NUMERIC_COMPARE_USER_CONFIRMED]
