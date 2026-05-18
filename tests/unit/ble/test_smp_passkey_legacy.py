@@ -142,3 +142,105 @@ def test_passkey_local_role_keyboard_display_responder_inputs():
         role_initiator=False,
     )
     assert _passkey_local_role(ctx) == "input"
+
+
+import asyncio
+
+
+class _RecordingSM:
+    def __init__(self):
+        self.fired: list = []
+    async def fire(self, event):
+        self.fired.append(event)
+
+
+class _GoodPasskeyDelegate:
+    def __init__(self, value: int = 314159):
+        self.value = value
+        self.calls: list = []
+    async def get_passkey(self, peer_addr):
+        self.calls.append(peer_addr)
+        return self.value
+
+
+class _RaisingDelegate:
+    async def get_passkey(self, peer_addr):
+        raise RuntimeError("user cancelled")
+
+
+class _OutOfRangeDelegate:
+    async def get_passkey(self, peer_addr):
+        return 1_000_000
+
+
+@pytest.mark.asyncio
+async def test_passkey_await_user_input_fires_entered_event_and_stores_value():
+    from pybluehost.ble._smp_state import _passkey_await_user_input
+    from pybluehost.ble.smp import SMPEvent
+
+    sm = _RecordingSM()
+    delegate = _GoodPasskeyDelegate(value=271828)
+    ctx = SimpleNamespace(
+        peer_address=BDAddress(bytes(6)),
+        state_machine=sm,
+        _delegate=delegate,
+    )
+    await _passkey_await_user_input(ctx)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert sm.fired == [SMPEvent.PASSKEY_USER_ENTERED]
+    assert ctx.passkey == 271828
+    assert delegate.calls == [BDAddress(bytes(6))]
+
+
+@pytest.mark.asyncio
+async def test_passkey_await_user_input_fires_rejected_on_exception():
+    from pybluehost.ble._smp_state import _passkey_await_user_input
+    from pybluehost.ble.smp import SMPEvent
+
+    sm = _RecordingSM()
+    ctx = SimpleNamespace(
+        peer_address=BDAddress(bytes(6)),
+        state_machine=sm,
+        _delegate=_RaisingDelegate(),
+    )
+    await _passkey_await_user_input(ctx)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert sm.fired == [SMPEvent.PASSKEY_USER_REJECTED]
+
+
+@pytest.mark.asyncio
+async def test_passkey_await_user_input_fires_rejected_on_out_of_range():
+    from pybluehost.ble._smp_state import _passkey_await_user_input
+    from pybluehost.ble.smp import SMPEvent
+
+    sm = _RecordingSM()
+    ctx = SimpleNamespace(
+        peer_address=BDAddress(bytes(6)),
+        state_machine=sm,
+        _delegate=_OutOfRangeDelegate(),
+    )
+    await _passkey_await_user_input(ctx)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert sm.fired == [SMPEvent.PASSKEY_USER_REJECTED]
+
+
+@pytest.mark.asyncio
+async def test_passkey_await_user_input_uses_autoaccept_when_no_delegate():
+    """AutoAcceptDelegate.get_passkey returns 0; helper accepts 0 as in-range."""
+    from pybluehost.ble._smp_state import _passkey_await_user_input
+    from pybluehost.ble.smp import SMPEvent
+
+    sm = _RecordingSM()
+    ctx = SimpleNamespace(
+        peer_address=BDAddress(bytes(6)),
+        state_machine=sm,
+        _delegate=None,
+    )
+    await _passkey_await_user_input(ctx)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert sm.fired == [SMPEvent.PASSKEY_USER_ENTERED]
+    assert ctx.passkey == 0

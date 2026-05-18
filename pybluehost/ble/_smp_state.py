@@ -983,6 +983,35 @@ async def _sc_compute_and_await_nc(ctx: "SMPPairingContext") -> None:
     asyncio.create_task(_await_user_confirm())
 
 
+async def _passkey_await_user_input(ctx: "SMPPairingContext") -> None:
+    """Input-role helper: spawn delegate.get_passkey task, fire user-entered or rejected.
+
+    Mirrors _sc_compute_and_await_nc from Sub-Plan 3a. The function returns
+    immediately; the spawned task fires PASSKEY_USER_ENTERED or
+    PASSKEY_USER_REJECTED when the user finishes (or cancels).
+    """
+    from pybluehost.ble.smp import AutoAcceptDelegate, SMPEvent
+
+    delegate = getattr(ctx, "_delegate", None) or AutoAcceptDelegate()
+
+    async def _await() -> None:
+        try:
+            value = await delegate.get_passkey(ctx.peer_address)
+        except AttributeError:
+            value = 0  # backward-compat: delegate without get_passkey → auto-accept zero
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("delegate.get_passkey raised: %s; rejecting passkey", exc)
+            await ctx.state_machine.fire(SMPEvent.PASSKEY_USER_REJECTED)
+            return
+        if not isinstance(value, int) or not (0 <= value <= 999_999):
+            await ctx.state_machine.fire(SMPEvent.PASSKEY_USER_REJECTED)
+            return
+        ctx.passkey = value
+        await ctx.state_machine.fire(SMPEvent.PASSKEY_USER_ENTERED)
+
+    asyncio.create_task(_await())
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
