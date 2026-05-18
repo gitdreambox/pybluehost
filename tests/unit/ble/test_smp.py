@@ -390,10 +390,11 @@ class TestJsonBondStorage:
 class TestAutoAcceptDelegate:
     async def test_auto_accept_delegate_confirms_everything(self) -> None:
         delegate = AutoAcceptDelegate()
+        addr = BDAddress(bytes(6))
         assert await delegate.confirm_pairing(0x03, 0x01) is True
-        assert await delegate.confirm_passkey(123456) is True
-        assert await delegate.confirm_numeric(BDAddress(bytes(6)), 999999) is True
-        passkey = await delegate.get_passkey()
+        assert await delegate.confirm_passkey(addr, 123456) is True
+        assert await delegate.confirm_numeric(addr, 999999) is True
+        passkey = await delegate.get_passkey(addr)
         assert isinstance(passkey, int)
         assert 0 <= passkey <= 999999
 

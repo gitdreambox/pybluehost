@@ -602,10 +602,10 @@ class PairingDelegate(Protocol):
     """User interaction interface for SMP pairing decisions."""
 
     async def confirm_pairing(self, handle: int, io_cap: int) -> bool: ...
-    async def confirm_passkey(self, passkey: int) -> bool: ...
+    async def confirm_passkey(self, peer_addr: BDAddress, passkey: int) -> bool: ...
     async def confirm_numeric(self, peer_addr: BDAddress, value: int) -> bool: ...
-    async def get_passkey(self) -> int: ...
-    async def display_passkey(self, passkey: int) -> None: ...
+    async def get_passkey(self, peer_addr: BDAddress) -> int: ...
+    async def display_passkey(self, peer_addr: BDAddress, passkey: int) -> None: ...
 
 
 class AutoAcceptDelegate:
@@ -614,16 +614,16 @@ class AutoAcceptDelegate:
     async def confirm_pairing(self, handle: int, io_cap: int) -> bool:
         return True
 
-    async def confirm_passkey(self, passkey: int) -> bool:
+    async def confirm_passkey(self, peer_addr: BDAddress, passkey: int) -> bool:
         return True
 
     async def confirm_numeric(self, peer_addr: BDAddress, value: int) -> bool:
         return True
 
-    async def get_passkey(self) -> int:
+    async def get_passkey(self, peer_addr: BDAddress) -> int:
         return 0
 
-    async def display_passkey(self, passkey: int) -> None:
+    async def display_passkey(self, peer_addr: BDAddress, passkey: int) -> None:
         pass
 
 
