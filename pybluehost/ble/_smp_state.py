@@ -772,6 +772,8 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
     else:
         if sc_mode:
             # SC: both sides share the f5-derived LTK; EDIV/RAND are unused in SC.
+            # NC provides MITM authentication; Just Works does not.
+            authenticated = _association_model(ctx) == "numeric_comparison"
             bond = BondInfo(
                 peer_address=ctx.peer_address,
                 address_type=ctx.received_identity_address[0],
@@ -781,7 +783,7 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
                 ediv=0,
                 rand=b"\x00" * 8,
                 key_size=16,
-                authenticated=False,  # Just Works = unauthenticated
+                authenticated=authenticated,
                 sc=True,
             )
         else:

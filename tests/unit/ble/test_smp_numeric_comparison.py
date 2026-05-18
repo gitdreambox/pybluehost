@@ -366,3 +366,67 @@ async def test_nc_user_confirmed_initiator_sends_ea(monkeypatch):
     await state_mod._nc_user_confirmed(ctx)
     assert sm._state == SMPState.DHKEY_CHECK
     assert any(b.startswith(bytes([0x0D])) for b in sent)
+
+
+@pytest.mark.asyncio
+async def test_persist_bond_authenticated_true_for_nc(monkeypatch):
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import BondInfo, PairingRole
+    from pybluehost.core.address import BDAddress
+
+    saved: list[BondInfo] = []
+
+    class _MemStorage:
+        async def save_bond(self, bond):
+            saved.append(bond)
+
+    monkeypatch.setattr(state_mod, "_sc_negotiated", lambda ctx: True)
+    monkeypatch.setattr(state_mod, "_association_model", lambda ctx: "numeric_comparison")
+
+    fut = asyncio.get_event_loop().create_future()
+    ctx = SimpleNamespace(
+        peer_address=BDAddress(bytes(6)),
+        received_identity_address=(0, bytes(6)),
+        ltk_sc=b"\x11" * 16,
+        received_irk=None,
+        received_csrk=None,
+        role=PairingRole.INITIATOR,
+        connection_handle=1,
+        _bond_storage=_MemStorage(),
+        pairing_complete=fut,
+    )
+    await state_mod._persist_bond(ctx)
+    assert saved[0].authenticated is True
+    assert saved[0].sc is True
+
+
+@pytest.mark.asyncio
+async def test_persist_bond_authenticated_false_for_sc_just_works(monkeypatch):
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import BondInfo, PairingRole
+    from pybluehost.core.address import BDAddress
+
+    saved: list[BondInfo] = []
+
+    class _MemStorage:
+        async def save_bond(self, bond):
+            saved.append(bond)
+
+    monkeypatch.setattr(state_mod, "_sc_negotiated", lambda ctx: True)
+    monkeypatch.setattr(state_mod, "_association_model", lambda ctx: "just_works")
+
+    fut = asyncio.get_event_loop().create_future()
+    ctx = SimpleNamespace(
+        peer_address=BDAddress(bytes(6)),
+        received_identity_address=(0, bytes(6)),
+        ltk_sc=b"\x11" * 16,
+        received_irk=None,
+        received_csrk=None,
+        role=PairingRole.INITIATOR,
+        connection_handle=1,
+        _bond_storage=_MemStorage(),
+        pairing_complete=fut,
+    )
+    await state_mod._persist_bond(ctx)
+    assert saved[0].authenticated is False
+    assert saved[0].sc is True
