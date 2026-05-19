@@ -181,6 +181,11 @@ class VirtualController:
                     bc_flag=bc_flag, data=payload,
                 )
                 asyncio.create_task(self._acl_forwarder(acl))
+                # Replenish host's ACL-flow credit: emit Number_Of_Completed_Packets
+                # for this handle. Without this, the host stalls after exhausting
+                # the buffer pool advertised in Read_(LE_)Buffer_Size. Required for
+                # long PDU exchanges such as SC Passkey Entry (≈80 PDUs per side).
+                asyncio.create_task(self._emit_num_completed_packets(handle, count=1))
             return None
 
         if data[0] != HCI_COMMAND_PACKET:
@@ -263,6 +268,20 @@ class VirtualController:
             command_opcode=opcode,
         )
         return event.to_bytes()
+
+    async def _emit_num_completed_packets(self, handle: int, count: int = 1) -> None:
+        """Emit an HCI Number_Of_Completed_Packets event for *handle*.
+
+        Releases *count* buffers back to the host's ACL flow controller so that
+        long PDU exchanges (e.g. SC Passkey Entry's ~80-PDU loop) don't stall
+        once the advertised buffer pool is exhausted.
+        """
+        # num_handles(1) + handle(2) + count(2)
+        params = bytes([1]) + struct.pack("<HH", handle, count)
+        event = HCIEvent(
+            event_code=int(EventCode.NUM_COMPLETED_PACKETS), parameters=params,
+        )
+        await self._send_event_to_host(event)
 
     async def _emit_simulated_encryption_change(
         self, handle: int, status: int, enabled: int

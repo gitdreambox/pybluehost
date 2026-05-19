@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：SMP Sub-Plan 3b-1 (Legacy Passkey Entry) — ✅ 完成
-**下一步**：SMP Sub-Plan 3b-2 (SC Passkey Entry) / 3c (OOB) / 断线重连闭环 / e2e 覆盖
+**当前进行中**：SMP Sub-Plan 3b-2 (SC Passkey Entry) — ✅ 完成
+**下一步**：SMP Sub-Plan 3c (OOB) / 断线重连闭环 / e2e 覆盖
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -50,8 +50,9 @@
 | Secure Connections | LE SC (ECDH P-256 + f4/f5/f6) + BR/EDR SC (HCI SSP events) Just Works；opt-in via SecurityConfig.enable_secure_connections | ✅ 完成 | [2026-05-17-secure-connections](plans/2026-05-17-secure-connections.md) | `pybluehost/ble/_smp_sc_crypto.py`, `pybluehost/ble/smp.py`, `pybluehost/ble/_smp_state.py`, `pybluehost/ble/security.py`, `pybluehost/hci/{packets,controller,virtual,capabilities}.py`, `pybluehost/classic/gap.py`, `pybluehost/stack.py` |
 | SMP Sub-Plan 3a (Numeric Comparison) | LE SC Numeric Comparison association model：g2 计算 + PairingDelegate.confirm_numeric + auth_req MITM 位 + 双端 authenticated 持久化 + LE SC NC loopback E2E | ✅ 完成 | [2026-05-18-smp-sub-plan-3a-numeric-comparison](plans/2026-05-18-smp-sub-plan-3a-numeric-comparison.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py`, `pybluehost/ble/security.py`, `pybluehost/classic/gap.py`, `pybluehost/stack.py` |
 | SMP Sub-Plan 3b-1 (Legacy Passkey Entry) | Legacy Passkey Entry association model：`SMPState.PASSKEY_INPUT_PENDING` + `PairingDelegate.display_passkey`/`get_passkey` 规范化 + Display/Input role 选择 + IO-cap 适配 + c1 共享 TK + 双端 authenticated 持久化 + Legacy Passkey loopback E2E | ✅ 完成 | [2026-05-18-smp-sub-plan-3b-1-legacy-passkey](plans/2026-05-18-smp-sub-plan-3b-1-legacy-passkey.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py` |
+| SMP Sub-Plan 3b-2 (SC Passkey Entry) | LE SC Passkey Entry association model：`SMPState.PASSKEY_SC_ROUND` 反身 20 轮 f4 commit/reveal + Display/Input role 复用 3b-1 + 20-round-exit 进 SC f5/f6 + 双端 authenticated 持久化 + VirtualController 补 `Number_Of_Completed_Packets` 释放 ACL flow credit + SC Passkey loopback E2E | ✅ 完成 | [2026-05-19-smp-sub-plan-3b-2-sc-passkey](plans/2026-05-19-smp-sub-plan-3b-2-sc-passkey.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py`, `pybluehost/hci/virtual.py` |
 
-**总计：26 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1）**
+**总计：27 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2）**
 
 ---
 
@@ -358,6 +359,29 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
 - 验收：`uv run --frozen pytest tests/ -q --transport=virtual` PASS (1257 passed, 20 skipped, 3 pre-existing USB diagnostics failed)
 - 不在范围：SC Passkey Entry → Sub-Plan 3b-2；OOB → Sub-Plan 3c
+
+### ✅ SMP Sub-Plan 3b-2 (SC Passkey Entry)
+- 完成时间：2026-05-19
+- Plan 文档：[2026-05-19-smp-sub-plan-3b-2-sc-passkey.md](plans/2026-05-19-smp-sub-plan-3b-2-sc-passkey.md)
+- 关键变化：
+  - `SMPState.PASSKEY_SC_ROUND = 12`：SC Passkey 20-round commit/reveal 阶段的反身状态
+  - `_association_model(ctx)`：SC + 双端 MITM + `_passkey_capable(local_io, peer_io)` 命中（且不是 both-DYN/KbD，NC 优先） → 返回 `"passkey_entry"`；其余 SC MITM 落 NC 或 JW
+  - `_sc_passkey_send_round_confirm(ctx)`：Initiator-only 每轮生成 `Na_i = os.urandom(16)`、`Ca_i = f4(PKax, PKbx, Na_i, 0x80|ra_bit_i)` 并送 `SMPPairingConfirm`；`ra_bit_i = (passkey >> (20 - i)) & 1`，round 1 取 MSB
+  - `_sc_passkey_recv_peer_confirm`：Initiator stash peer Cb_i + 立即送 `SMPPairingRandom(Na_i)`；Responder stash peer Ca_i + 生成 Nb_i / Cb_i 并送 Confirm；两侧最后置 `passkey_round_phase = "AWAIT_PEER_RANDOM"`
+  - `_sc_passkey_recv_peer_random`：双方按角色重算对端 `f4(... peer_random, 0x80|bit_i)` 与缓存的 peer_confirm 比对；不符 → `_on_failed(reason=0x04)`；符合且 i<20 → 增轮（Initiator 还要再 `_sc_passkey_send_round_confirm`，Responder 等下一轮 cfm）；i==20 → 进 round-20 exit
+  - `_sc_passkey_exit_to_dhkey_check_initiator`：把 round-20 的 Na/Nb 写回 `ctx.local_random`/`ctx.peer_random`（`local_random = Na_20, peer_random = Nb_20`），跑 `f5(dhkey, Na, Nb, a1=local, a2=peer)` 得 (MacKey, LTK_sc)，复用 `_sc_send_dhkey_check_initiator` 送 Ea → `DHKEY_CHECK`
+  - `_sc_passkey_exit_to_random_exchange_responder`：镜像，`peer_random = Na_20, local_random = Nb_20`，f5 参数顺序保持 `(dhkey, peer_random, local_random, a1=peer, a2=local)`；不送 PDU，直接把状态置 `RANDOM_EXCHANGE`，由现有 `RANDOM_EXCHANGE + PAIRING_DHKEY_CHECK_RX → DHKEY_CHECK` 转移衔接 Initiator 的 Ea
+  - `_sc_passkey_initiator_display_enter` / `_sc_passkey_responder_display_enter`：Display 端入口（resolve passkey + 触发 delegate.display_passkey + `passkey_round=1, passkey_round_phase=AWAIT_PEER_CONFIRM`）；Initiator Display 顺势送 Ca_1，Responder Display 不送 PDU 等 Initiator
+  - SC pubkey 接收路径按 `_association_model() == "passkey_entry"` + `_passkey_local_role` 分流到 Display/Input 入口；Input 端复用 3b-1 `PASSKEY_INPUT_PENDING + _passkey_await_user_input`
+  - `_passkey_user_entered`：SC 分支置 `PASSKEY_SC_ROUND`、`passkey_round=1`、`passkey_round_phase=AWAIT_PEER_CONFIRM`；Initiator 同步触发 `_sc_passkey_send_round_confirm`
+  - `register_transitions`：新增 `PASSKEY_SC_ROUND × {PAIRING_CONFIRM_RX, PAIRING_RANDOM_RX} → PASSKEY_SC_ROUND` 反身转移；60s `TIMEOUT`；并入 universal-failure 集合
+  - `_persist_bond`：SC 路径下 `_association_model == "passkey_entry"` 同 NC 一样标 `BondInfo.authenticated=True`
+  - **Task 8 收尾**：
+    - SC Passkey loopback E2E（`tests/integration/test_pairing_sc_passkey_loopback.py`）：双端 SC + `mitm_required=True` + DisplayYesNo×KeyboardOnly + `_FixedPasskeyDelegate(314159)` 两侧 → 20 轮 f4 commit/reveal + f5/f6 → 双端 `BondInfo.authenticated=True && sc=True`，`bond_a.ltk == bond_b.ltk`；passkey 不匹配 (111111 vs 999999) → round-1 f4 校验失败 → Initiator `stack.pair()` 抛 (Pairing_Failed reason=0x04)
+    - **Wiring fix（`pybluehost/hci/virtual.py`）**：`VirtualController.process(...)` 在 forward 每个 ACL 帧后追加 `_emit_num_completed_packets(handle, count=1)` 释放 host `ACLFlowController` 信号量。原先 VirtualController 通过 `LE_Read_Buffer_Size` 广告 8 个 LE ACL buffer 但从不发 `HCI_Number_Of_Completed_Packets`，超过 8 帧（如 SC Passkey 每侧 ~80 PDU）后 `send_acl_data` 在 `_acl_flow.acquire()` 永久阻塞，pair() 直到 20s timeout。E2E 调试中观察到 Initiator round=4 `Ca_4` send 卡死，正是此问题。修复后两个 E2E 测试全绿，全套 1287 passed/3 pre-existing fail。
+- 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
+- 验收：`uv run pytest tests/ -q --transport=virtual` PASS (1287 passed, 20 skipped, 3 pre-existing USB diagnostics failed)
+- 不在范围：OOB → Sub-Plan 3c；断线重连闭环 → 独立 Plan
 
 ---
 
