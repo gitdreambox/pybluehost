@@ -1,6 +1,7 @@
 """Tests for SMP SC Passkey Entry (Sub-Plan 3b-2)."""
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -649,3 +650,108 @@ async def test_sc_responder_pubkey_passkey_display_skips_cb_send(monkeypatch):
     assert ctx.state_machine._state == SMPState.PASSKEY_SC_ROUND
     assert ctx.passkey_round == 1
     assert ctx.passkey_round_phase == "AWAIT_PEER_CONFIRM"
+
+
+@pytest.mark.asyncio
+async def test_passkey_user_entered_sc_initiator_sends_round1_confirm(monkeypatch):
+    """SC Initiator + PASSKEY_USER_ENTERED → state PASSKEY_SC_ROUND + Ca_1 sent."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPState
+
+    monkeypatch.setattr(state_mod, "_sc_negotiated", lambda _ctx: True)
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
+                        staticmethod(lambda *a, **k: b"\xaa" * 16))
+
+    class _SM:
+        def __init__(self): self._state = SMPState.PASSKEY_INPUT_PENDING
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=987654,
+        state_machine=_SM(),
+        send=_send,
+    )
+    await state_mod._passkey_user_entered(ctx)
+    assert ctx.state_machine._state == SMPState.PASSKEY_SC_ROUND
+    assert ctx.passkey_round == 1
+    assert ctx.passkey_round_phase == "AWAIT_PEER_CONFIRM"
+    assert len(sent) == 1 and sent[0][0] == 0x03  # Pairing_Confirm
+
+
+@pytest.mark.asyncio
+async def test_passkey_user_entered_sc_responder_awaits_confirm(monkeypatch):
+    """SC Responder + PASSKEY_USER_ENTERED → state PASSKEY_SC_ROUND, no PDU sent."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPState
+
+    monkeypatch.setattr(state_mod, "_sc_negotiated", lambda _ctx: True)
+
+    class _SM:
+        def __init__(self): self._state = SMPState.PASSKEY_INPUT_PENDING
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    ctx = SimpleNamespace(
+        role=PairingRole.RESPONDER,
+        passkey=987654,
+        state_machine=_SM(),
+        send=_send,
+    )
+    await state_mod._passkey_user_entered(ctx)
+    assert ctx.state_machine._state == SMPState.PASSKEY_SC_ROUND
+    assert ctx.passkey_round == 1
+    assert ctx.passkey_round_phase == "AWAIT_PEER_CONFIRM"
+    assert sent == []
+
+
+def test_passkey_sc_round_transitions_registered():
+    import inspect
+    from pybluehost.ble import _smp_state as state_mod
+    src = inspect.getsource(state_mod.register_transitions)
+    # Two reflexive transitions on PASSKEY_SC_ROUND
+    assert "PASSKEY_SC_ROUND, SMPEvent.PAIRING_CONFIRM_RX" in src
+    assert "PASSKEY_SC_ROUND, SMPEvent.PAIRING_RANDOM_RX" in src
+    # 60s timeout
+    assert "set_timeout(SMPState.PASSKEY_SC_ROUND, 60.0" in src
+    # Universal failure inclusion
+    universal = src[src.find("Universal failure"):]
+    assert "PASSKEY_SC_ROUND" in universal
+
+
+@pytest.mark.asyncio
+async def test_persist_bond_authenticated_true_for_sc_passkey(monkeypatch):
+    """SC + passkey_entry bond → authenticated=True (mirrors NC pattern)."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import BondInfo, PairingRole
+
+    saved: list = []
+    class _MemStorage:
+        async def save_bond(self, bond):
+            saved.append(bond)
+
+    monkeypatch.setattr(state_mod, "_sc_negotiated", lambda _ctx: True)
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+
+    fut = asyncio.get_event_loop().create_future()
+    ctx = SimpleNamespace(
+        peer_address=BDAddress(bytes(6)),
+        received_identity_address=(0, bytes(6)),
+        ltk_sc=b"\x11" * 16,
+        received_irk=None,
+        received_csrk=None,
+        role=PairingRole.INITIATOR,
+        connection_handle=1,
+        _bond_storage=_MemStorage(),
+        pairing_complete=fut,
+    )
+    await state_mod._persist_bond(ctx)
+    assert saved[0].authenticated is True
+    assert saved[0].sc is True

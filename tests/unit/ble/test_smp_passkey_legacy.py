@@ -278,6 +278,10 @@ async def test_passkey_user_entered_initiator_computes_and_sends_confirm(monkeyp
         connection_handle=1,
         send=_send,
         peer_confirm=None,
+        # Legacy path: SC not negotiated (Sub-Plan 3b-2 branch falls through)
+        security_config=None,
+        local_auth_req=0x01,
+        peer_auth_req=0x01,
     )
     await state_mod._passkey_user_entered(ctx)
     assert ctx.tk == (314159).to_bytes(16, "little")

@@ -196,6 +196,18 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
         action=lambda **kw: _on_failed(ctx, reason=0x01, **kw),
     )
 
+    # ---- Sub-Plan 3b-2 — SC Passkey Entry per-round transitions ----
+    sm.add_transition(
+        SMPState.PASSKEY_SC_ROUND, SMPEvent.PAIRING_CONFIRM_RX,
+        SMPState.PASSKEY_SC_ROUND,
+        action=lambda **kw: _sc_passkey_recv_peer_confirm(ctx, **kw),
+    )
+    sm.add_transition(
+        SMPState.PASSKEY_SC_ROUND, SMPEvent.PAIRING_RANDOM_RX,
+        SMPState.PASSKEY_SC_ROUND,
+        action=lambda **kw: _sc_passkey_recv_peer_random(ctx, **kw),
+    )
+
     # Encryption-change advancement (both roles use the same target state)
     sm.add_transition(
         SMPState.STK_ENCRYPTING, SMPEvent.ENCRYPTION_CHANGE_SUCCESS,
@@ -267,6 +279,7 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
     sm.set_timeout(SMPState.DHKEY_CHECK, 30.0, SMPEvent.TIMEOUT)
     sm.set_timeout(SMPState.NUMERIC_COMPARE_PENDING, 30.0, SMPEvent.TIMEOUT)
     sm.set_timeout(SMPState.PASSKEY_INPUT_PENDING, 60.0, SMPEvent.TIMEOUT)
+    sm.set_timeout(SMPState.PASSKEY_SC_ROUND, 60.0, SMPEvent.TIMEOUT)
 
     # Universal failure transitions
     for state in (
@@ -275,6 +288,7 @@ def register_transitions(ctx: "SMPPairingContext") -> None:
         SMPState.PUBLIC_KEY_EXCHANGE, SMPState.DHKEY_CHECK,
         SMPState.NUMERIC_COMPARE_PENDING,
         SMPState.PASSKEY_INPUT_PENDING,
+        SMPState.PASSKEY_SC_ROUND,
     ):
         sm.add_transition(
             state, SMPEvent.PAIRING_FAILED_RX, SMPState.FAILED,
@@ -898,8 +912,8 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
     else:
         if sc_mode:
             # SC: both sides share the f5-derived LTK; EDIV/RAND are unused in SC.
-            # NC provides MITM authentication; Just Works does not.
-            authenticated = _association_model(ctx) == "numeric_comparison"
+            # NC and Passkey Entry provide MITM authentication; Just Works does not.
+            authenticated = _association_model(ctx) in {"numeric_comparison", "passkey_entry"}
             bond = BondInfo(
                 peer_address=ctx.peer_address,
                 address_type=ctx.received_identity_address[0],
@@ -1290,14 +1304,26 @@ async def _passkey_buffer_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) 
 
 
 async def _passkey_user_entered(ctx: "SMPPairingContext", **_kw) -> None:
-    """Input-side helper: user entered passkey → set TK, send our Pairing_Confirm.
+    """Input-side helper: user entered passkey → next phase.
 
-    For Initiator Input: peer Confirm has NOT yet arrived; we send first.
-    For Responder Input: peer Confirm may already be in ctx.peer_confirm (buffered);
-      we still just send our own Confirm — c1 verification of the peer's value
-      happens later in _responder_recv_peer_random against ctx.peer_confirm.
+    SC (Sub-Plan 3b-2): state -> PASSKEY_SC_ROUND, round=1; Initiator sends Ca_1.
+    Legacy (Sub-Plan 3b-1): set TK, compute c1, send Pairing_Confirm, stay in CONFIRMING.
+
+    For Legacy Initiator Input: peer Confirm has NOT yet arrived; we send first.
+    For Legacy Responder Input: peer Confirm may already be in ctx.peer_confirm
+      (buffered); we still just send our own Confirm — c1 verification of the
+      peer's value happens later in _responder_recv_peer_random against
+      ctx.peer_confirm.
     """
-    from pybluehost.ble.smp import SMPPairingConfirm
+    from pybluehost.ble.smp import PairingRole, SMPPairingConfirm
+    if _sc_negotiated(ctx):
+        ctx.state_machine._state = SMPState.PASSKEY_SC_ROUND
+        ctx.passkey_round = 1
+        ctx.passkey_round_phase = "AWAIT_PEER_CONFIRM"
+        if ctx.role == PairingRole.INITIATOR:
+            await _sc_passkey_send_round_confirm(ctx)
+        return
+    # Legacy path — unchanged from Sub-Plan 3b-1
     ctx.tk = ctx.passkey.to_bytes(16, "little")
     ctx.local_random = os.urandom(16)
     preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
