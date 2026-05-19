@@ -644,6 +644,7 @@ class SMPState(IntEnum):
     DHKEY_CHECK             = 9
     NUMERIC_COMPARE_PENDING = 10
     PASSKEY_INPUT_PENDING   = 11
+    PASSKEY_SC_ROUND        = 12
 
 
 class SMPEvent(IntEnum):
