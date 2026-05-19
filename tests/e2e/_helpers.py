@@ -28,12 +28,20 @@ _BIT_LE_GENERATE_DHKEY = 2
 
 
 def _supports_le_sc(stack) -> bool:
-    """True iff the controller advertises LE Secure Connections commands.
+    """True iff the host can perform LE Secure Connections pairing.
 
-    Reads the cached HCI Supported_Commands bitmap from ``stack._hci``. Virtual
-    transports advertise full support; older hardware (e.g. BT 4.0 dongles)
-    typically does not implement the SC commands and should be skipped.
+    Virtual stacks always support SC (the SMP layer does ECDH in host code, not
+    via controller P-256/DHKey HCI commands), so we short-circuit them. For
+    real adapters we check the cached HCI Supported_Commands bitmap for the
+    HCI_LE_Read_Local_P-256_Public_Key + HCI_LE_Generate_DHKey bits at
+    octet 34. Older hardware (e.g. BT 4.0 dongles) lacks those commands and
+    should be skipped.
     """
+    # Virtual transport: SC pairing is executed by the host SMP module; the
+    # virtual controller does not advertise the P-256/DHKey commands in its
+    # Supported_Commands bitmap, but pairing still works end-to-end.
+    if getattr(stack, "_virtual_controller", None) is not None:
+        return True
     hci = getattr(stack, "_hci", None)
     if hci is None:
         return False
