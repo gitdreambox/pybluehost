@@ -169,3 +169,95 @@ async def test_e2e_scan_connect_pair_read(central_peripheral_pair, virtual_link_
             await stack_p.gap.ble_advertiser.stop()
         except Exception:
             pass
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_e2e_gatt_write_and_notify(central_peripheral_pair, virtual_link_or_real_rf):
+    """Write a characteristic; subscribe to notifications; observe two
+    notifications; unsubscribe; verify a third notification is NOT observed."""
+    import contextlib
+
+    from tests.e2e._helpers import (
+        _supports_le_sc, central_discover_peripheral,
+        resolve_handles, wait_for_notifications,
+    )
+    from tests.e2e._test_service import (
+        TEST_SERVICE_UUID, TEST_WRITE_CHAR_UUID, TEST_NOTIFY_CHAR_UUID,
+    )
+    from pybluehost.ble.gatt import UUID_CCCD
+
+    stack_c, stack_p = central_peripheral_pair
+    if not _supports_le_sc(stack_c):
+        pytest.skip("adapter does not support LE Secure Connections")
+
+    ad_data = _build_test_ad_data()
+    await stack_p.gap.ble_advertiser.start(ad_data=ad_data)
+    handle = None
+    try:
+        # === Connection + pairing (mirror Test 1's virtual-mode adaptation) ===
+        link = virtual_link_or_real_rf
+        if link is not None:
+            connect_task = asyncio.create_task(
+                stack_c.connect_gatt(stack_p._local_address, timeout=10.0)
+            )
+            await asyncio.sleep(0.05)
+            await link.connect()
+            client = await connect_task
+        else:
+            await central_discover_peripheral(stack_c, stack_p._local_address)
+            client = await stack_c.connect_gatt(stack_p._local_address, timeout=10.0)
+        handle = client._connection_handle
+        await stack_c.pair(handle, timeout=20.0)
+
+        # === Discover service + characteristics + CCCD ===
+        services = await client.discover_all_services()
+        svc = next(s for s in services if s[2] == TEST_SERVICE_UUID.to_bytes())
+        s_handle, e_handle, _ = svc
+        chars = await client.discover_characteristics(s_handle, e_handle)
+        handles = resolve_handles(chars, {
+            "write": TEST_WRITE_CHAR_UUID,
+            "notify": TEST_NOTIFY_CHAR_UUID,
+        })
+        # Find CCCD descriptor for the notify char (in handle range [notify_value+1, e_handle]).
+        descs = await client.discover_descriptors(handles["notify"] + 1, e_handle)
+        cccd = next(d for d in descs if d.uuid == UUID_CCCD.to_bytes())
+
+        # === Write path ===
+        await client.write_characteristic(handles["write"], b"hello e2e")
+        await asyncio.sleep(0.05)
+
+        # === Notify path ===
+        notify_events: list[bytes] = []
+
+        def _on_notify(att_handle: int, value: bytes) -> None:
+            if att_handle == handles["notify"]:
+                notify_events.append(value)
+
+        client._bearer.set_notification_handler(_on_notify)
+
+        # Subscribe (CCCD = 0x0001 enables notifications, little-endian)
+        await client.write_characteristic(cccd.handle, bytes([0x01, 0x00]))
+        await asyncio.sleep(0.05)
+
+        # Peripheral emits two notifications
+        await stack_p._gatt_server.notify(handles["notify"], b"ping-1")
+        await stack_p._gatt_server.notify(handles["notify"], b"ping-2")
+        await wait_for_notifications(notify_events, n=2, timeout=2.0)
+        assert notify_events == [b"ping-1", b"ping-2"]
+
+        # Unsubscribe (CCCD = 0x0000)
+        await client.write_characteristic(cccd.handle, bytes([0x00, 0x00]))
+        await asyncio.sleep(0.05)
+
+        # A subsequent peripheral notify should NOT be observed
+        await stack_p._gatt_server.notify(handles["notify"], b"ping-3")
+        await asyncio.sleep(0.2)
+        assert notify_events == [b"ping-1", b"ping-2"]
+
+    finally:
+        if handle is not None:
+            with contextlib.suppress(Exception):
+                await stack_c.gap.ble_connections.disconnect(handle)
+        with contextlib.suppress(Exception):
+            await stack_p.gap.ble_advertiser.stop()
