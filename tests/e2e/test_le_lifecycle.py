@@ -261,3 +261,157 @@ async def test_e2e_gatt_write_and_notify(central_peripheral_pair, virtual_link_o
                 await stack_c.gap.ble_connections.disconnect(handle)
         with contextlib.suppress(Exception):
             await stack_p.gap.ble_advertiser.stop()
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_e2e_bonded_reconnect_auto_encrypt(
+    tmp_path, selected_transport_spec, selected_peer_spec, transport_mode,
+):
+    """Two sessions sharing on-disk bond storage. Session 1: pair + bond.
+    Session 2: reconnect -> auto-encrypt event fires -> GATT read works on
+    the encrypted link without redoing SMP."""
+    import contextlib
+
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import JsonBondStorage
+    from pybluehost.core.address import BDAddress
+    from pybluehost.hci.virtual_link import VirtualLELink
+    from pybluehost.stack import Stack, StackConfig
+
+    from tests.e2e._helpers import (
+        _supports_le_sc, central_discover_peripheral, resolve_handles,
+    )
+    from tests.e2e._test_service import (
+        TEST_SERVICE_UUID, TEST_READ_CHAR_UUID, INITIAL_READ_VALUE,
+        build_test_service,
+    )
+
+    bonds_c_path = tmp_path / "bonds_c.json"
+    bonds_p_path = tmp_path / "bonds_p.json"
+    central_addr = BDAddress(b"\x0A\x0A\x0A\x0A\x0A\x0A")
+    peripheral_addr = BDAddress(b"\x0B\x0B\x0B\x0B\x0B\x0B")
+
+    async def _open_pair():
+        cfg_c = StackConfig(
+            bond_storage=JsonBondStorage(bonds_c_path),
+            security=SecurityConfig(enable_secure_connections=True),
+        )
+        cfg_p = StackConfig(
+            bond_storage=JsonBondStorage(bonds_p_path),
+            security=SecurityConfig(enable_secure_connections=True),
+        )
+        if transport_mode == "virtual":
+            stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
+            stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
+            link = VirtualLELink(
+                central=stack_c._virtual_controller,
+                peripheral=stack_p._virtual_controller,
+                central_address=central_addr,
+                peripheral_address=peripheral_addr,
+            )
+        else:
+            # Hardware mode: build_stack_from_spec does not accept a config=
+            # kwarg today, so the on-disk bond store can't be wired in for
+            # this scenario. Skip rather than silently mis-test.
+            pytest.skip(
+                "bonded-reconnect E2E test requires per-stack JsonBondStorage; "
+                "hardware build_stack_from_spec does not accept config= yet"
+            )
+        stack_p._gatt_server.add_service(build_test_service())
+        return stack_c, stack_p, link
+
+    async def _close_pair(stack_c, stack_p, link):
+        if link is not None:
+            with contextlib.suppress(Exception):
+                await link.disconnect()
+        with contextlib.suppress(Exception):
+            await stack_c.close()
+        with contextlib.suppress(Exception):
+            await stack_p.close()
+
+    # ===== Session 1: pair + bond =====
+    stack_c, stack_p, link = await _open_pair()
+    if not _supports_le_sc(stack_c):
+        await _close_pair(stack_c, stack_p, link)
+        pytest.skip("adapter does not support LE Secure Connections")
+
+    ad_data = _build_test_ad_data()
+    await stack_p.gap.ble_advertiser.start(ad_data=ad_data)
+    handle = None
+    try:
+        # Mirror Test 1's virtual-mode connection injection
+        if link is not None:
+            connect_task = asyncio.create_task(
+                stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+            )
+            await asyncio.sleep(0.1)
+            await link.connect()
+            client = await connect_task
+        else:
+            await central_discover_peripheral(stack_c, peripheral_addr)
+            client = await stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+        handle = client._connection_handle
+        await stack_c.pair(handle, timeout=20.0)
+
+        # Verify bond was persisted
+        bond_c = await JsonBondStorage(bonds_c_path).load_bond(peripheral_addr)
+        assert bond_c is not None, "Central bond not persisted after Session 1 pair"
+        assert bond_c.sc is True, "Session 1 bond should be SC"
+
+        # Clean disconnect before tearing down session 1
+        with contextlib.suppress(Exception):
+            await stack_c.gap.ble_connections.disconnect(handle)
+    finally:
+        with contextlib.suppress(Exception):
+            await stack_p.gap.ble_advertiser.stop()
+        await _close_pair(stack_c, stack_p, link)
+
+    # ===== Session 2: reconnect + auto-encrypt + GATT read =====
+    stack_c, stack_p, link = await _open_pair()
+
+    encrypted_events: list = []
+
+    def _on_event(e):
+        if getattr(e, "state", None) == "encrypted":
+            encrypted_events.append(e)
+
+    stack_c.on_connection_event(_on_event)
+
+    await stack_p.gap.ble_advertiser.start(ad_data=_build_test_ad_data())
+    handle = None
+    try:
+        # Reconnect — NO pair() call; auto-encrypt should fire automatically.
+        if link is not None:
+            connect_task = asyncio.create_task(
+                stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+            )
+            await asyncio.sleep(0.1)
+            await link.connect()
+            client = await connect_task
+        else:
+            await central_discover_peripheral(stack_c, peripheral_addr)
+            client = await stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+        handle = client._connection_handle
+
+        # Wait up to 2s for the encryption-change event
+        for _ in range(40):
+            if encrypted_events:
+                break
+            await asyncio.sleep(0.05)
+        assert encrypted_events, "auto-encrypt did not fire on bonded reconnect"
+
+        # GATT read on the encrypted link
+        services = await client.discover_all_services()
+        svc = next(s for s in services if s[2] == TEST_SERVICE_UUID.to_bytes())
+        chars = await client.discover_characteristics(svc[0], svc[1])
+        handles = resolve_handles(chars, {"read": TEST_READ_CHAR_UUID})
+        value = await client.read_characteristic(handles["read"])
+        assert value == INITIAL_READ_VALUE
+    finally:
+        if handle is not None:
+            with contextlib.suppress(Exception):
+                await stack_c.gap.ble_connections.disconnect(handle)
+        with contextlib.suppress(Exception):
+            await stack_p.gap.ble_advertiser.stop()
+        await _close_pair(stack_c, stack_p, link)
