@@ -1124,6 +1124,21 @@ async def _passkey_await_user_input(ctx: "SMPPairingContext") -> None:
     asyncio.create_task(_await())
 
 
+async def _sc_passkey_send_round_confirm(ctx: "SMPPairingContext") -> None:
+    """Initiator-only round helper: generate Na_i, compute Ca_i = f4(PKax, PKbx, Na_i, 0x80|bit_i), send.
+
+    Round i (1..20) uses bit (20 - i) of ctx.passkey — i=1 is the MSB.
+    """
+    from pybluehost.ble.smp import SMPPairingConfirm
+    i = ctx.passkey_round
+    bit = (ctx.passkey >> (20 - i)) & 1
+    ctx.passkey_local_random = os.urandom(16)
+    pkax = ctx.local_public_key[:32]
+    pkbx = ctx.peer_public_key[:32]
+    ctx.passkey_local_confirm = SMPCrypto.f4(pkax, pkbx, ctx.passkey_local_random, 0x80 | bit)
+    await ctx.send(SMPPairingConfirm(confirm_value=ctx.passkey_local_confirm).to_bytes())
+
+
 async def _passkey_buffer_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
     """Input-side helper: stash peer's Pairing_Confirm while we wait on the user.
 

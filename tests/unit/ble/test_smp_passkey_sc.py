@@ -98,3 +98,105 @@ def test_sc_association_model_just_works_for_both_keyboard_only():
         io_peer=IOCapability.KEYBOARD_ONLY,
     )
     assert _association_model(ctx) == "just_works"
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_send_round_confirm_initiator_round_1(monkeypatch):
+    """Round 1 uses MSB of passkey; computes f4(PKax, PKbx, Na_1, 0x80|bit_19)
+    and sends Pairing_Confirm."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole
+
+    captured_args: list = []
+
+    def _stub_f4(U, V, X, Z):
+        captured_args.append((U, V, X, Z))
+        return b"\xa1" * 16
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    pkax = bytes(range(32))
+    pkbx = bytes(range(32, 64))
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=pkax + bytes(32),
+        peer_public_key=pkbx + bytes(32),
+        passkey=0b10000000000000000000,   # bit_19 = 1, others 0 (passkey = 524288)
+        passkey_round=1,
+        send=_send,
+    )
+    await state_mod._sc_passkey_send_round_confirm(ctx)
+    # f4 called with (PKax, PKbx, Na_1, 0x80 | 1) = (pkax, pkbx, 16B random, 0x81)
+    assert len(captured_args) == 1
+    U, V, X, Z = captured_args[0]
+    assert U == pkax
+    assert V == pkbx
+    assert len(X) == 16  # 16-byte random
+    assert Z == 0x81
+    # Pairing_Confirm sent (opcode 0x03)
+    assert len(sent) == 1 and sent[0][0] == 0x03
+    # ctx fields updated
+    assert ctx.passkey_local_random == X
+    assert ctx.passkey_local_confirm == b"\xa1" * 16
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_send_round_confirm_initiator_round_20(monkeypatch):
+    """Round 20 uses LSB of passkey."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole
+
+    captured_args: list = []
+
+    def _stub_f4(U, V, X, Z):
+        captured_args.append((U, V, X, Z))
+        return b"\xa2" * 16
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+
+    async def _send(data):
+        pass
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=1,    # bit_0 = LSB = 1
+        passkey_round=20,
+        send=_send,
+    )
+    await state_mod._sc_passkey_send_round_confirm(ctx)
+    # Round 20 → bit_index = 20 - 20 = 0 → bit = (1 >> 0) & 1 = 1
+    assert captured_args[0][3] == 0x81
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_send_round_confirm_passkey_zero_uses_0x80(monkeypatch):
+    """A passkey of 0 has bit_i=0 for all i → r_i = 0x80."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole
+
+    captured_args: list = []
+
+    def _stub_f4(U, V, X, Z):
+        captured_args.append((U, V, X, Z))
+        return b"\xa3" * 16
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+
+    async def _send(data): pass
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=0,
+        passkey_round=10,
+        send=_send,
+    )
+    await state_mod._sc_passkey_send_round_confirm(ctx)
+    assert captured_args[0][3] == 0x80
