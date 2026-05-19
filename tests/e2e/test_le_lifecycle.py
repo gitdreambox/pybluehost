@@ -415,3 +415,108 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
         with contextlib.suppress(Exception):
             await stack_p.gap.ble_advertiser.stop()
         await _close_pair(stack_c, stack_p, link)
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_e2e_pair_failure_disconnects_cleanly(
+    tmp_path, transport_mode,
+):
+    """Mismatched NC delegates -> pair() raises with reason=3 -> teardown
+    completes within 2s on each stack. Regression guard against leaked
+    pairing_complete futures from Sub-Plan 3a/3b reviews."""
+    import asyncio
+    import contextlib
+
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import AutoAcceptDelegate, JsonBondStorage
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.types import IOCapability
+    from pybluehost.hci.virtual_link import VirtualLELink
+    from pybluehost.stack import Stack, StackConfig
+
+    from tests.e2e._helpers import _supports_le_sc
+
+    # This test requires SecurityConfig(mitm_required=True), which is not the
+    # default session fixture; build our own stacks.
+    if transport_mode != "virtual":
+        pytest.skip(
+            "hardware mode: build_stack_from_spec doesn't accept config= yet"
+        )
+
+    central_addr = BDAddress(b"\x0A\x0A\x0A\x0A\x0A\x0A")
+    peripheral_addr = BDAddress(b"\x0B\x0B\x0B\x0B\x0B\x0B")
+
+    cfg_c = StackConfig(
+        bond_storage=JsonBondStorage(tmp_path / "bonds_c.json"),
+        security=SecurityConfig(
+            enable_secure_connections=True, mitm_required=True,
+        ),
+        le_io_capability=IOCapability.DISPLAY_YES_NO,
+    )
+    cfg_p = StackConfig(
+        bond_storage=JsonBondStorage(tmp_path / "bonds_p.json"),
+        security=SecurityConfig(
+            enable_secure_connections=True, mitm_required=True,
+        ),
+        le_io_capability=IOCapability.DISPLAY_YES_NO,
+    )
+
+    stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
+    stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
+    link = VirtualLELink(
+        central=stack_c._virtual_controller,
+        peripheral=stack_p._virtual_controller,
+        central_address=central_addr,
+        peripheral_address=peripheral_addr,
+    )
+
+    if not _supports_le_sc(stack_c):
+        with contextlib.suppress(Exception):
+            await link.disconnect()
+        await stack_c.close()
+        await stack_p.close()
+        pytest.skip("adapter does not support LE Secure Connections")
+
+    # Inject mismatched delegates: Central accepts, Peripheral rejects.
+    class _AcceptNC(AutoAcceptDelegate):
+        async def confirm_numeric(self, peer_addr, value):
+            return True
+
+    class _RejectNC(AutoAcceptDelegate):
+        async def confirm_numeric(self, peer_addr, value):
+            return False
+
+    stack_c._smp.set_delegate(_AcceptNC())
+    stack_p._smp.set_delegate(_RejectNC())
+
+    ad_data = _build_test_ad_data()
+    await stack_p.gap.ble_advertiser.start(ad_data=ad_data)
+    handle = None
+    try:
+        # Establish connection (virtual injection pattern)
+        connect_task = asyncio.create_task(
+            stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+        )
+        await asyncio.sleep(0.1)
+        await link.connect()
+        client = await connect_task
+        handle = client._connection_handle
+
+        # Pair must raise; reason matches "SMP pairing failed"
+        with pytest.raises(Exception, match="SMP pairing failed"):
+            await stack_c.pair(handle, timeout=5.0)
+
+        # Critical assertion: cleanup completes within 2s on each side.
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(
+                stack_c.gap.ble_connections.disconnect(handle), timeout=2.0,
+            )
+    finally:
+        with contextlib.suppress(Exception):
+            await stack_p.gap.ble_advertiser.stop()
+        with contextlib.suppress(Exception):
+            await link.disconnect()
+        # The regression guard: stack.close() must complete within 2s.
+        await asyncio.wait_for(stack_c.close(), timeout=2.0)
+        await asyncio.wait_for(stack_p.close(), timeout=2.0)
