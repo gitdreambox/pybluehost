@@ -490,3 +490,162 @@ async def test_sc_passkey_recv_peer_random_responder_round_20_exits_to_random_ex
     assert ctx.peer_random == b"\x66" * 16
     assert ctx.local_random == b"\x77" * 16
     assert exit_called == [True]
+
+
+@pytest.mark.asyncio
+async def test_sc_initiator_pubkey_passkey_display_role_enters_round(monkeypatch):
+    """Initiator (Display): after pubkey exchange + DHKey, generates passkey,
+    displays, sends Ca_1, state -> PASSKEY_SC_ROUND."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPPairingPublicKey, SMPState
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+    monkeypatch.setattr(state_mod, "_passkey_local_role", lambda _ctx: "display")
+    async def _stub_resolve(ctx):
+        return 555_555
+    monkeypatch.setattr(state_mod, "_passkey_resolve_display_value", _stub_resolve)
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
+                        staticmethod(lambda *a, **k: b"\xaa" * 16))
+
+    # Stub DHKey computation
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.compute_dhkey",
+        lambda priv, pub: b"\xdd" * 32,
+    )
+
+    displayed: list = []
+    class _CapturingDelegate:
+        async def display_passkey(self, peer_addr, passkey):
+            displayed.append((peer_addr, passkey))
+
+    class _SM:
+        def __init__(self): self._state = SMPState.PUBLIC_KEY_EXCHANGE
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    pdu = SMPPairingPublicKey(public_key_x=bytes(range(32)),
+                              public_key_y=bytes(range(32, 64)))
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_private_key=b"\x00" * 32,
+        local_public_key=bytes(64),
+        peer_public_key=None,
+        peer_address=BDAddress(b"\x0B" * 6),
+        local_address=BDAddress(b"\x0A" * 6),
+        state_machine=_SM(),
+        _delegate=_CapturingDelegate(),
+        send=_send,
+        passkey=None,
+    )
+    await state_mod._sc_initiator_recv_peer_public_key(ctx, pdu=pdu)
+    assert ctx.passkey == 555_555
+    assert displayed == [(BDAddress(b"\x0B" * 6), 555_555)]
+    assert ctx.passkey_round == 1
+    assert ctx.passkey_round_phase == "AWAIT_PEER_CONFIRM"
+    # Pairing_Confirm sent
+    assert len(sent) == 1 and sent[0][0] == 0x03
+    # State overridden to PASSKEY_SC_ROUND
+    assert ctx.state_machine._state == SMPState.PASSKEY_SC_ROUND
+
+
+@pytest.mark.asyncio
+async def test_sc_initiator_pubkey_passkey_input_role_enters_input_pending(monkeypatch):
+    """Initiator (Input): state -> PASSKEY_INPUT_PENDING; no PDU sent."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPPairingPublicKey, SMPState
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+    monkeypatch.setattr(state_mod, "_passkey_local_role", lambda _ctx: "input")
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.compute_dhkey",
+        lambda priv, pub: b"\xdd" * 32,
+    )
+
+    await_called: list = []
+    async def _stub_await(ctx):
+        await_called.append(True)
+
+    monkeypatch.setattr(state_mod, "_passkey_await_user_input", _stub_await)
+
+    class _SM:
+        def __init__(self): self._state = SMPState.PUBLIC_KEY_EXCHANGE
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    pdu = SMPPairingPublicKey(public_key_x=bytes(range(32)),
+                              public_key_y=bytes(range(32, 64)))
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_private_key=b"\x00" * 32,
+        local_public_key=bytes(64),
+        peer_public_key=None,
+        peer_address=BDAddress(b"\x0B" * 6),
+        local_address=BDAddress(b"\x0A" * 6),
+        state_machine=_SM(),
+        _delegate=None,
+        send=_send,
+    )
+    await state_mod._sc_initiator_recv_peer_public_key(ctx, pdu=pdu)
+    assert ctx.state_machine._state == SMPState.PASSKEY_INPUT_PENDING
+    assert sent == []
+    assert await_called == [True]
+
+
+@pytest.mark.asyncio
+async def test_sc_responder_pubkey_passkey_display_skips_cb_send(monkeypatch):
+    """Responder (Display): after sending own pubkey, does NOT send Cb (waits for Initiator's Ca_1)."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPPairingPublicKey, SMPState
+
+    monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "passkey_entry")
+    monkeypatch.setattr(state_mod, "_passkey_local_role", lambda _ctx: "display")
+    async def _stub_resolve(ctx):
+        return 246_810
+    monkeypatch.setattr(state_mod, "_passkey_resolve_display_value", _stub_resolve)
+
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.generate_p256_keypair",
+        lambda: (b"\x00" * 32, bytes(range(64))),
+    )
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.compute_dhkey",
+        lambda priv, pub: b"\xdd" * 32,
+    )
+
+    displayed: list = []
+    class _CapturingDelegate:
+        async def display_passkey(self, peer_addr, passkey):
+            displayed.append((peer_addr, passkey))
+
+    class _SM:
+        def __init__(self): self._state = SMPState.PUBLIC_KEY_EXCHANGE
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    pdu = SMPPairingPublicKey(public_key_x=bytes(range(32)),
+                              public_key_y=bytes(range(32, 64)))
+    ctx = SimpleNamespace(
+        role=PairingRole.RESPONDER,
+        local_private_key=None,
+        local_public_key=None,
+        peer_public_key=None,
+        peer_address=BDAddress(b"\x0B" * 6),
+        local_address=BDAddress(b"\x0A" * 6),
+        state_machine=_SM(),
+        _delegate=_CapturingDelegate(),
+        send=_send,
+    )
+    await state_mod._sc_responder_recv_peer_public_key(ctx, pdu=pdu)
+    # Exactly one PDU sent: own Public Key (opcode 0x0C). NO Pairing_Confirm.
+    assert len(sent) == 1 and sent[0][0] == 0x0C
+    assert ctx.passkey == 246_810
+    assert displayed == [(BDAddress(b"\x0B" * 6), 246_810)]
+    assert ctx.state_machine._state == SMPState.PASSKEY_SC_ROUND
+    assert ctx.passkey_round == 1
+    assert ctx.passkey_round_phase == "AWAIT_PEER_CONFIRM"

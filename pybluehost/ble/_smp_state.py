@@ -533,55 +533,89 @@ async def _responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -
     ctx.stk = SMPCrypto.s1(ctx.tk, ctx.local_random, ctx.peer_random)
 
 
-async def _sc_initiator_recv_peer_public_key(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
-    """SC Initiator: peer's Public Key arrived → compute DHKey, stay in PUBLIC_KEY_EXCHANGE.
+async def _sc_passkey_initiator_display_enter(ctx: "SMPPairingContext") -> None:
+    """Initiator Display: resolve passkey, display, send Ca_1, state -> PASSKEY_SC_ROUND."""
+    ctx.passkey = await _passkey_resolve_display_value(ctx)
+    delegate = getattr(ctx, "_delegate", None)
+    if delegate is not None:
+        try:
+            await delegate.display_passkey(ctx.peer_address, ctx.passkey)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("delegate.display_passkey raised: %s; proceeding", exc)
+    ctx.passkey_round = 1
+    ctx.passkey_round_phase = "AWAIT_PEER_CONFIRM"
+    ctx.state_machine._state = SMPState.PASSKEY_SC_ROUND
+    await _sc_passkey_send_round_confirm(ctx)
 
-    Initiator does NOT send a Confirm in SC Just Works; it waits for the
-    Responder's Confirm (Task 9 will handle that transition).
+
+async def _sc_passkey_responder_display_enter(ctx: "SMPPairingContext") -> None:
+    """Responder Display: resolve passkey, display, state -> PASSKEY_SC_ROUND (no PDU)."""
+    ctx.passkey = await _passkey_resolve_display_value(ctx)
+    delegate = getattr(ctx, "_delegate", None)
+    if delegate is not None:
+        try:
+            await delegate.display_passkey(ctx.peer_address, ctx.passkey)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("delegate.display_passkey raised: %s; proceeding", exc)
+    ctx.passkey_round = 1
+    ctx.passkey_round_phase = "AWAIT_PEER_CONFIRM"
+    ctx.state_machine._state = SMPState.PASSKEY_SC_ROUND
+
+
+async def _sc_initiator_recv_peer_public_key(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Initiator: peer's Public Key arrived → compute DHKey.
+
+    For Just Works / NC: stay in PUBLIC_KEY_EXCHANGE (await Responder's Confirm).
+    For SC Passkey Display: enter PASSKEY_SC_ROUND and send Ca_1.
+    For SC Passkey Input: enter PASSKEY_INPUT_PENDING and spawn delegate task.
     """
     from pybluehost.ble._smp_sc_crypto import compute_dhkey
     ctx.peer_public_key = pdu.public_key_x + pdu.public_key_y
     ctx.dhkey = compute_dhkey(ctx.local_private_key, ctx.peer_public_key)
 
+    if _association_model(ctx) == "passkey_entry":
+        if _passkey_local_role(ctx) == "display":
+            await _sc_passkey_initiator_display_enter(ctx)
+        else:
+            ctx.state_machine._state = SMPState.PASSKEY_INPUT_PENDING
+            await _passkey_await_user_input(ctx)
+
 
 async def _sc_responder_recv_peer_public_key(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
     """SC Responder: Initiator's Public Key arrived.
 
-    1. Store peer public key.
-    2. Generate own P-256 keypair, send Pairing_Public_Key.
-    3. Compute DHKey.
-    4. Generate Nb (random 16 bytes), compute Cb = f4(PKbx, PKax, Nb, 0).
-    5. Send Pairing_Confirm(Cb).
-    State advances to CONFIRMING (will await Initiator's Random Na in Task 9).
+    All paths: store peer pubkey, generate own keypair, send own pubkey, compute DHKey.
+    For Just Works / NC: also generate Nb + Cb = f4(PKbx, PKax, Nb, 0) and send Pairing_Confirm.
+    For SC Passkey Display: enter PASSKEY_SC_ROUND (no Cb send).
+    For SC Passkey Input: enter PASSKEY_INPUT_PENDING (no Cb send).
     """
     import os
     from pybluehost.ble._smp_sc_crypto import compute_dhkey, generate_p256_keypair
     from pybluehost.ble.smp import SMPPairingConfirm, SMPPairingPublicKey
 
     ctx.peer_public_key = pdu.public_key_x + pdu.public_key_y
-
-    # Generate own keypair
     priv, pub = generate_p256_keypair()
     ctx.local_private_key = priv
     ctx.local_public_key = pub
-
-    # Send own Public Key
     await ctx.send(SMPPairingPublicKey(
         public_key_x=pub[:32], public_key_y=pub[32:],
     ).to_bytes())
-
-    # Compute DHKey
     ctx.dhkey = compute_dhkey(priv, ctx.peer_public_key)
 
-    # Generate Nb and compute Cb = f4(PKbx, PKax, Nb, 0)
-    # PKbx = our public X (first 32 LE bytes); PKax = peer's public X
+    model = _association_model(ctx)
+    if model == "passkey_entry":
+        if _passkey_local_role(ctx) == "display":
+            await _sc_passkey_responder_display_enter(ctx)
+        else:
+            ctx.state_machine._state = SMPState.PASSKEY_INPUT_PENDING
+            await _passkey_await_user_input(ctx)
+        return
+
+    # Just Works / NC: generate Nb, send Cb (existing behavior)
     ctx.local_random = os.urandom(16)
     pkbx = ctx.local_public_key[:32]
     pkax = ctx.peer_public_key[:32]
-    # f4(U, V, X, Z): U=PKbx, V=PKax, X=Nb(16 bytes), Z=0 (int)
     ctx.local_confirm = SMPCrypto.f4(pkbx, pkax, ctx.local_random, 0)
-
-    # Send Confirm(Cb)
     await ctx.send(SMPPairingConfirm(confirm_value=ctx.local_confirm).to_bytes())
 
 
