@@ -935,9 +935,10 @@ def _sc_negotiated(ctx: "SMPPairingContext") -> bool:
 def _association_model(ctx: "SMPPairingContext") -> str:
     """Return 'numeric_comparison' | 'passkey_entry' | 'just_works'.
 
-    SC modes (Sub-Plan 3a + 3b-2): NC vs JW.
-    Legacy mode (Sub-Plan 3b-1): Passkey Entry vs JW.
-    Passkey Entry (SC) and OOB deferred to Sub-Plans 3b-2 and 3c.
+    SC: NC for both-DYN/KbD; SC Passkey (Sub-Plan 3b-2) for remaining MITM-qualifying
+    pairs; otherwise JW.
+    Legacy (Sub-Plan 3b-1): Passkey Entry for MITM-qualifying pairs; otherwise JW.
+    OOB deferred to Sub-Plan 3c.
     """
     from pybluehost.core.types import IOCapability
 
@@ -949,9 +950,12 @@ def _association_model(ctx: "SMPPairingContext") -> str:
         nc_caps = {int(IOCapability.DISPLAY_YES_NO), int(IOCapability.KEYBOARD_DISPLAY)}
         if int(ctx.local_io_caps) in nc_caps and int(ctx.peer_io_caps) in nc_caps:
             return "numeric_comparison"
+        # Sub-Plan 3b-2: SC Passkey for remaining MITM-qualifying pairs
+        if _passkey_capable(int(ctx.local_io_caps), int(ctx.peer_io_caps)):
+            return "passkey_entry"
         return "just_works"
 
-    # Legacy path — Sub-Plan 3b-1 addition
+    # Legacy path — Sub-Plan 3b-1
     if not both_mitm:
         return "just_works"
     if not _passkey_capable(int(ctx.local_io_caps), int(ctx.peer_io_caps)):
