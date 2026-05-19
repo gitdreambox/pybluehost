@@ -303,3 +303,190 @@ async def test_sc_passkey_recv_peer_confirm_wrong_subphase_fails(monkeypatch):
     pdu = SimpleNamespace(confirm_value=b"\x00" * 16)
     await state_mod._sc_passkey_recv_peer_confirm(ctx, pdu=pdu)
     assert failed == [{"reason": 0x08}]
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_recv_peer_random_initiator_advances_round(monkeypatch):
+    """Initiator verifies Cb_i = f4(PKbx, PKax, Nb_i, 0x80|bit_i); on match advances
+    round and sends next Ca."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole
+
+    def _stub_f4(U, V, X, Z):
+        # Match the prior recv_peer_confirm path: when called for verification,
+        # return whatever we stashed as peer_confirm.
+        return b"\xcc" * 16
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=123456,
+        passkey_round=1,
+        passkey_round_phase="AWAIT_PEER_RANDOM",
+        passkey_peer_confirm=b"\xcc" * 16,    # matches stubbed f4 return
+        passkey_local_random=b"\x11" * 16,
+        send=_send,
+    )
+    pdu = SimpleNamespace(random_value=b"\xbb" * 16)
+    await state_mod._sc_passkey_recv_peer_random(ctx, pdu=pdu)
+    # On match: round advances to 2; new Ca_2 sent (Pairing_Confirm 0x03)
+    assert ctx.passkey_round == 2
+    assert ctx.passkey_round_phase == "AWAIT_PEER_CONFIRM"
+    assert len(sent) == 1 and sent[0][0] == 0x03
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_recv_peer_random_responder_advances_round(monkeypatch):
+    """Responder verifies Ca_i, sends Nb_i, advances round."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole
+
+    def _stub_f4(U, V, X, Z):
+        return b"\xaa" * 16
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    ctx = SimpleNamespace(
+        role=PairingRole.RESPONDER,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=123456,
+        passkey_round=1,
+        passkey_round_phase="AWAIT_PEER_RANDOM",
+        passkey_peer_confirm=b"\xaa" * 16,
+        passkey_local_random=b"\x22" * 16,
+        send=_send,
+    )
+    pdu = SimpleNamespace(random_value=b"\xbb" * 16)
+    await state_mod._sc_passkey_recv_peer_random(ctx, pdu=pdu)
+    # Pairing_Random sent with Nb_1
+    assert len(sent) == 1 and sent[0][0] == 0x04
+    assert sent[0][1:] == b"\x22" * 16
+    assert ctx.passkey_round == 2
+    assert ctx.passkey_round_phase == "AWAIT_PEER_CONFIRM"
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_recv_peer_random_initiator_mismatch_fails(monkeypatch):
+    """Cb verification mismatch -> FAILED(0x04)."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
+                        staticmethod(lambda *a, **k: b"\xff" * 16))   # not what's stashed
+
+    failed: list = []
+    async def _stub_on_failed(ctx, **kw):
+        failed.append(kw)
+
+    monkeypatch.setattr(state_mod, "_on_failed", _stub_on_failed)
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=0,
+        passkey_round=1,
+        passkey_round_phase="AWAIT_PEER_RANDOM",
+        passkey_peer_confirm=b"\xcc" * 16,
+        passkey_local_random=b"\x00" * 16,
+        send=lambda d: None,
+    )
+    pdu = SimpleNamespace(random_value=b"\x00" * 16)
+    await state_mod._sc_passkey_recv_peer_random(ctx, pdu=pdu)
+    assert failed == [{"reason": 0x04}]
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_recv_peer_random_initiator_round_20_exits_to_dhkey_check(monkeypatch):
+    """On round 20 match, Initiator calls exit helper which sets DHKEY_CHECK state."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPState
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
+                        staticmethod(lambda *a, **k: b"\xcc" * 16))
+
+    exit_called: list = []
+    async def _stub_exit(ctx):
+        exit_called.append(True)
+        ctx.state_machine._state = SMPState.DHKEY_CHECK
+
+    monkeypatch.setattr(state_mod, "_sc_passkey_exit_to_dhkey_check_initiator", _stub_exit)
+
+    class _SM:
+        def __init__(self): self._state = SMPState.PASSKEY_SC_ROUND
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=0,
+        passkey_round=20,
+        passkey_round_phase="AWAIT_PEER_RANDOM",
+        passkey_peer_confirm=b"\xcc" * 16,
+        passkey_local_random=b"\x99" * 16,
+        state_machine=_SM(),
+        send=lambda d: None,
+    )
+    pdu = SimpleNamespace(random_value=b"\x88" * 16)
+    await state_mod._sc_passkey_recv_peer_random(ctx, pdu=pdu)
+    # local_random / peer_random promoted to canonical Na/Nb for f5/f6
+    assert ctx.local_random == b"\x99" * 16
+    assert ctx.peer_random == b"\x88" * 16
+    assert exit_called == [True]
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_recv_peer_random_responder_round_20_exits_to_random_exchange(monkeypatch):
+    """On round 20 match, Responder exit helper sets RANDOM_EXCHANGE state."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPState
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
+                        staticmethod(lambda *a, **k: b"\xaa" * 16))
+
+    exit_called: list = []
+    async def _stub_exit(ctx):
+        exit_called.append(True)
+        ctx.state_machine._state = SMPState.RANDOM_EXCHANGE
+
+    monkeypatch.setattr(state_mod, "_sc_passkey_exit_to_random_exchange_responder", _stub_exit)
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    class _SM:
+        def __init__(self): self._state = SMPState.PASSKEY_SC_ROUND
+
+    ctx = SimpleNamespace(
+        role=PairingRole.RESPONDER,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=0,
+        passkey_round=20,
+        passkey_round_phase="AWAIT_PEER_RANDOM",
+        passkey_peer_confirm=b"\xaa" * 16,
+        passkey_local_random=b"\x77" * 16,
+        state_machine=_SM(),
+        send=_send,
+    )
+    pdu = SimpleNamespace(random_value=b"\x66" * 16)
+    await state_mod._sc_passkey_recv_peer_random(ctx, pdu=pdu)
+    # Responder sends Pairing_Random(Nb_20) first
+    assert len(sent) == 1 and sent[0][0] == 0x04
+    assert sent[0][1:] == b"\x77" * 16
+    assert ctx.peer_random == b"\x66" * 16
+    assert ctx.local_random == b"\x77" * 16
+    assert exit_called == [True]

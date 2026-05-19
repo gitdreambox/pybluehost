@@ -1166,6 +1166,86 @@ async def _sc_passkey_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw)
     ctx.passkey_round_phase = "AWAIT_PEER_RANDOM"
 
 
+async def _sc_passkey_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Passkey reflexive transition: PAIRING_RANDOM_RX while in PASSKEY_SC_ROUND.
+
+    Verify peer's Confirm matches f4 over their just-revealed Random and the
+    current bit. On match, advance round or exit; on mismatch, FAILED(0x04).
+    Wrong subphase -> FAILED(0x08).
+    """
+    from pybluehost.ble.smp import PairingRole, SMPPairingRandom
+    if ctx.passkey_round_phase != "AWAIT_PEER_RANDOM":
+        await _on_failed(ctx, reason=0x08)
+        return
+    ctx.passkey_peer_random = pdu.random_value
+    i = ctx.passkey_round
+    bit = (ctx.passkey >> (20 - i)) & 1
+
+    if ctx.role == PairingRole.INITIATOR:
+        # Verify Cb_i = f4(PKbx, PKax, Nb_i, 0x80|bit)
+        pkax = ctx.local_public_key[:32]
+        pkbx = ctx.peer_public_key[:32]
+        expected = SMPCrypto.f4(pkbx, pkax, ctx.passkey_peer_random, 0x80 | bit)
+        if expected != ctx.passkey_peer_confirm:
+            await _on_failed(ctx, reason=0x04)
+            return
+        if i < 20:
+            ctx.passkey_round = i + 1
+            ctx.passkey_round_phase = "AWAIT_PEER_CONFIRM"
+            await _sc_passkey_send_round_confirm(ctx)
+        else:
+            ctx.local_random = ctx.passkey_local_random   # Na_20
+            ctx.peer_random = ctx.passkey_peer_random     # Nb_20
+            await _sc_passkey_exit_to_dhkey_check_initiator(ctx)
+    else:
+        # Responder: verify Ca_i = f4(PKax, PKbx, Na_i, 0x80|bit), then send Nb_i.
+        pkax = ctx.peer_public_key[:32]
+        pkbx = ctx.local_public_key[:32]
+        expected = SMPCrypto.f4(pkax, pkbx, ctx.passkey_peer_random, 0x80 | bit)
+        if expected != ctx.passkey_peer_confirm:
+            await _on_failed(ctx, reason=0x04)
+            return
+        await ctx.send(SMPPairingRandom(random_value=ctx.passkey_local_random).to_bytes())
+        if i < 20:
+            ctx.passkey_round = i + 1
+            ctx.passkey_round_phase = "AWAIT_PEER_CONFIRM"
+        else:
+            ctx.peer_random = ctx.passkey_peer_random     # Na_20
+            ctx.local_random = ctx.passkey_local_random   # Nb_20
+            await _sc_passkey_exit_to_random_exchange_responder(ctx)
+
+
+async def _sc_passkey_exit_to_dhkey_check_initiator(ctx: "SMPPairingContext") -> None:
+    """Initiator exit after round 20: derive f5, call existing _sc_send_dhkey_check_initiator.
+
+    _sc_send_dhkey_check_initiator (Sub-Plan 2) sends Ea and sets state to DHKEY_CHECK.
+    """
+    local_addr = _local_address_bytes(ctx)
+    peer_addr = _peer_address_bytes(ctx)
+    a1 = b"\x00" + local_addr
+    a2 = b"\x00" + peer_addr
+    mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.local_random, ctx.peer_random, a1, a2)
+    ctx.mac_key = mac_key
+    ctx.ltk_sc = ltk
+    await _sc_send_dhkey_check_initiator(ctx)
+
+
+async def _sc_passkey_exit_to_random_exchange_responder(ctx: "SMPPairingContext") -> None:
+    """Responder exit after round 20: derive f5, state -> RANDOM_EXCHANGE.
+
+    The existing RANDOM_EXCHANGE + PAIRING_DHKEY_CHECK_RX transition handles
+    Initiator's incoming Ea. No PDU sent here.
+    """
+    local_addr = _local_address_bytes(ctx)
+    peer_addr = _peer_address_bytes(ctx)
+    a1 = b"\x00" + peer_addr   # Initiator = peer
+    a2 = b"\x00" + local_addr  # Responder = local
+    mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.peer_random, ctx.local_random, a1, a2)
+    ctx.mac_key = mac_key
+    ctx.ltk_sc = ltk
+    ctx.state_machine._state = SMPState.RANDOM_EXCHANGE
+
+
 async def _passkey_buffer_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
     """Input-side helper: stash peer's Pairing_Confirm while we wait on the user.
 
