@@ -1139,6 +1139,33 @@ async def _sc_passkey_send_round_confirm(ctx: "SMPPairingContext") -> None:
     await ctx.send(SMPPairingConfirm(confirm_value=ctx.passkey_local_confirm).to_bytes())
 
 
+async def _sc_passkey_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
+    """SC Passkey reflexive transition: PAIRING_CONFIRM_RX while in PASSKEY_SC_ROUND.
+
+    Initiator: stash peer_confirm, send Pairing_Random with Na_i (generated earlier).
+    Responder: stash peer_confirm, compute Cb_i = f4(PKbx, PKax, Nb_i, 0x80|bit_i), send.
+    Either way, advance subphase to AWAIT_PEER_RANDOM.
+    """
+    from pybluehost.ble.smp import PairingRole, SMPPairingConfirm, SMPPairingRandom
+    if ctx.passkey_round_phase != "AWAIT_PEER_CONFIRM":
+        await _on_failed(ctx, reason=0x08)
+        return
+    ctx.passkey_peer_confirm = pdu.confirm_value
+    if ctx.role == PairingRole.INITIATOR:
+        # Initiator already has Na_i from _sc_passkey_send_round_confirm; reveal it now.
+        await ctx.send(SMPPairingRandom(random_value=ctx.passkey_local_random).to_bytes())
+    else:
+        # Responder: compute Cb_i with own Nb_i.
+        i = ctx.passkey_round
+        bit = (ctx.passkey >> (20 - i)) & 1
+        ctx.passkey_local_random = os.urandom(16)
+        pkax = ctx.peer_public_key[:32]   # Initiator's
+        pkbx = ctx.local_public_key[:32]  # Responder's
+        ctx.passkey_local_confirm = SMPCrypto.f4(pkbx, pkax, ctx.passkey_local_random, 0x80 | bit)
+        await ctx.send(SMPPairingConfirm(confirm_value=ctx.passkey_local_confirm).to_bytes())
+    ctx.passkey_round_phase = "AWAIT_PEER_RANDOM"
+
+
 async def _passkey_buffer_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
     """Input-side helper: stash peer's Pairing_Confirm while we wait on the user.
 

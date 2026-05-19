@@ -200,3 +200,106 @@ async def test_sc_passkey_send_round_confirm_passkey_zero_uses_0x80(monkeypatch)
     )
     await state_mod._sc_passkey_send_round_confirm(ctx)
     assert captured_args[0][3] == 0x80
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_recv_peer_confirm_initiator_sends_random(monkeypatch):
+    """Initiator receives Cb_i → stores peer_confirm → sends Pairing_Random with Na_i."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPState
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=bytes(64),
+        peer_public_key=bytes(64),
+        passkey=314159,
+        passkey_round=1,
+        passkey_round_phase="AWAIT_PEER_CONFIRM",
+        passkey_local_random=b"\x11" * 16,   # Na_1 was generated in send_round_confirm
+        passkey_local_confirm=b"\xaa" * 16,
+        send=_send,
+    )
+    pdu = SimpleNamespace(confirm_value=b"\xcc" * 16)  # Cb_1
+    await state_mod._sc_passkey_recv_peer_confirm(ctx, pdu=pdu)
+    assert ctx.passkey_peer_confirm == b"\xcc" * 16
+    # Pairing_Random sent (opcode 0x04) with Na_1
+    assert len(sent) == 1 and sent[0][0] == 0x04
+    assert sent[0][1:] == b"\x11" * 16
+    assert ctx.passkey_round_phase == "AWAIT_PEER_RANDOM"
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_recv_peer_confirm_responder_computes_and_sends_confirm(monkeypatch):
+    """Responder receives Ca_i → computes Cb_i = f4(PKbx, PKax, Nb_i, 0x80|bit_i) → sends."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole
+
+    captured_args: list = []
+
+    def _stub_f4(U, V, X, Z):
+        captured_args.append((U, V, X, Z))
+        return b"\xcb" * 16
+
+    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    pkax = bytes(range(32))         # Initiator's pubkey X = peer's
+    pkbx = bytes(range(32, 64))     # Responder's pubkey X = local's
+    ctx = SimpleNamespace(
+        role=PairingRole.RESPONDER,
+        local_public_key=pkbx + bytes(32),
+        peer_public_key=pkax + bytes(32),
+        passkey=0b10000000000000000000,   # bit_19 = 1
+        passkey_round=1,
+        passkey_round_phase="AWAIT_PEER_CONFIRM",
+        send=_send,
+    )
+    pdu = SimpleNamespace(confirm_value=b"\xaa" * 16)
+    await state_mod._sc_passkey_recv_peer_confirm(ctx, pdu=pdu)
+    # f4 called with (PKbx, PKax, Nb, 0x81)
+    assert captured_args[0][0] == pkbx
+    assert captured_args[0][1] == pkax
+    assert len(captured_args[0][2]) == 16
+    assert captured_args[0][3] == 0x81
+    # Pairing_Confirm sent
+    assert len(sent) == 1 and sent[0][0] == 0x03
+    assert ctx.passkey_round_phase == "AWAIT_PEER_RANDOM"
+
+
+@pytest.mark.asyncio
+async def test_sc_passkey_recv_peer_confirm_wrong_subphase_fails(monkeypatch):
+    """Confirm arriving while in AWAIT_PEER_RANDOM → FAILED(0x08) protocol violation."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import PairingRole, SMPState
+
+    failed: list = []
+    async def _stub_on_failed(ctx, **kw):
+        failed.append(kw)
+        ctx.state_machine._state = SMPState.FAILED
+
+    monkeypatch.setattr(state_mod, "_on_failed", _stub_on_failed)
+
+    sent: list[bytes] = []
+    async def _send(data):
+        sent.append(data)
+
+    class _SM:
+        def __init__(self): self._state = SMPState.PASSKEY_SC_ROUND
+
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        passkey_round=1,
+        passkey_round_phase="AWAIT_PEER_RANDOM",   # wrong
+        state_machine=_SM(),
+        send=_send,
+    )
+    pdu = SimpleNamespace(confirm_value=b"\x00" * 16)
+    await state_mod._sc_passkey_recv_peer_confirm(ctx, pdu=pdu)
+    assert failed == [{"reason": 0x08}]
