@@ -52,8 +52,9 @@
 | SMP Sub-Plan 3a (Numeric Comparison) | LE SC Numeric Comparison association model：g2 计算 + PairingDelegate.confirm_numeric + auth_req MITM 位 + 双端 authenticated 持久化 + LE SC NC loopback E2E | ✅ 完成 | [2026-05-18-smp-sub-plan-3a-numeric-comparison](plans/2026-05-18-smp-sub-plan-3a-numeric-comparison.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py`, `pybluehost/ble/security.py`, `pybluehost/classic/gap.py`, `pybluehost/stack.py` |
 | SMP Sub-Plan 3b-1 (Legacy Passkey Entry) | Legacy Passkey Entry association model：`SMPState.PASSKEY_INPUT_PENDING` + `PairingDelegate.display_passkey`/`get_passkey` 规范化 + Display/Input role 选择 + IO-cap 适配 + c1 共享 TK + 双端 authenticated 持久化 + Legacy Passkey loopback E2E | ✅ 完成 | [2026-05-18-smp-sub-plan-3b-1-legacy-passkey](plans/2026-05-18-smp-sub-plan-3b-1-legacy-passkey.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py` |
 | SMP Sub-Plan 3b-2 (SC Passkey Entry) | LE SC Passkey Entry association model：`SMPState.PASSKEY_SC_ROUND` 反身 20 轮 f4 commit/reveal + Display/Input role 复用 3b-1 + 20-round-exit 进 SC f5/f6 + 双端 authenticated 持久化 + VirtualController 补 `Number_Of_Completed_Packets` 释放 ACL flow credit + SC Passkey loopback E2E | ✅ 完成 | [2026-05-19-smp-sub-plan-3b-2-sc-passkey](plans/2026-05-19-smp-sub-plan-3b-2-sc-passkey.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py`, `pybluehost/hci/virtual.py` |
+| E2E LE Lifecycle | tests/e2e/ 首轮覆盖：scan→connect→pair→GATT 4 个端到端场景；transport-agnostic（virtual 自动跑 / hardware 用 --transport=usb 手动跑） | ✅ 完成 | [2026-05-20-e2e-le-lifecycle](plans/2026-05-20-e2e-le-lifecycle.md) | `tests/e2e/{conftest,_test_service,_helpers,test_le_lifecycle}.py` |
 
-**总计：27 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2）**
+**总计：28 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle）**
 
 ---
 
@@ -383,6 +384,22 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 已知遗留：仅 3 个 pre-existing USB diagnostics 失败
 - 验收：`uv run pytest tests/ -q --transport=virtual` PASS (1287 passed, 20 skipped, 3 pre-existing USB diagnostics failed)
 - 不在范围：OOB → Sub-Plan 3c；断线重连闭环 → 独立 Plan
+
+### ✅ E2E LE Lifecycle
+- 完成时间：2026-05-20
+- Plan 文档：[2026-05-20-e2e-le-lifecycle.md](plans/2026-05-20-e2e-le-lifecycle.md)
+- 提交范围：`tests/e2e/_test_service.py`、`tests/e2e/_helpers.py`、`tests/e2e/conftest.py`、`tests/e2e/test_le_lifecycle.py`（test-only Plan，无 production 代码改动）
+- 4 个 LE 端到端场景（`@pytest.mark.e2e`）：
+  - `test_e2e_scan_connect_pair_read`：scan→connect→SC JW pair→GATT discover→read INITIAL_READ_VALUE→disconnect。
+  - `test_e2e_gatt_write_and_notify`：post-pair→write writable char→subscribe CCCD→peripheral 发 2 个 notify、central 收到→unsubscribe→第 3 个 notify 不应被收到。
+  - `test_e2e_bonded_reconnect_auto_encrypt`：双 session。Session 1 配对持久化 bond；Session 2 重新建栈指向同盘 `JsonBondStorage` → 重连 → `state="encrypted"` 事件 → 加密链上 GATT read 成功。
+  - `test_e2e_pair_failure_disconnects_cleanly`：mismatched NC delegates (Central accept / Peripheral reject) → `stack.pair()` 抛 `reason=3`（Authentication Requirements） → `stack.close()` 双端 ≤ 2s 完成（regression guard for leaked `pairing_complete` futures）。
+- transport-agnostic：Test 1/2 用 `central_peripheral_pair` + `virtual_link_or_real_rf` fixtures（基于 `tests/conftest.py` 的 `stack`/`peer_stack`/`transport_mode`）；Test 3/4 自建 stacks（per-test SecurityConfig + distinct BD_ADDR），目前在 hardware 模式 skip，待 `build_stack_from_spec` 增加 `config=` 参数后启用。
+- SC 能力门控：`_supports_le_sc(stack)` 读 HCI `Read_Local_Supported_Commands` 位图（octet 34, bits 1+2）；虚拟栈短路 True（host 自己做 ECDH，控制器 bitmap 不广告 SC opcodes）；不做厂商白名单。
+- 虚拟模式 wiring quirk：`VirtualController` 不自动桥接 ADV/`LE_CREATE_CONNECTION`。测试在虚拟模式将 `connect_gatt` 作为 task，sleep 0.1s 后调用 `link.connect()` 注入 `LE_Connection_Complete`。Hardware 模式 yield None，真实 RF 自然连接。
+- 验收：`uv run pytest tests/e2e/ -v --transport=virtual` PASS（8/8，含 4 helper-validation 测试）；`uv run pytest tests/ -q --transport=virtual` PASS 仅 3 个 pre-existing USB diagnostics 失败。
+- 硬件运行方式（手动，未在 CI）：`uv run pytest tests/e2e/ -v --transport=usb:VID:PID#1 --transport-peer=usb:VID:PID#2`。
+- 不在范围（按设计推迟）：Classic E2E（inquiry→SDP→RFCOMM/SPP）；trace/btsnoop assertion harness；CLI subprocess orchestration；手机互联；双适配器 CI 测试台；pair-flavor matrix in E2E；OOB（已记录"不在路线图"）。
 
 ---
 
