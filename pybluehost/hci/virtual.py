@@ -77,6 +77,15 @@ class VirtualController:
         # Optional async hook for LTK_Request_Reply from the Peripheral side.
         # Signature: async (handle, ltk) -> None
         self._ltk_reply_hook = None
+        # Generic bridge entry point (VirtualClassicLink). Called at top of
+        # process() after the ACL branch. Signature:
+        #   async (opcode: int, raw_params: bytes) -> Optional[bytes]
+        # If it returns non-None bytes, that becomes the HCI response; None
+        # falls through to default dispatch.
+        self.command_interceptor = None
+        # BR/EDR scan-enable flags, updated by HCI_Write_Scan_Enable.
+        self._inquiry_scan = False
+        self._page_scan = False
         self._handlers: dict[int, Callable[[HCICommand], bytes]] = {
             HCI_RESET: self._handle_reset,
             HCI_READ_BD_ADDR: self._handle_read_bd_addr,
@@ -199,6 +208,23 @@ class VirtualController:
         opcode = struct.unpack_from("<H", data, 1)[0]
         param_len = data[3]
         raw_params = data[4 : 4 + param_len]
+
+        # --- Scan-enable flag tracking (BR/EDR). The default handler dict still
+        # builds the Command_Complete reply; this just keeps the controller's
+        # _inquiry_scan / _page_scan state current so VirtualClassicLink can
+        # consult them. ---
+        if opcode == HCI_WRITE_SCAN_ENABLE and param_len >= 1:
+            enable = raw_params[0]
+            self._inquiry_scan = bool(enable & 0x01)
+            self._page_scan = bool(enable & 0x02)
+
+        # --- Generic bridge interceptor: VirtualClassicLink installs a
+        # command_interceptor that returns synthetic responses for the BR/EDR
+        # opcodes it owns. None means "pass through to default dispatch". ---
+        if self.command_interceptor is not None:
+            result = await self.command_interceptor(opcode, raw_params)
+            if result is not None:
+                return result
 
         # --- Encryption commands with special response sequences ---
         if opcode == HCI_LE_START_ENCRYPTION:
