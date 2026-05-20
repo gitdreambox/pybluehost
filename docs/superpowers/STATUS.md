@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：SMP Sub-Plan 3b-2 (SC Passkey Entry) — ✅ 完成
-**下一步**：tests/e2e 端到端覆盖 / 断线重连闭环
+**当前进行中**：E2E LE Lifecycle — ✅ 完成
+**下一步**：断线重连闭环 / Classic E2E / 真机 E2E 验证（同套测试用 --transport=usb）
 **不在路线图**：SMP Sub-Plan 3c (OOB) — 暂无计划支持；如未来有具体硬件/产品需求再立项
 
 > **注意（2026-04-18 深度审查后更新）**：
