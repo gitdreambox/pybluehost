@@ -52,6 +52,35 @@ async def test_virtual_controller_command_interceptor_passthrough_when_none():
     assert response[0] == 0x04 and response[1] >= 4
 
 
+from pybluehost.hci.virtual_classic_link import VirtualClassicLink, _ConnState
+
+
+@pytest.mark.asyncio
+async def test_virtual_classic_link_attach_detach_installs_interceptors():
+    """attach() installs command_interceptor on both controllers; detach() removes."""
+    central = _make_vc("AA:AA:AA:AA:AA:AA")
+    peripheral = _make_vc("BB:BB:BB:BB:BB:BB")
+    addr_c = BDAddress.from_string("AA:AA:AA:AA:AA:AA")
+    addr_p = BDAddress.from_string("BB:BB:BB:BB:BB:BB")
+    link = VirtualClassicLink(
+        central=central, peripheral=peripheral,
+        central_address=addr_c, peripheral_address=addr_p,
+    )
+    link.attach()
+    assert central.command_interceptor is not None
+    assert peripheral.command_interceptor is not None
+    link.detach()
+    assert central.command_interceptor is None
+    assert peripheral.command_interceptor is None
+
+
+def test_conn_state_enum_values():
+    assert _ConnState.NONE == 0
+    assert _ConnState.PENDING == 1
+    assert _ConnState.CONNECTED == 2
+    assert _ConnState.DISCONNECTING == 3
+
+
 @pytest.mark.asyncio
 async def test_virtual_controller_write_scan_enable_updates_flags():
     vc = _make_vc()
