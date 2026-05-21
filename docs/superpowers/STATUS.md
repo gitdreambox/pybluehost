@@ -6,9 +6,9 @@
 
 ## 快速定位
 
-**当前进行中**：E2E LE Lifecycle — ✅ 完成
-**下一步**：断线重连闭环 / Classic E2E / 真机 E2E 验证（同套测试用 --transport=usb）
-**不在路线图**：SMP Sub-Plan 3c (OOB) — 暂无计划支持；如未来有具体硬件/产品需求再立项
+**当前进行中**：VirtualClassicLink — ✅ 完成
+**下一步**：Classic Workflow E2E（SDP browse + RFCOMM/SPP echo + bonded reconnect）/ 断线重连闭环 / 真机 E2E 验证
+**不在路线图**：SMP Sub-Plan 3c (OOB) — 暂无计划支持
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
@@ -53,8 +53,9 @@
 | SMP Sub-Plan 3b-1 (Legacy Passkey Entry) | Legacy Passkey Entry association model：`SMPState.PASSKEY_INPUT_PENDING` + `PairingDelegate.display_passkey`/`get_passkey` 规范化 + Display/Input role 选择 + IO-cap 适配 + c1 共享 TK + 双端 authenticated 持久化 + Legacy Passkey loopback E2E | ✅ 完成 | [2026-05-18-smp-sub-plan-3b-1-legacy-passkey](plans/2026-05-18-smp-sub-plan-3b-1-legacy-passkey.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py` |
 | SMP Sub-Plan 3b-2 (SC Passkey Entry) | LE SC Passkey Entry association model：`SMPState.PASSKEY_SC_ROUND` 反身 20 轮 f4 commit/reveal + Display/Input role 复用 3b-1 + 20-round-exit 进 SC f5/f6 + 双端 authenticated 持久化 + VirtualController 补 `Number_Of_Completed_Packets` 释放 ACL flow credit + SC Passkey loopback E2E | ✅ 完成 | [2026-05-19-smp-sub-plan-3b-2-sc-passkey](plans/2026-05-19-smp-sub-plan-3b-2-sc-passkey.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py`, `pybluehost/hci/virtual.py` |
 | E2E LE Lifecycle | tests/e2e/ 首轮覆盖：scan→connect→pair→GATT 4 个端到端场景；transport-agnostic（virtual 自动跑 / hardware 用 --transport=usb 手动跑） | ✅ 完成 | [2026-05-20-e2e-le-lifecycle](plans/2026-05-20-e2e-le-lifecycle.md) | `tests/e2e/{conftest,_test_service,_helpers,test_le_lifecycle}.py` |
+| VirtualClassicLink | BR/EDR (Classic) peer-to-peer 桥接：Inquiry / Connection / ACL / Auth (SSP+Legacy) / Encryption / Disconnect 六个子桥；两个 Stack.virtual() 真实 inquiry→connect→SSP JW pair→encrypt→disconnect 端到端 | ✅ 完成 | [2026-05-20-virtual-classic-link](plans/2026-05-20-virtual-classic-link.md) | `pybluehost/hci/virtual_classic_link.py`, `pybluehost/hci/virtual.py`, `pybluehost/hci/constants.py` |
 
-**总计：28 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle）**
+**总计：29 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle + VirtualClassicLink）**
 
 ---
 
@@ -400,6 +401,22 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 验收：`uv run pytest tests/e2e/ -v --transport=virtual` PASS（8/8，含 4 helper-validation 测试）；`uv run pytest tests/ -q --transport=virtual` PASS 仅 3 个 pre-existing USB diagnostics 失败。
 - 硬件运行方式（手动，未在 CI）：`uv run pytest tests/e2e/ -v --transport=usb:VID:PID#1 --transport-peer=usb:VID:PID#2`。
 - 不在范围（按设计推迟）：Classic E2E（inquiry→SDP→RFCOMM/SPP）；trace/btsnoop assertion harness；CLI subprocess orchestration；手机互联；双适配器 CI 测试台；pair-flavor matrix in E2E；OOB（已记录"不在路线图"）。
+
+### ✅ VirtualClassicLink
+- 完成时间：2026-05-21
+- Plan 文档：[2026-05-20-virtual-classic-link.md](plans/2026-05-20-virtual-classic-link.md)
+- BR/EDR (Classic) peer-to-peer 桥接基础设施。Counterpart to VirtualLELink。
+- 六个子桥（同一 `VirtualClassicLink` 类）：
+  - InquiryBridge：`HCI_Inquiry` 仅当 peer 的 `inquiry_scan=1` 时返回 `Inquiry_Result`；否则空 `Inquiry_Complete`。`HCI_Inquiry_Cancel` 立即完成。
+  - ConnectionBridge：`HCI_Create_Connection` → 分配 handle + `Connection_Request` to peer；peer `Accept_Connection_Req` → `Connection_Complete` 双端；peer `Reject_Connection_Req` → 仅 initiator 收 `Connection_Complete(reason)`；peer 不可 page → `Page_Timeout(0x04)` after `page_timeout_seconds` (default 0.1s for tests)。
+  - ACLBridge：CONNECTED handle 上的 ACL 数据双向直通；非 connected handle 静默丢弃。
+  - AuthBridge：`HCI_Auth_Requested` → `Link_Key_Request` 给 initiator；`Link_Key_Request_(Negative_)Reply` → 双端 `IO_Capability_Request`；双端 `IO_Capability_Request_Reply` → 互相 `IO_Capability_Response`；两端都答完 → 双端 `User_Confirmation_Request(numeric=0)`（JW）；两端都 accept → `Simple_Pairing_Complete(0)` + `Link_Key_Notification`（key 由 sorted addr SHA-256[:16] 确定性生成，key_type=0x05 Combination_Key）+ `Auth_Complete` 给 initiator；任一 negative → `Simple_Pairing_Complete(0x05 Auth_Failure)` 双端。
+  - EncryptionBridge：`HCI_Set_Connection_Encryption` → `Encryption_Change(enabled=1)` 双端。
+  - DisconnectBridge：`HCI_Disconnect` → `Disconnection_Complete` 双端 + 释放 handle。`link.disconnect()` 走全部 handles：CONNECTED 发 Disconnection_Complete(0x16)；PENDING 发 Connection_Complete(0x16) 给 initiator。
+- `VirtualController` 扩展：新增 `command_interceptor` 钩子（generic）+ `_inquiry_scan/_page_scan` 跟踪（更新自现有 `HCI_Write_Scan_Enable` 处理）。桥接通过 `command_interceptor` 截获 14 个 Classic 命令并合成响应；其它命令仍走默认 dispatch。
+- 验收：`uv run pytest tests/integration/test_virtual_classic_link.py -v` PASS（21 per-primitive）；`tests/integration/test_classic_e2e_smoke.py -v` PASS（1 smoke：peripheral set_connectable+set_discoverable → central inquiry 发现 peripheral → `stack.connect_classic` → `stack.authenticate_classic` 触发 SSP JW → 双端 `BondInfo.link_key_type=0x05` 持久化 → `stack.enable_classic_encryption` → `gap.classic_connections.disconnect`）；全套仅 3 个 pre-existing USB diagnostics 失败。
+- 不在范围（按设计推迟）：Classic Workflow E2E（SDP browse / RFCOMM/SPP echo / bonded reconnect with auto-encrypt）= 即时下一个 Plan；BR/EDR SC via bridge（key_type=0x07）= 后续 Plan；SCO/eSCO 同步音频；硬件 Classic E2E。
+- 注意：smoke test 使用 palindromic 地址（0A:0A:0A:0A:0A:0A / 0B:0B:0B:0B:0B:0B）避开 SSPManager `_handle_link_key_request` / `_on_link_key_notification` 的 BT wire LE → BDAddress BE 反转对非对称地址的潜在影响；这是 SSPManager 既有约定，不在 bridge scope 内。
 
 ---
 
