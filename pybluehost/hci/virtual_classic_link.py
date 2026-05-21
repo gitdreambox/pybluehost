@@ -144,7 +144,42 @@ class VirtualClassicLink:
                     self._reject_connection(controller, peer_addr_bytes, reason)
                 )
                 return self._command_status(opcode, status=0)
-            # Tasks 5-8 add remaining opcodes here.
+            # --- AuthBridge ---
+            if opcode == HCI_AUTH_REQUESTED:
+                handle = struct.unpack_from("<H", raw_params, 0)[0]
+                entry = self._handles.get(handle)
+                if entry is None:
+                    return self._command_status(opcode, status=0x02)
+                asyncio.create_task(self._auth_emit_link_key_request(controller, entry))
+                return self._command_status(opcode, status=0)
+            if opcode in (HCI_LINK_KEY_REQUEST_REPLY, HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY):
+                peer_addr_bytes = raw_params[0:6]
+                asyncio.create_task(
+                    self._auth_emit_io_cap_requests(controller, peer_addr_bytes)
+                )
+                return self._command_complete(opcode, b"\x00" + peer_addr_bytes)
+            if opcode == HCI_IO_CAPABILITY_REQUEST_REPLY:
+                peer_addr_bytes = raw_params[0:6]
+                io_cap = raw_params[6]
+                oob = raw_params[7]
+                auth_req = raw_params[8]
+                asyncio.create_task(self._auth_forward_io_cap_response(
+                    controller, peer_addr_bytes, io_cap, oob, auth_req,
+                ))
+                return self._command_complete(opcode, b"\x00" + peer_addr_bytes)
+            if opcode == HCI_USER_CONFIRMATION_REQUEST_REPLY:
+                peer_addr_bytes = raw_params[0:6]
+                asyncio.create_task(self._auth_user_confirm_reply(
+                    controller, peer_addr_bytes, accepted=True,
+                ))
+                return self._command_complete(opcode, b"\x00" + peer_addr_bytes)
+            if opcode == HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY:
+                peer_addr_bytes = raw_params[0:6]
+                asyncio.create_task(self._auth_user_confirm_reply(
+                    controller, peer_addr_bytes, accepted=False,
+                ))
+                return self._command_complete(opcode, b"\x00" + peer_addr_bytes)
+            # Tasks 7-8 add remaining opcodes here.
             return None
 
         return _intercept
@@ -289,3 +324,130 @@ class VirtualClassicLink:
             return
         peer = self._peer_of(source)
         await peer._inject_acl_to_host(acl)
+
+    # -- AuthBridge --------------------------------------------------------
+
+    async def _auth_emit_link_key_request(
+        self, initiator: VirtualController, entry: _ConnEntry,
+    ) -> None:
+        body = entry.acceptor_addr.address
+        event = HCIEvent(
+            event_code=int(EventCode.LINK_KEY_REQUEST), parameters=body,
+        )
+        await initiator._send_event_to_host(event)
+
+    async def _auth_emit_io_cap_requests(
+        self, initiator: VirtualController, peer_addr_bytes: bytes,
+    ) -> None:
+        """Emit IO_Capability_Request to BOTH sides."""
+        peer = self._peer_of(initiator)
+        body_to_initiator = self._addr_of(peer).address
+        body_to_peer = self._addr_of(initiator).address
+        await asyncio.gather(
+            initiator._send_event_to_host(HCIEvent(
+                event_code=int(EventCode.IO_CAPABILITY_REQUEST),
+                parameters=body_to_initiator,
+            )),
+            peer._send_event_to_host(HCIEvent(
+                event_code=int(EventCode.IO_CAPABILITY_REQUEST),
+                parameters=body_to_peer,
+            )),
+        )
+
+    async def _auth_forward_io_cap_response(
+        self, source: VirtualController, peer_addr_bytes: bytes,
+        io_cap: int, oob: int, auth_req: int,
+    ) -> None:
+        """Forward IO_Capability_Response to peer; when both have arrived,
+        emit User_Confirmation_Request to both."""
+        peer = self._peer_of(source)
+        source_addr = self._addr_of(source).address
+        body = source_addr + bytes([io_cap, oob, auth_req])
+        await peer._send_event_to_host(HCIEvent(
+            event_code=int(EventCode.IO_CAPABILITY_RESPONSE),
+            parameters=body,
+        ))
+        entry_key = self._handle_key_for_pair(source, peer)
+        state = self._auth_state.setdefault(entry_key, {})
+        state[("io_cap", id(source))] = True
+        has_source = state.get(("io_cap", id(source)), False)
+        has_peer = state.get(("io_cap", id(peer)), False)
+        if has_source and has_peer:
+            await asyncio.gather(
+                source._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.USER_CONFIRMATION_REQUEST),
+                    parameters=self._addr_of(peer).address + struct.pack("<I", 0),
+                )),
+                peer._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.USER_CONFIRMATION_REQUEST),
+                    parameters=self._addr_of(source).address + struct.pack("<I", 0),
+                )),
+            )
+
+    async def _auth_user_confirm_reply(
+        self, source: VirtualController, peer_addr_bytes: bytes, *, accepted: bool,
+    ) -> None:
+        """Track per-side user-confirm replies. Once both arrive, emit
+        Simple_Pairing_Complete + Link_Key_Notification + Auth_Complete (success)
+        or Simple_Pairing_Complete(0x05) (failure)."""
+        peer = self._peer_of(source)
+        entry_key = self._handle_key_for_pair(source, peer)
+        state = self._auth_state.setdefault(entry_key, {})
+        state[("confirm", id(source))] = accepted
+        if not accepted:
+            await asyncio.gather(
+                source._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
+                    parameters=bytes([0x05]) + self._addr_of(peer).address,
+                )),
+                peer._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
+                    parameters=bytes([0x05]) + self._addr_of(source).address,
+                )),
+            )
+            self._auth_state.pop(entry_key, None)
+            return
+        other = state.get(("confirm", id(peer)))
+        if other is None:
+            return
+        if other is True:
+            link_key = self._deterministic_link_key(
+                self._addr_of(source), self._addr_of(peer),
+            )
+            entry = next(
+                (e for e in self._handles.values()
+                 if {e.initiator, e.acceptor} == {source, peer}),
+                None,
+            )
+            await asyncio.gather(
+                source._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
+                    parameters=bytes([0x00]) + self._addr_of(peer).address,
+                )),
+                peer._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
+                    parameters=bytes([0x00]) + self._addr_of(source).address,
+                )),
+                source._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.LINK_KEY_NOTIFICATION),
+                    parameters=self._addr_of(peer).address + link_key + bytes([0x05]),
+                )),
+                peer._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.LINK_KEY_NOTIFICATION),
+                    parameters=self._addr_of(source).address + link_key + bytes([0x05]),
+                )),
+            )
+            if entry is not None:
+                await entry.initiator._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.AUTH_COMPLETE),
+                    parameters=bytes([0x00]) + struct.pack("<H", entry.handle),
+                ))
+            self._auth_state.pop(entry_key, None)
+
+    def _handle_key_for_pair(self, a: VirtualController, b: VirtualController) -> tuple:
+        return tuple(sorted([id(a), id(b)]))
+
+    def _deterministic_link_key(self, addr_a: BDAddress, addr_b: BDAddress) -> bytes:
+        """Synthesize a stable 16-byte link key from sorted addresses."""
+        material = b"".join(sorted([addr_a.address, addr_b.address]))
+        return hashlib.sha256(material).digest()[:16]

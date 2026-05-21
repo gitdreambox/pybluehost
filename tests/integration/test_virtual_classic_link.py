@@ -350,3 +350,74 @@ async def test_acl_on_disconnected_handle_drops_silently():
     await c.process(acl)
     await asyncio.sleep(0.05)
     assert p_received == []
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — AuthBridge
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_link_key_request_routes_to_initiator():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    await _establish_connection(c, p, addr_c, addr_p)
+    events_c = _capture_events(c)
+    handle = next(iter(link._handles.values())).handle
+    # HCI_Auth_Requested(handle)
+    await c.process(await _h4_cmd(0x0411, struct.pack("<H", handle)))
+    await asyncio.sleep(0.05)
+    lkr = [e for e in events_c if e.event_code == int(EventCode.LINK_KEY_REQUEST)]
+    assert len(lkr) == 1
+    assert lkr[0].parameters[0:6] == addr_p.address
+
+
+@pytest.mark.asyncio
+async def test_io_capability_round_trip():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    await _establish_connection(c, p, addr_c, addr_p)
+    events_c = _capture_events(c)
+    events_p = _capture_events(p)
+    handle = next(iter(link._handles.values())).handle
+    await c.process(await _h4_cmd(0x0411, struct.pack("<H", handle)))
+    await asyncio.sleep(0.02)
+    await c.process(await _h4_cmd(0x040C, addr_p.address))  # Link_Key_Request_Negative_Reply
+    await asyncio.sleep(0.05)
+    iocr_c = [e for e in events_c if e.event_code == int(EventCode.IO_CAPABILITY_REQUEST)]
+    iocr_p = [e for e in events_p if e.event_code == int(EventCode.IO_CAPABILITY_REQUEST)]
+    assert len(iocr_c) == 1 and len(iocr_p) == 1
+
+    # Both reply with IO_Capability_Request_Reply
+    await c.process(await _h4_cmd(0x042B, addr_p.address + bytes([0x03, 0x00, 0x00])))
+    await p.process(await _h4_cmd(0x042B, addr_c.address + bytes([0x03, 0x00, 0x00])))
+    await asyncio.sleep(0.05)
+    iocres_c = [e for e in events_c if e.event_code == int(EventCode.IO_CAPABILITY_RESPONSE)]
+    iocres_p = [e for e in events_p if e.event_code == int(EventCode.IO_CAPABILITY_RESPONSE)]
+    assert len(iocres_c) == 1 and len(iocres_p) == 1
+
+
+@pytest.mark.asyncio
+async def test_user_confirmation_negative_reply_fails_pairing():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    await _establish_connection(c, p, addr_c, addr_p)
+    events_c = _capture_events(c)
+    events_p = _capture_events(p)
+    handle = next(iter(link._handles.values())).handle
+    await c.process(await _h4_cmd(0x0411, struct.pack("<H", handle)))
+    await c.process(await _h4_cmd(0x040C, addr_p.address))
+    await asyncio.sleep(0.02)
+    await c.process(await _h4_cmd(0x042B, addr_p.address + bytes([0x03, 0x00, 0x00])))
+    await p.process(await _h4_cmd(0x042B, addr_c.address + bytes([0x03, 0x00, 0x00])))
+    await asyncio.sleep(0.05)
+    # Both should see User_Confirmation_Request
+    ucr_c = [e for e in events_c if e.event_code == int(EventCode.USER_CONFIRMATION_REQUEST)]
+    ucr_p = [e for e in events_p if e.event_code == int(EventCode.USER_CONFIRMATION_REQUEST)]
+    assert len(ucr_c) == 1 and len(ucr_p) == 1
+    # Peripheral rejects
+    await p.process(await _h4_cmd(0x042D, addr_c.address))
+    await asyncio.sleep(0.05)
+    spc_c = [e for e in events_c if e.event_code == int(EventCode.SIMPLE_PAIRING_COMPLETE)]
+    spc_p = [e for e in events_p if e.event_code == int(EventCode.SIMPLE_PAIRING_COMPLETE)]
+    assert len(spc_c) == 1 and len(spc_p) == 1
+    assert spc_c[0].parameters[0] == 0x05  # Auth_Failure
