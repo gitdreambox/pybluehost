@@ -111,15 +111,66 @@ class VirtualClassicLink:
         """Build a command_interceptor closure bound to `controller`.
 
         Returns an async function with signature (opcode, raw_params) ->
-        Optional[bytes]. The default body is a no-op; Tasks 3-8 add per-opcode
-        branches that intercept BR/EDR commands and return synthetic responses.
+        Optional[bytes]. Sub-bridge branches return synthetic HCI responses
+        for BR/EDR opcodes the bridge owns; None falls through to default
+        dispatch on the underlying VirtualController.
         """
 
         async def _intercept(opcode: int, raw_params: bytes) -> Optional[bytes]:
-            # Tasks 3-8 add per-opcode handling here.
+            # --- InquiryBridge ---
+            if opcode == HCI_INQUIRY:
+                asyncio.create_task(self._inquiry(controller))
+                return self._command_status(opcode, status=0)
+            if opcode == HCI_INQUIRY_CANCEL:
+                asyncio.create_task(self._inquiry_complete(controller))
+                return self._command_complete(opcode, b"\x00")
+            # Tasks 4-8 add remaining opcodes here.
             return None
 
         return _intercept
+
+    # -- Synthetic event-frame builders ------------------------------------
+
+    def _command_complete(self, opcode: int, return_params: bytes) -> bytes:
+        """Build an H4-wrapped Command_Complete event."""
+        body = bytes([0x01]) + struct.pack("<H", opcode) + return_params
+        return bytes([0x04, int(EventCode.COMMAND_COMPLETE), len(body)]) + body
+
+    def _command_status(self, opcode: int, status: int = 0) -> bytes:
+        """Build an H4-wrapped Command_Status event."""
+        body = bytes([status, 0x01]) + struct.pack("<H", opcode)
+        return bytes([0x04, int(EventCode.COMMAND_STATUS), len(body)]) + body
+
+    # -- InquiryBridge -----------------------------------------------------
+
+    async def _inquiry(self, initiator: VirtualController) -> None:
+        """Emit Inquiry_Result for the peer (if discoverable) then Inquiry_Complete."""
+        peer = self._peer_of(initiator)
+        peer_addr = (
+            self.peripheral_address if initiator is self.central
+            else self.central_address
+        )
+        if peer._inquiry_scan:
+            body = (
+                bytes([0x01])
+                + peer_addr.address
+                + bytes([0x01])              # page_scan_repetition_mode R1
+                + bytes([0x00, 0x00])         # reserved
+                + bytes([0x00, 0x00, 0x00])   # class_of_device (unspecified)
+                + bytes([0x00, 0x00])         # clock_offset
+            )
+            event = HCIEvent(
+                event_code=int(EventCode.INQUIRY_RESULT), parameters=body,
+            )
+            await initiator._send_event_to_host(event)
+        await self._inquiry_complete(initiator)
+
+    async def _inquiry_complete(self, initiator: VirtualController) -> None:
+        body = bytes([0x00])  # status = 0
+        event = HCIEvent(
+            event_code=int(EventCode.INQUIRY_COMPLETE), parameters=body,
+        )
+        await initiator._send_event_to_host(event)
 
     # -- ACL forwarders ----------------------------------------------------
 

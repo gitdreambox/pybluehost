@@ -81,6 +81,90 @@ def test_conn_state_enum_values():
     assert _ConnState.DISCONNECTING == 3
 
 
+# ---------------------------------------------------------------------------
+# Helpers used by sub-bridge tests (Tasks 3-8)
+# ---------------------------------------------------------------------------
+
+async def _h4_cmd(opcode: int, params: bytes = b"") -> bytes:
+    return bytes([0x01]) + struct.pack("<H", opcode) + bytes([len(params)]) + params
+
+
+async def _make_linked_pair(*, peer_discoverable: bool = True):
+    """Create two VirtualControllers + bridge; optionally make peripheral discoverable."""
+    c = _make_vc("0A:0A:0A:0A:0A:0A")
+    p = _make_vc("0B:0B:0B:0B:0B:0B")
+    addr_c = BDAddress.from_string("0A:0A:0A:0A:0A:0A")
+    addr_p = BDAddress.from_string("0B:0B:0B:0B:0B:0B")
+    link = VirtualClassicLink(
+        central=c, peripheral=p,
+        central_address=addr_c, peripheral_address=addr_p,
+    )
+    link.attach()
+    if peer_discoverable:
+        # Write_Scan_Enable = 0x03 (inquiry + page)
+        await p.process(await _h4_cmd(0x0C1A, bytes([0x03])))
+    return c, p, addr_c, addr_p, link
+
+
+def _capture_events(vc: VirtualController) -> list:
+    """Install a host-side sink that records all events the controller emits."""
+    from pybluehost.hci.packets import HCIEvent as _HE
+    captured: list = []
+
+    class _Sink:
+        async def on_transport_data(self, data: bytes):
+            if data and data[0] == 0x04:  # event packet
+                event = _HE(event_code=data[1], parameters=data[3:3 + data[2]])
+                captured.append(event)
+
+    vc._host_sink = _Sink()
+    return captured
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — InquiryBridge
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_inquiry_discovers_discoverable_peer():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    events_c = _capture_events(c)
+    inquiry_params = bytes([0x33, 0x8B, 0x9E, 0x08, 0x00])
+    await c.process(await _h4_cmd(0x0401, inquiry_params))
+    await asyncio.sleep(0.05)
+    inquiry_results = [e for e in events_c if e.event_code == int(EventCode.INQUIRY_RESULT)]
+    assert len(inquiry_results) == 1, f"got {len(inquiry_results)} inquiry_results"
+    body = inquiry_results[0].parameters
+    assert body[0] == 1
+    assert body[1:7] == addr_p.address
+    inquiry_completes = [e for e in events_c if e.event_code == int(EventCode.INQUIRY_COMPLETE)]
+    assert len(inquiry_completes) == 1
+
+
+@pytest.mark.asyncio
+async def test_inquiry_skips_non_discoverable_peer():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=False)
+    events_c = _capture_events(c)
+    await c.process(await _h4_cmd(0x0401, bytes([0x33, 0x8B, 0x9E, 0x08, 0x00])))
+    await asyncio.sleep(0.05)
+    assert not [e for e in events_c if e.event_code == int(EventCode.INQUIRY_RESULT)]
+    completes = [e for e in events_c if e.event_code == int(EventCode.INQUIRY_COMPLETE)]
+    assert len(completes) == 1
+
+
+@pytest.mark.asyncio
+async def test_inquiry_cancel_completes_immediately():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    events_c = _capture_events(c)
+    await c.process(await _h4_cmd(0x0402))
+    await asyncio.sleep(0.05)
+    completes = [e for e in events_c if e.event_code == int(EventCode.INQUIRY_COMPLETE)]
+    assert len(completes) == 1
+
+
 @pytest.mark.asyncio
 async def test_virtual_controller_write_scan_enable_updates_flags():
     vc = _make_vc()
