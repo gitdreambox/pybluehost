@@ -179,3 +179,76 @@ async def test_virtual_controller_write_scan_enable_updates_flags():
     await vc.process(frame_disable_inquiry)
     assert vc._inquiry_scan is False
     assert vc._page_scan is True
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — ConnectionBridge
+# ---------------------------------------------------------------------------
+
+def _parse_handle(event) -> int:
+    # Connection_Complete params: status(1) + handle(2) + bd_addr(6) + ...
+    return struct.unpack_from("<H", event.parameters, 1)[0]
+
+
+@pytest.mark.asyncio
+async def test_create_connection_succeeds_when_page_scan_enabled():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    events_c = _capture_events(c)
+    events_p = _capture_events(p)
+
+    # Create_Connection params: BD_ADDR(6) + Packet_Type(2) + PSRM(1)
+    # + reserved(1) + Clock_Offset(2) + Allow_Role_Switch(1)
+    create_params = (
+        addr_p.address
+        + struct.pack("<H", 0xCC18)
+        + bytes([0x01, 0x00, 0x00, 0x00, 0x01])
+    )
+    await c.process(await _h4_cmd(0x0405, create_params))
+    await asyncio.sleep(0.05)
+    requests = [e for e in events_p if e.event_code == int(EventCode.CONNECTION_REQUEST)]
+    assert len(requests) == 1
+
+    # Peripheral host responds with Accept_Connection_Request (BD_ADDR + role)
+    accept_params = addr_c.address + bytes([0x01])
+    await p.process(await _h4_cmd(0x0409, accept_params))
+    await asyncio.sleep(0.05)
+    completes_c = [e for e in events_c if e.event_code == int(EventCode.CONNECTION_COMPLETE)]
+    completes_p = [e for e in events_p if e.event_code == int(EventCode.CONNECTION_COMPLETE)]
+    assert len(completes_c) == 1 and len(completes_p) == 1
+    assert _parse_handle(completes_c[0]) == _parse_handle(completes_p[0])
+    assert completes_c[0].parameters[0] == 0 and completes_p[0].parameters[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_create_connection_page_timeout_when_page_scan_disabled():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=False)
+    link.page_timeout_seconds = 0.05
+    events_c = _capture_events(c)
+    create_params = (
+        addr_p.address
+        + struct.pack("<H", 0xCC18)
+        + bytes([0x01, 0x00, 0x00, 0x00, 0x01])
+    )
+    await c.process(await _h4_cmd(0x0405, create_params))
+    await asyncio.sleep(0.2)
+    completes = [e for e in events_c if e.event_code == int(EventCode.CONNECTION_COMPLETE)]
+    assert len(completes) == 1
+    assert completes[0].parameters[0] == 0x04  # Page Timeout
+
+
+@pytest.mark.asyncio
+async def test_reject_connection_emits_status_error():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    events_c = _capture_events(c)
+    create_params = addr_p.address + struct.pack("<H", 0xCC18) + bytes([0x01, 0x00, 0x00, 0x00, 0x01])
+    await c.process(await _h4_cmd(0x0405, create_params))
+    await asyncio.sleep(0.05)
+    reject_params = addr_c.address + bytes([0x0D])  # Connection_Rejected_Limited_Resources
+    await p.process(await _h4_cmd(0x040A, reject_params))
+    await asyncio.sleep(0.05)
+    completes = [e for e in events_c if e.event_code == int(EventCode.CONNECTION_COMPLETE)]
+    assert len(completes) == 1
+    assert completes[0].parameters[0] == 0x0D

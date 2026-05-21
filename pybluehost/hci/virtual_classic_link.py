@@ -124,7 +124,27 @@ class VirtualClassicLink:
             if opcode == HCI_INQUIRY_CANCEL:
                 asyncio.create_task(self._inquiry_complete(controller))
                 return self._command_complete(opcode, b"\x00")
-            # Tasks 4-8 add remaining opcodes here.
+            # --- ConnectionBridge ---
+            if opcode == HCI_CREATE_CONNECTION:
+                peer_addr_bytes = raw_params[0:6]
+                asyncio.create_task(
+                    self._create_connection(controller, peer_addr_bytes)
+                )
+                return self._command_status(opcode, status=0)
+            if opcode == HCI_ACCEPT_CONNECTION_REQ:
+                peer_addr_bytes = raw_params[0:6]
+                asyncio.create_task(
+                    self._accept_connection(controller, peer_addr_bytes)
+                )
+                return self._command_status(opcode, status=0)
+            if opcode == HCI_REJECT_CONNECTION_REQ:
+                peer_addr_bytes = raw_params[0:6]
+                reason = raw_params[6] if len(raw_params) > 6 else 0x0D
+                asyncio.create_task(
+                    self._reject_connection(controller, peer_addr_bytes, reason)
+                )
+                return self._command_status(opcode, status=0)
+            # Tasks 5-8 add remaining opcodes here.
             return None
 
         return _intercept
@@ -171,6 +191,88 @@ class VirtualClassicLink:
             event_code=int(EventCode.INQUIRY_COMPLETE), parameters=body,
         )
         await initiator._send_event_to_host(event)
+
+    # -- ConnectionBridge --------------------------------------------------
+
+    async def _create_connection(
+        self, initiator: VirtualController, peer_addr_bytes: bytes,
+    ) -> None:
+        """Page the peer; if peer.page_scan, emit Connection_Request; else Page_Timeout."""
+        peer = self._peer_of(initiator)
+        if not peer._page_scan:
+            await asyncio.sleep(self.page_timeout_seconds)
+            await self._emit_connection_complete(
+                initiator, status=0x04, handle=0x0000,
+                peer_addr=BDAddress(peer_addr_bytes),
+            )
+            return
+        handle = self._allocate_handle()
+        peer_addr = BDAddress(peer_addr_bytes)
+        initiator_addr = self._addr_of(initiator)
+        self._handles[handle] = _ConnEntry(
+            handle=handle, state=_ConnState.PENDING,
+            initiator=initiator, initiator_addr=initiator_addr,
+            acceptor=peer, acceptor_addr=peer_addr,
+        )
+        # Connection_Request: BD_ADDR(6) + Class_Of_Device(3) + Link_Type(1=ACL)
+        body = initiator_addr.address + bytes([0x00, 0x00, 0x00, 0x01])
+        event = HCIEvent(
+            event_code=int(EventCode.CONNECTION_REQUEST), parameters=body,
+        )
+        await peer._send_event_to_host(event)
+
+    async def _accept_connection(
+        self, acceptor: VirtualController, peer_addr_bytes: bytes,
+    ) -> None:
+        entry = next(
+            (e for e in self._handles.values()
+             if e.state == _ConnState.PENDING and e.acceptor is acceptor),
+            None,
+        )
+        if entry is None:
+            return
+        entry.state = _ConnState.CONNECTED
+        await asyncio.gather(
+            self._emit_connection_complete(
+                entry.initiator, status=0, handle=entry.handle,
+                peer_addr=entry.acceptor_addr,
+            ),
+            self._emit_connection_complete(
+                entry.acceptor, status=0, handle=entry.handle,
+                peer_addr=entry.initiator_addr,
+            ),
+        )
+
+    async def _reject_connection(
+        self, acceptor: VirtualController, peer_addr_bytes: bytes, reason: int,
+    ) -> None:
+        entry = next(
+            (e for e in self._handles.values()
+             if e.state == _ConnState.PENDING and e.acceptor is acceptor),
+            None,
+        )
+        if entry is None:
+            return
+        await self._emit_connection_complete(
+            entry.initiator, status=reason, handle=0x0000,
+            peer_addr=entry.acceptor_addr,
+        )
+        del self._handles[entry.handle]
+
+    async def _emit_connection_complete(
+        self, controller: VirtualController, *,
+        status: int, handle: int, peer_addr: BDAddress,
+    ) -> None:
+        body = (
+            bytes([status])
+            + struct.pack("<H", handle)
+            + peer_addr.address
+            + bytes([0x01, 0x00])  # link_type=ACL, encryption_mode=disabled
+        )
+        event = HCIEvent(
+            event_code=int(EventCode.CONNECTION_COMPLETE), parameters=body,
+        )
+        await controller._send_event_to_host(event)
 
     # -- ACL forwarders ----------------------------------------------------
 
