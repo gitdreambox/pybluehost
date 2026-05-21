@@ -97,3 +97,60 @@ async def test_e2e_classic_sdp_browse(
         if handle is not None:
             with contextlib.suppress(Exception):
                 await stack_c.gap.classic_connections.disconnect(handle)
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_e2e_classic_rfcomm_spp_echo(
+    classic_central_peripheral_pair, virtual_classic_link_or_real_rf,
+):
+    """Open RFCOMM/SPP channel to the peripheral's echo handler; send two
+    messages; verify both are echoed back."""
+    import asyncio
+
+    from pybluehost.classic.sdp import SDPClient
+    from pybluehost.classic.spp import SPPClient
+    from pybluehost.l2cap.constants import PSM_SDP
+
+    from tests.e2e._helpers import (
+        _supports_classic_ssp, classic_discover_and_pair_jw,
+    )
+
+    stack_c, stack_p = classic_central_peripheral_pair
+    if not _supports_classic_ssp(stack_c):
+        pytest.skip("adapter does not support BR/EDR SSP")
+
+    handle = None
+    spp_conn = None
+    try:
+        handle = await classic_discover_and_pair_jw(
+            stack_c, stack_p._local_address,
+        )
+
+        # SDP client needs an L2CAP channel on PSM_SDP for SPPClient's
+        # internal service discovery.
+        sdp_chan = await stack_c._l2cap.connect_classic_channel(
+            handle, psm=PSM_SDP,
+        )
+        sdp_client = SDPClient(l2cap=sdp_chan)
+        spp_client = SPPClient(rfcomm=stack_c._rfcomm, sdp_client=sdp_client)
+
+        spp_conn = await spp_client.connect(target=handle)
+
+        # First echo
+        await spp_conn.send(b"hello classic\n")
+        echoed = await asyncio.wait_for(spp_conn.recv(), timeout=1.0)
+        assert echoed == b"hello classic\n"
+
+        # Second echo
+        await spp_conn.send(b"second line\n")
+        echoed2 = await asyncio.wait_for(spp_conn.recv(), timeout=1.0)
+        assert echoed2 == b"second line\n"
+
+    finally:
+        if spp_conn is not None:
+            with contextlib.suppress(Exception):
+                await spp_conn.close()
+        if handle is not None:
+            with contextlib.suppress(Exception):
+                await stack_c.gap.classic_connections.disconnect(handle)
