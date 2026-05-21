@@ -188,9 +188,11 @@ async def classic_discover_peripheral(
     try:
         await asyncio.wait_for(seen_event.wait(), timeout=timeout)
     finally:
-        if hasattr(stack_c.gap.classic_discovery, "cancel"):
+        # ClassicDiscovery exposes .stop() (not .cancel()) — issues HCI_Inquiry_Cancel.
+        # Without this the inquiry leaks until the controller's inquiry-length timeout.
+        if hasattr(stack_c.gap.classic_discovery, "stop"):
             try:
-                await stack_c.gap.classic_discovery.cancel()
+                await stack_c.gap.classic_discovery.stop()
             except Exception:
                 pass
 
