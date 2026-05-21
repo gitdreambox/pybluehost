@@ -135,3 +135,75 @@ def resolve_handles(
             raise KeyError(f"characteristic {label!r} (uuid={uuid}) not discovered")
         result[label] = found.value_handle
     return result
+
+
+# ---------------------------------------------------------------------------
+# Classic (BR/EDR) helpers
+# ---------------------------------------------------------------------------
+
+def _supports_classic_ssp(stack) -> bool:
+    """True iff the controller advertises BR/EDR SSP support.
+
+    Virtual mode short-circuits True. Hardware adapters consult the HCI
+    Read_Local_Supported_Commands bitmap for SSP opcodes
+    (IO_Capability_Request_Reply at octet 32 bit 5 per Core Spec 5.4
+    Vol 4 Part E §6.27).
+    """
+    if getattr(stack, "_virtual_controller", None) is not None:
+        return True
+    hci = getattr(stack, "_hci", None)
+    if hci is None:
+        return False
+    caps = getattr(hci, "supported_commands", None)
+    if caps is None:
+        return False
+    bitmap = getattr(caps, "bitmap", None) or caps
+    try:
+        return bool(bitmap[32] & (1 << 5))
+    except (IndexError, TypeError):
+        return False
+
+
+async def classic_discover_peripheral(
+    stack_c, expected_addr, timeout: float = 3.0,
+) -> None:
+    """Run inquiry on stack_c, wait until expected_addr appears in a result,
+    then cancel.
+
+    Mirrors the LE-side central_discover_peripheral but uses ClassicDiscovery.
+    """
+    import asyncio
+
+    seen_event = asyncio.Event()
+
+    def _on_result(info):
+        # ClassicDiscovery results expose .address (or .bd_addr depending on
+        # the dataclass spelling). Use a defensive check.
+        addr = getattr(info, "address", None) or getattr(info, "bd_addr", None)
+        if addr == expected_addr:
+            seen_event.set()
+
+    stack_c.gap.classic_discovery.on_result(_on_result)
+    await stack_c.gap.classic_discovery.start()
+    try:
+        await asyncio.wait_for(seen_event.wait(), timeout=timeout)
+    finally:
+        if hasattr(stack_c.gap.classic_discovery, "cancel"):
+            try:
+                await stack_c.gap.classic_discovery.cancel()
+            except Exception:
+                pass
+
+
+async def classic_discover_and_pair_jw(
+    stack_c, peripheral_addr, *,
+    scan_timeout: float = 3.0, pair_timeout: float = 3.0,
+) -> int:
+    """Composition: discover → connect_classic → authenticate_classic.
+
+    Returns the connection handle on success.
+    """
+    await classic_discover_peripheral(stack_c, peripheral_addr, timeout=scan_timeout)
+    handle = await stack_c.connect_classic(peripheral_addr, timeout=scan_timeout)
+    await stack_c.authenticate_classic(handle, timeout=pair_timeout)
+    return handle
