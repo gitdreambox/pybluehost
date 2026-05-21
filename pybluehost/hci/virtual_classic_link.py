@@ -86,9 +86,19 @@ class VirtualClassicLink:
         self._attached = False
 
     async def disconnect(self) -> None:
-        """Tear down all connected/pending handles. Task 8 fills full semantics."""
-        # For now just detach. Task 8 expands this to emit completion events
-        # for any CONNECTED / PENDING handles before teardown.
+        """Tear down all CONNECTED / PENDING handles; emit appropriate completion events."""
+        for handle in list(self._handles.keys()):
+            entry = self._handles.get(handle)
+            if entry is None:
+                continue
+            if entry.state == _ConnState.CONNECTED:
+                await self._emit_disconnection_complete(handle, reason=0x16)  # Local_Host_Terminated
+            elif entry.state == _ConnState.PENDING:
+                await self._emit_connection_complete(
+                    entry.initiator, status=0x16, handle=0x0000,
+                    peer_addr=entry.acceptor_addr,
+                )
+                self._handles.pop(handle, None)
         self.detach()
 
     # -- Internals ---------------------------------------------------------
@@ -185,7 +195,14 @@ class VirtualClassicLink:
                 enable = raw_params[2] if len(raw_params) > 2 else 0
                 asyncio.create_task(self._emit_encryption_change(handle, enable))
                 return self._command_status(opcode, status=0)
-            # Task 8 adds remaining opcodes here.
+            # --- DisconnectBridge ---
+            if opcode == HCI_DISCONNECT:
+                handle = struct.unpack_from("<H", raw_params, 0)[0]
+                reason = raw_params[2] if len(raw_params) > 2 else 0x13
+                asyncio.create_task(
+                    self._emit_disconnection_complete(handle, reason)
+                )
+                return self._command_status(opcode, status=0)
             return None
 
         return _intercept
@@ -465,6 +482,24 @@ class VirtualClassicLink:
                 event_code=int(EventCode.ENCRYPTION_CHANGE), parameters=body,
             )),
         )
+
+    # -- DisconnectBridge --------------------------------------------------
+
+    async def _emit_disconnection_complete(self, handle: int, reason: int) -> None:
+        entry = self._handles.get(handle)
+        if entry is None:
+            return
+        entry.state = _ConnState.DISCONNECTING
+        body = bytes([0x00]) + struct.pack("<H", handle) + bytes([reason])
+        await asyncio.gather(
+            entry.initiator._send_event_to_host(HCIEvent(
+                event_code=int(EventCode.DISCONNECTION_COMPLETE), parameters=body,
+            )),
+            entry.acceptor._send_event_to_host(HCIEvent(
+                event_code=int(EventCode.DISCONNECTION_COMPLETE), parameters=body,
+            )),
+        )
+        self._handles.pop(handle, None)
 
     def _handle_key_for_pair(self, a: VirtualController, b: VirtualController) -> tuple:
         return tuple(sorted([id(a), id(b)]))

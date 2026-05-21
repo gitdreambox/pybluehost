@@ -445,3 +445,45 @@ async def test_encryption_change_routes_to_both_sides():
     assert enc_c[0].parameters[0] == 0x00
     assert struct.unpack_from("<H", enc_c[0].parameters, 1)[0] == handle
     assert enc_c[0].parameters[3] == 0x01
+
+
+# ---------------------------------------------------------------------------
+# Task 8 — DisconnectBridge
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_disconnect_routes_to_both_sides():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    await _establish_connection(c, p, addr_c, addr_p)
+    events_c = _capture_events(c)
+    events_p = _capture_events(p)
+    handle = next(iter(link._handles.values())).handle
+    # HCI_Disconnect: handle(2) + reason(1)
+    await c.process(await _h4_cmd(0x0406, struct.pack("<H", handle) + bytes([0x13])))
+    await asyncio.sleep(0.05)
+    dc_c = [e for e in events_c if e.event_code == int(EventCode.DISCONNECTION_COMPLETE)]
+    dc_p = [e for e in events_p if e.event_code == int(EventCode.DISCONNECTION_COMPLETE)]
+    assert len(dc_c) == 1 and len(dc_p) == 1
+    # Body: status(1) + handle(2) + reason(1)
+    assert dc_c[0].parameters[3] == 0x13
+    # Handle released
+    assert handle not in link._handles
+
+
+@pytest.mark.asyncio
+async def test_link_teardown_releases_all_handles():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    await _establish_connection(c, p, addr_c, addr_p)
+    events_c = _capture_events(c)
+    events_p = _capture_events(p)
+    assert len(link._handles) == 1
+    await link.disconnect()
+    await asyncio.sleep(0.05)
+    dc_c = [e for e in events_c if e.event_code == int(EventCode.DISCONNECTION_COMPLETE)]
+    dc_p = [e for e in events_p if e.event_code == int(EventCode.DISCONNECTION_COMPLETE)]
+    assert len(dc_c) == 1 and len(dc_p) == 1
+    # Reason = 0x16 Local_Host_Terminated
+    assert dc_c[0].parameters[3] == 0x16
+    assert link._handles == {}
