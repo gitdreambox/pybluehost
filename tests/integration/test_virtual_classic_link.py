@@ -421,3 +421,27 @@ async def test_user_confirmation_negative_reply_fails_pairing():
     spc_p = [e for e in events_p if e.event_code == int(EventCode.SIMPLE_PAIRING_COMPLETE)]
     assert len(spc_c) == 1 and len(spc_p) == 1
     assert spc_c[0].parameters[0] == 0x05  # Auth_Failure
+
+
+# ---------------------------------------------------------------------------
+# Task 7 — EncryptionBridge
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_encryption_change_routes_to_both_sides():
+    from pybluehost.hci.constants import EventCode
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    await _establish_connection(c, p, addr_c, addr_p)
+    events_c = _capture_events(c)
+    events_p = _capture_events(p)
+    handle = next(iter(link._handles.values())).handle
+    # HCI_Set_Connection_Encryption: handle(2) + enable(1)
+    await c.process(await _h4_cmd(0x0413, struct.pack("<H", handle) + bytes([0x01])))
+    await asyncio.sleep(0.05)
+    enc_c = [e for e in events_c if e.event_code == int(EventCode.ENCRYPTION_CHANGE)]
+    enc_p = [e for e in events_p if e.event_code == int(EventCode.ENCRYPTION_CHANGE)]
+    assert len(enc_c) == 1 and len(enc_p) == 1
+    # Body: status(1) + handle(2) + enabled(1)
+    assert enc_c[0].parameters[0] == 0x00
+    assert struct.unpack_from("<H", enc_c[0].parameters, 1)[0] == handle
+    assert enc_c[0].parameters[3] == 0x01

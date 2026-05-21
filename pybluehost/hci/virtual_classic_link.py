@@ -179,7 +179,13 @@ class VirtualClassicLink:
                     controller, peer_addr_bytes, accepted=False,
                 ))
                 return self._command_complete(opcode, b"\x00" + peer_addr_bytes)
-            # Tasks 7-8 add remaining opcodes here.
+            # --- EncryptionBridge ---
+            if opcode == HCI_SET_CONNECTION_ENCRYPTION:
+                handle = struct.unpack_from("<H", raw_params, 0)[0]
+                enable = raw_params[2] if len(raw_params) > 2 else 0
+                asyncio.create_task(self._emit_encryption_change(handle, enable))
+                return self._command_status(opcode, status=0)
+            # Task 8 adds remaining opcodes here.
             return None
 
         return _intercept
@@ -443,6 +449,22 @@ class VirtualClassicLink:
                     parameters=bytes([0x00]) + struct.pack("<H", entry.handle),
                 ))
             self._auth_state.pop(entry_key, None)
+
+    # -- EncryptionBridge --------------------------------------------------
+
+    async def _emit_encryption_change(self, handle: int, enable: int) -> None:
+        entry = self._handles.get(handle)
+        if entry is None:
+            return
+        body = bytes([0x00]) + struct.pack("<H", handle) + bytes([enable])
+        await asyncio.gather(
+            entry.initiator._send_event_to_host(HCIEvent(
+                event_code=int(EventCode.ENCRYPTION_CHANGE), parameters=body,
+            )),
+            entry.acceptor._send_event_to_host(HCIEvent(
+                event_code=int(EventCode.ENCRYPTION_CHANGE), parameters=body,
+            )),
+        )
 
     def _handle_key_for_pair(self, a: VirtualController, b: VirtualController) -> tuple:
         return tuple(sorted([id(a), id(b)]))
