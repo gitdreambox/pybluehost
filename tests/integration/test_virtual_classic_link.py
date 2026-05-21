@@ -252,3 +252,101 @@ async def test_reject_connection_emits_status_error():
     completes = [e for e in events_c if e.event_code == int(EventCode.CONNECTION_COMPLETE)]
     assert len(completes) == 1
     assert completes[0].parameters[0] == 0x0D
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — ACLBridge
+# ---------------------------------------------------------------------------
+
+async def _establish_connection(c, p, addr_c, addr_p):
+    """Helper: bring up a CONNECTED handle between c and p. Reused by Tasks 5-8."""
+    create_params = (
+        addr_p.address
+        + struct.pack("<H", 0xCC18)
+        + bytes([0x01, 0x00, 0x00, 0x00, 0x01])
+    )
+    await c.process(await _h4_cmd(0x0405, create_params))
+    await asyncio.sleep(0.02)
+    await p.process(await _h4_cmd(0x0409, addr_c.address + bytes([0x01])))
+    await asyncio.sleep(0.02)
+
+
+@pytest.mark.asyncio
+async def test_acl_data_routes_a_to_b():
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    await _establish_connection(c, p, addr_c, addr_p)
+    handle = next(iter(link._handles.values())).handle
+
+    p_received: list[bytes] = []
+
+    class _PSink:
+        async def on_transport_data(self, data: bytes):
+            if data and data[0] == 0x02:  # ACL packet
+                p_received.append(data)
+
+    p._host_sink = _PSink()
+
+    payload = b"\x04\x00\x40\x00\x12\x34\x56\x78"
+    acl_frame = (
+        bytes([0x02])
+        + struct.pack("<H", handle | (0x02 << 12))
+        + struct.pack("<H", len(payload))
+        + payload
+    )
+    await c.process(acl_frame)
+    await asyncio.sleep(0.05)
+    assert len(p_received) == 1
+    assert payload in p_received[0]
+
+
+@pytest.mark.asyncio
+async def test_acl_data_routes_b_to_a():
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    await _establish_connection(c, p, addr_c, addr_p)
+    handle = next(iter(link._handles.values())).handle
+
+    c_received: list[bytes] = []
+
+    class _CSink:
+        async def on_transport_data(self, data: bytes):
+            if data and data[0] == 0x02:
+                c_received.append(data)
+
+    c._host_sink = _CSink()
+
+    payload = b"\xAB\xCD\xEF"
+    acl = (
+        bytes([0x02])
+        + struct.pack("<H", handle | (0x02 << 12))
+        + struct.pack("<H", len(payload))
+        + payload
+    )
+    await p.process(acl)
+    await asyncio.sleep(0.05)
+    assert len(c_received) == 1
+    assert payload in c_received[0]
+
+
+@pytest.mark.asyncio
+async def test_acl_on_disconnected_handle_drops_silently():
+    c, p, addr_c, addr_p, link = await _make_linked_pair(peer_discoverable=True)
+    # No connection established; send ACL on a fake handle.
+    p_received: list[bytes] = []
+
+    class _PSink:
+        async def on_transport_data(self, data: bytes):
+            if data and data[0] == 0x02:
+                p_received.append(data)
+
+    p._host_sink = _PSink()
+
+    payload = b"\x00\x00"
+    acl = (
+        bytes([0x02])
+        + struct.pack("<H", 0x0040 | (0x02 << 12))
+        + struct.pack("<H", len(payload))
+        + payload
+    )
+    await c.process(acl)
+    await asyncio.sleep(0.05)
+    assert p_received == []
