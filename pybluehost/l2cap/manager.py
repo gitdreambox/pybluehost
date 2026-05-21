@@ -36,10 +36,14 @@ class _ClassicConnectPending:
 
 @dataclass
 class _ClassicConfigPending:
-    channel: ClassicChannel
+    channel: ClassicChannel | None
     future: asyncio.Future[ClassicChannel]
     local_config_done: bool = False
     peer_config_done: bool = False
+    # Set when a peer CONFIG_REQ arrives for our local_cid BEFORE we've
+    # received CONNECTION_RESPONSE (and therefore before we know peer_cid).
+    # The CONN_RESP handler replays the response once peer_cid is known.
+    early_peer_config_ident: int | None = None
 
 
 @dataclass
@@ -234,10 +238,20 @@ class L2CAPManager:
         local_cid = self._allocate_dynamic_cid()
         conn_ident = self._next_identifier()
         loop = asyncio.get_running_loop()
-        conn_future: asyncio.Future[int] = loop.create_future()
+        config_future: asyncio.Future[ClassicChannel] = loop.create_future()
+        # Pre-register the config-pending entry under our local_cid so that a
+        # CONFIGURE_REQUEST that races ahead of the CONNECTION_RESPONSE handler
+        # (peer is fast: CONN_RESP and CONFIG_REQ ride back-to-back) can stash
+        # its identifier on the entry. The CONN_RESP handler replays the
+        # response once peer_cid is known and the channel is registered.
+        config_pending = _ClassicConfigPending(
+            channel=None,
+            future=config_future,
+        )
+        self._classic_config_pending_by_cid[(handle, local_cid)] = config_pending
         self._classic_connect_pending[(handle, conn_ident)] = _ClassicConnectPending(
             local_cid=local_cid,
-            future=conn_future,
+            future=loop.create_future(),  # unused; CONN_RESP handler drives config_future
         )
         request = SignalingPacket(
             code=SignalingCode.CONNECTION_REQUEST,
@@ -247,39 +261,19 @@ class L2CAPManager:
         await signaling.send(encode_signaling(request))
 
         try:
-            peer_cid = await asyncio.wait_for(conn_future, timeout=timeout)
-        finally:
-            self._classic_connect_pending.pop((handle, conn_ident), None)
-
-        channel = ClassicChannel(
-            connection_handle=handle,
-            local_cid=local_cid,
-            peer_cid=peer_cid,
-            mode=ChannelMode.BASIC,
-            hci=self._hci,
-        )
-        self.register_channel(handle, channel)
-
-        config_ident = self._next_identifier()
-        config_future: asyncio.Future[ClassicChannel] = loop.create_future()
-        config_pending = _ClassicConfigPending(
-            channel=channel,
-            future=config_future,
-        )
-        self._classic_config_pending[(handle, config_ident)] = config_pending
-        self._classic_config_pending_by_cid[(handle, local_cid)] = config_pending
-        configure = SignalingPacket(
-            code=SignalingCode.CONFIGURE_REQUEST,
-            identifier=config_ident,
-            data=struct.pack("<HH", peer_cid, 0x0000),
-        )
-        await signaling.send(encode_signaling(configure))
-
-        try:
             return await asyncio.wait_for(config_future, timeout=timeout)
         finally:
-            self._classic_config_pending.pop((handle, config_ident), None)
+            self._classic_connect_pending.pop((handle, conn_ident), None)
             self._classic_config_pending_by_cid.pop((handle, local_cid), None)
+            # config_pending may also have been keyed by (handle, config_ident);
+            # the CONN_RESP handler does that bookkeeping and removes it on
+            # completion. Defensive cleanup of any leftover identifier-keyed
+            # entry for this channel.
+            for key in list(self._classic_config_pending.keys()):
+                if (
+                    self._classic_config_pending[key] is config_pending
+                ):
+                    self._classic_config_pending.pop(key, None)
 
     def listen_classic_channel(
         self,
@@ -315,29 +309,31 @@ class L2CAPManager:
 
         if packet.code == SignalingCode.CONNECTION_RESPONSE:
             pending = self._classic_connect_pending.get((handle, packet.identifier))
-            if pending is None or pending.future.done():
+            if pending is None:
                 return
             if len(packet.data) < 8:
-                pending.future.set_exception(RuntimeError("Malformed L2CAP Connection Response"))
+                self._fail_classic_connect(handle, pending, RuntimeError(
+                    "Malformed L2CAP Connection Response"
+                ))
                 return
             dest_cid, source_cid, result, status = struct.unpack_from("<HHHH", packet.data)
             if source_cid != pending.local_cid:
-                pending.future.set_exception(
-                    RuntimeError(
-                        f"L2CAP Connection Response source CID mismatch: 0x{source_cid:04X}"
-                    )
-                )
+                self._fail_classic_connect(handle, pending, RuntimeError(
+                    f"L2CAP Connection Response source CID mismatch: 0x{source_cid:04X}"
+                ))
                 return
             if result == 0x0001:
-                return
+                return  # Pending (Spec 5.4 Vol 3 Part A §4.3); wait for final response.
             if result != 0:
-                pending.future.set_exception(
-                    RuntimeError(
-                        f"L2CAP Connection Response failed: result=0x{result:04X} status=0x{status:04X}"
-                    )
-                )
+                self._fail_classic_connect(handle, pending, RuntimeError(
+                    f"L2CAP Connection Response failed: result=0x{result:04X} status=0x{status:04X}"
+                ))
                 return
-            pending.future.set_result(dest_cid)
+            # Build the channel, finish registration, send CONFIGURE_REQUEST, and
+            # service any peer CONFIGURE_REQUEST that arrived before us.
+            await self._on_classic_connection_complete(
+                handle=handle, local_cid=pending.local_cid, peer_cid=dest_cid,
+            )
             return
 
         if packet.code == SignalingCode.CONFIGURE_RESPONSE:
@@ -429,6 +425,13 @@ class L2CAPManager:
         dest_cid, _flags = struct.unpack_from("<HH", packet.data)
         outbound_pending = self._classic_config_pending_by_cid.get((handle, dest_cid))
         if outbound_pending is not None:
+            if outbound_pending.channel is None:
+                # Race: peer's CONFIGURE_REQUEST arrived before we processed the
+                # CONNECTION_RESPONSE. Stash the identifier so the CONN_RESP
+                # handler can send the response once peer_cid is known.
+                outbound_pending.early_peer_config_ident = packet.identifier
+                outbound_pending.peer_config_done = True
+                return
             response = SignalingPacket(
                 code=SignalingCode.CONFIGURE_RESPONSE,
                 identifier=packet.identifier,
@@ -452,6 +455,63 @@ class L2CAPManager:
         result = pending.handler(pending.channel)
         if asyncio.iscoroutine(result):
             await result
+
+    async def _on_classic_connection_complete(
+        self,
+        handle: int,
+        local_cid: int,
+        peer_cid: int,
+    ) -> None:
+        """CONN_RESP handler: build the channel, register, send CONFIGURE_REQUEST,
+        and replay any early peer CONFIGURE_REQUEST that arrived ahead of us.
+        """
+        signaling = self.get_fixed_channel(handle, CID_CLASSIC_SIGNALING)
+        pending = self._classic_config_pending_by_cid.get((handle, local_cid))
+        if pending is None or pending.future.done():
+            return
+        channel = ClassicChannel(
+            connection_handle=handle,
+            local_cid=local_cid,
+            peer_cid=peer_cid,
+            mode=ChannelMode.BASIC,
+            hci=self._hci,
+        )
+        self.register_channel(handle, channel)
+        pending.channel = channel
+
+        # If a peer CONFIG_REQ raced ahead of us, send the deferred response now.
+        if pending.early_peer_config_ident is not None and signaling is not None:
+            response = SignalingPacket(
+                code=SignalingCode.CONFIGURE_RESPONSE,
+                identifier=pending.early_peer_config_ident,
+                data=struct.pack("<HHH", peer_cid, 0x0000, 0x0000),
+            )
+            pending.early_peer_config_ident = None
+            await signaling.send(encode_signaling(response))
+
+        config_ident = self._next_identifier()
+        self._classic_config_pending[(handle, config_ident)] = pending
+        configure = SignalingPacket(
+            code=SignalingCode.CONFIGURE_REQUEST,
+            identifier=config_ident,
+            data=struct.pack("<HH", peer_cid, 0x0000),
+        )
+        if signaling is not None:
+            await signaling.send(encode_signaling(configure))
+        # In case the response races ahead of completion check.
+        self._complete_classic_config_if_ready(pending)
+
+    def _fail_classic_connect(
+        self,
+        handle: int,
+        pending: _ClassicConnectPending,
+        exc: BaseException,
+    ) -> None:
+        config_pending = self._classic_config_pending_by_cid.get(
+            (handle, pending.local_cid)
+        )
+        if config_pending is not None and not config_pending.future.done():
+            config_pending.future.set_exception(exc)
 
     def _complete_classic_config_if_ready(self, pending: _ClassicConfigPending) -> None:
         if (

@@ -43,3 +43,57 @@ async def test_classic_fixtures_load_and_register_service(
     # Peripheral is connectable + discoverable per the fixture
     assert stack_p._virtual_controller._inquiry_scan is True
     assert stack_p._virtual_controller._page_scan is True
+
+
+import contextlib
+
+from pybluehost.core.address import BDAddress
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_e2e_classic_sdp_browse(
+    classic_central_peripheral_pair, virtual_classic_link_or_real_rf,
+):
+    """Connect + SSP JW pair, then SDP search-attributes for the SPP record.
+
+    Asserts the registered SPP service is found and the RFCOMM channel
+    number embedded in ProtocolDescriptorList matches SPP_SERVER_CHANNEL.
+    """
+    from pybluehost.classic.sdp import SDPClient
+    from pybluehost.l2cap.constants import PSM_SDP
+
+    from tests.e2e._classic_test_service import (
+        SPP_CLASS_UUID, SPP_SERVER_CHANNEL,
+    )
+    from tests.e2e._helpers import (
+        _supports_classic_ssp, classic_discover_and_pair_jw,
+    )
+
+    stack_c, stack_p = classic_central_peripheral_pair
+    if not _supports_classic_ssp(stack_c):
+        pytest.skip("adapter does not support BR/EDR SSP")
+
+    handle = None
+    try:
+        handle = await classic_discover_and_pair_jw(
+            stack_c, stack_p._local_address,
+        )
+
+        # Open an L2CAP channel on the SDP PSM (0x0001) to feed SDPClient.
+        l2cap_channel = await stack_c._l2cap.connect_classic_channel(
+            handle, psm=PSM_SDP,
+        )
+        client = SDPClient(l2cap=l2cap_channel)
+
+        channel = await client.find_rfcomm_channel(
+            target=handle, service_uuid=SPP_CLASS_UUID,
+        )
+        assert channel == SPP_SERVER_CHANNEL, (
+            f"find_rfcomm_channel returned {channel!r}, "
+            f"expected {SPP_SERVER_CHANNEL}"
+        )
+    finally:
+        if handle is not None:
+            with contextlib.suppress(Exception):
+                await stack_c.gap.classic_connections.disconnect(handle)
