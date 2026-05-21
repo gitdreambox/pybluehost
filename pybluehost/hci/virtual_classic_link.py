@@ -162,7 +162,17 @@ class VirtualClassicLink:
                     return self._command_status(opcode, status=0x02)
                 asyncio.create_task(self._auth_emit_link_key_request(controller, entry))
                 return self._command_status(opcode, status=0)
-            if opcode in (HCI_LINK_KEY_REQUEST_REPLY, HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY):
+            if opcode == HCI_LINK_KEY_REQUEST_REPLY:
+                # Positive reply: caller has a stored link key. Emit
+                # Auth_Complete directly to the initiator; skip the
+                # IO_Capability dance (bonded-reconnect fast path).
+                peer_addr_bytes = raw_params[0:6]
+                asyncio.create_task(
+                    self._auth_emit_authentication_complete(controller, status=0)
+                )
+                return self._command_complete(opcode, b"\x00" + peer_addr_bytes)
+            if opcode == HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY:
+                # No stored key: proceed to IO_Capability dispatch.
                 peer_addr_bytes = raw_params[0:6]
                 asyncio.create_task(
                     self._auth_emit_io_cap_requests(controller, peer_addr_bytes)
@@ -356,6 +366,24 @@ class VirtualClassicLink:
         body = entry.acceptor_addr.address
         event = HCIEvent(
             event_code=int(EventCode.LINK_KEY_REQUEST), parameters=body,
+        )
+        await initiator._send_event_to_host(event)
+
+    async def _auth_emit_authentication_complete(
+        self, initiator: VirtualController, status: int,
+    ) -> None:
+        """Emit Auth_Complete to initiator (used after positive
+        Link_Key_Request_Reply in bonded reconnect)."""
+        entry = next(
+            (e for e in self._handles.values()
+             if e.initiator is initiator and e.state == _ConnState.CONNECTED),
+            None,
+        )
+        if entry is None:
+            return
+        body = bytes([status]) + struct.pack("<H", entry.handle)
+        event = HCIEvent(
+            event_code=int(EventCode.AUTH_COMPLETE), parameters=body,
         )
         await initiator._send_event_to_host(event)
 

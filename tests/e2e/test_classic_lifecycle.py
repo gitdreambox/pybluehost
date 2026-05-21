@@ -154,3 +154,121 @@ async def test_e2e_classic_rfcomm_spp_echo(
         if handle is not None:
             with contextlib.suppress(Exception):
                 await stack_c.gap.classic_connections.disconnect(handle)
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_e2e_classic_bonded_reconnect_auto_encrypt(
+    tmp_path, selected_transport_spec, selected_peer_spec, transport_mode,
+):
+    """Two-session lifecycle. Session 1 pairs (SSP JW) -> bond persisted on
+    disk. Session 2 reopens fresh stacks at the same storage paths; the
+    Link_Key_Request handler on the central side replies with the stored
+    key; the bridge recognizes this positive-reply path and emits
+    Auth_Complete directly; no IO_Capability flow; encryption succeeds;
+    SDP browse confirms the link is usable."""
+    import asyncio
+    import contextlib
+
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import JsonBondStorage
+    from pybluehost.classic.sdp import SDPClient
+    from pybluehost.core.address import BDAddress
+    from pybluehost.hci.virtual_classic_link import VirtualClassicLink
+    from pybluehost.l2cap.constants import PSM_SDP
+    from pybluehost.stack import Stack, StackConfig
+
+    from tests.e2e._classic_test_service import (
+        SPP_CLASS_UUID, SPP_SERVER_CHANNEL, SPP_SERVICE_NAME,
+        register_spp_echo_service,
+    )
+    from tests.e2e._helpers import (
+        _supports_classic_ssp, classic_discover_and_pair_jw,
+        classic_discover_peripheral,
+    )
+
+    if transport_mode != "virtual":
+        pytest.skip(
+            "hardware mode: build_stack_from_spec doesn't accept config= yet"
+        )
+
+    central_addr = BDAddress.from_string("0A:0A:0A:0A:0A:0A")
+    peripheral_addr = BDAddress.from_string("0B:0B:0B:0B:0B:0B")
+    bonds_c_path = tmp_path / "bonds_c.json"
+    bonds_p_path = tmp_path / "bonds_p.json"
+
+    async def _open_pair():
+        cfg_c = StackConfig(
+            bond_storage=JsonBondStorage(bonds_c_path),
+            security=SecurityConfig(enable_secure_connections=False),
+        )
+        cfg_p = StackConfig(
+            bond_storage=JsonBondStorage(bonds_p_path),
+            security=SecurityConfig(enable_secure_connections=False),
+        )
+        stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
+        stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
+        service = register_spp_echo_service(stack_p)
+        await service.register(channel=SPP_SERVER_CHANNEL, name=SPP_SERVICE_NAME)
+        await stack_p.gap.classic_discoverability.set_connectable(True)
+        await stack_p.gap.classic_discoverability.set_discoverable(True)
+        link = VirtualClassicLink(
+            central=stack_c._virtual_controller,
+            peripheral=stack_p._virtual_controller,
+            central_address=central_addr,
+            peripheral_address=peripheral_addr,
+            page_timeout_seconds=0.5,
+        )
+        link.attach()
+        return stack_c, stack_p, link
+
+    async def _close_pair(stack_c, stack_p, link):
+        with contextlib.suppress(Exception):
+            await link.disconnect()
+        with contextlib.suppress(Exception):
+            await stack_c.close()
+        with contextlib.suppress(Exception):
+            await stack_p.close()
+
+    # ===== Session 1 =====
+    stack_c, stack_p, link = await _open_pair()
+    if not _supports_classic_ssp(stack_c):
+        await _close_pair(stack_c, stack_p, link)
+        pytest.skip("adapter does not support BR/EDR SSP")
+
+    handle = None
+    try:
+        handle = await classic_discover_and_pair_jw(
+            stack_c, peripheral_addr,
+        )
+        bond_c = await JsonBondStorage(bonds_c_path).load_bond(peripheral_addr)
+        assert bond_c is not None, "central bond not persisted after pair"
+        assert bond_c.link_key_type == 0x05, (
+            f"expected Combination_Key (0x05), got {bond_c.link_key_type!r}"
+        )
+        with contextlib.suppress(Exception):
+            await stack_c.gap.classic_connections.disconnect(handle)
+    finally:
+        await _close_pair(stack_c, stack_p, link)
+
+    # ===== Session 2 =====
+    stack_c, stack_p, link = await _open_pair()
+    handle = None
+    try:
+        await classic_discover_peripheral(stack_c, peripheral_addr, timeout=3.0)
+        handle = await stack_c.connect_classic(peripheral_addr, timeout=3.0)
+        await stack_c.authenticate_classic(handle, timeout=3.0)
+        await stack_c.enable_classic_encryption(handle, timeout=2.0)
+
+        # Verify the encrypted link works for an SDP query.
+        sdp_chan = await stack_c._l2cap.connect_classic_channel(handle, psm=PSM_SDP)
+        sdp_client = SDPClient(l2cap=sdp_chan)
+        channel = await sdp_client.find_rfcomm_channel(
+            target=handle, service_uuid=SPP_CLASS_UUID,
+        )
+        assert channel == SPP_SERVER_CHANNEL
+    finally:
+        if handle is not None:
+            with contextlib.suppress(Exception):
+                await stack_c.gap.classic_connections.disconnect(handle)
+        await _close_pair(stack_c, stack_p, link)
