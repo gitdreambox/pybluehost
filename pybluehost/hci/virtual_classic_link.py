@@ -456,6 +456,21 @@ class VirtualClassicLink:
                     parameters=bytes([0x05]) + self._addr_of(source).address,
                 )),
             )
+            # SSP failed after Authentication_Requested: per Core Spec
+            # Vol 2 Part F §4.2.10, the controller must terminate the
+            # authentication procedure with Auth_Complete(status=0x05,
+            # AUTHENTICATION_FAILURE). Without this the host's
+            # auth-waiter future leaks until its own timeout.
+            entry = next(
+                (e for e in self._handles.values()
+                 if {e.initiator, e.acceptor} == {source, peer}),
+                None,
+            )
+            if entry is not None:
+                await entry.initiator._send_event_to_host(HCIEvent(
+                    event_code=int(EventCode.AUTH_COMPLETE),
+                    parameters=bytes([0x05]) + struct.pack("<H", entry.handle),
+                ))
             self._auth_state.pop(entry_key, None)
             return
         other = state.get(("confirm", id(peer)))
