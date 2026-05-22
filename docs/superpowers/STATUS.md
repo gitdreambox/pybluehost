@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：VirtualClassicLink — ✅ 完成
-**下一步**：Classic Workflow E2E（SDP browse + RFCOMM/SPP echo + bonded reconnect）/ 断线重连闭环 / 真机 E2E 验证
+**当前进行中**：Classic Workflow E2E — ✅ 完成
+**下一步**：断线重连闭环 / 真机 E2E 验证（同套测试用 --transport=usb）
 **不在路线图**：SMP Sub-Plan 3c (OOB) — 暂无计划支持
 
 > **注意（2026-04-18 深度审查后更新）**：
@@ -54,8 +54,9 @@
 | SMP Sub-Plan 3b-2 (SC Passkey Entry) | LE SC Passkey Entry association model：`SMPState.PASSKEY_SC_ROUND` 反身 20 轮 f4 commit/reveal + Display/Input role 复用 3b-1 + 20-round-exit 进 SC f5/f6 + 双端 authenticated 持久化 + VirtualController 补 `Number_Of_Completed_Packets` 释放 ACL flow credit + SC Passkey loopback E2E | ✅ 完成 | [2026-05-19-smp-sub-plan-3b-2-sc-passkey](plans/2026-05-19-smp-sub-plan-3b-2-sc-passkey.md) | `pybluehost/ble/_smp_state.py`, `pybluehost/ble/smp.py`, `pybluehost/hci/virtual.py` |
 | E2E LE Lifecycle | tests/e2e/ 首轮覆盖：scan→connect→pair→GATT 4 个端到端场景；transport-agnostic（virtual 自动跑 / hardware 用 --transport=usb 手动跑） | ✅ 完成 | [2026-05-20-e2e-le-lifecycle](plans/2026-05-20-e2e-le-lifecycle.md) | `tests/e2e/{conftest,_test_service,_helpers,test_le_lifecycle}.py` |
 | VirtualClassicLink | BR/EDR (Classic) peer-to-peer 桥接：Inquiry / Connection / ACL / Auth (SSP+Legacy) / Encryption / Disconnect 六个子桥；两个 Stack.virtual() 真实 inquiry→connect→SSP JW pair→encrypt→disconnect 端到端 | ✅ 完成 | [2026-05-20-virtual-classic-link](plans/2026-05-20-virtual-classic-link.md) | `pybluehost/hci/virtual_classic_link.py`, `pybluehost/hci/virtual.py`, `pybluehost/hci/constants.py` |
+| Classic Workflow E2E | tests/e2e/ Classic 4 个端到端场景：SDP browse + RFCOMM/SPP echo + bonded reconnect 双 session + pair-failure 清洁拆链；transport-agnostic（virtual 自动跑 / hardware 用 --transport=usb 手动跑） | ✅ 完成 | [2026-05-21-classic-workflow-e2e](plans/2026-05-21-classic-workflow-e2e.md) | `tests/e2e/{_classic_test_service,_helpers,conftest,test_classic_lifecycle}.py`, `pybluehost/hci/virtual_classic_link.py`, `pybluehost/l2cap/manager.py` |
 
-**总计：29 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle + VirtualClassicLink）**
+**总计：30 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle + VirtualClassicLink + Classic Workflow E2E）**
 
 ---
 
@@ -417,6 +418,23 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 验收：`uv run pytest tests/integration/test_virtual_classic_link.py -v` PASS（21 per-primitive）；`tests/integration/test_classic_e2e_smoke.py -v` PASS（1 smoke：peripheral set_connectable+set_discoverable → central inquiry 发现 peripheral → `stack.connect_classic` → `stack.authenticate_classic` 触发 SSP JW → 双端 `BondInfo.link_key_type=0x05` 持久化 → `stack.enable_classic_encryption` → `gap.classic_connections.disconnect`）；全套仅 3 个 pre-existing USB diagnostics 失败。
 - 不在范围（按设计推迟）：Classic Workflow E2E（SDP browse / RFCOMM/SPP echo / bonded reconnect with auto-encrypt）= 即时下一个 Plan；BR/EDR SC via bridge（key_type=0x07）= 后续 Plan；SCO/eSCO 同步音频；硬件 Classic E2E。
 - 注意：smoke test 使用 palindromic 地址（0A:0A:0A:0A:0A:0A / 0B:0B:0B:0B:0B:0B）避开 SSPManager `_handle_link_key_request` / `_on_link_key_notification` 的 BT wire LE → BDAddress BE 反转对非对称地址的潜在影响；这是 SSPManager 既有约定，不在 bridge scope 内。
+
+### ✅ Classic Workflow E2E
+- 完成时间：2026-05-22
+- Plan 文档：[2026-05-21-classic-workflow-e2e.md](plans/2026-05-21-classic-workflow-e2e.md)
+- 提交范围：`tests/e2e/_classic_test_service.py`、`tests/e2e/_helpers.py`（Classic 助手）、`tests/e2e/conftest.py`（Classic fixtures）、`tests/e2e/test_classic_lifecycle.py`（4 个场景 + 3 个 setup/sanity 测试）；+ `pybluehost/hci/virtual_classic_link.py` 小修（distinct positive/negative Link_Key_Request_Reply 路径）；+ `pybluehost/l2cap/manager.py` 修复（CONNECTION_RESPONSE + CONFIGURE_REQUEST 背靠背时序的 race）。
+- 4 个 BR/EDR 端到端场景（`@pytest.mark.e2e`）：
+  - `test_e2e_classic_sdp_browse`：connect → SSP JW → 开 L2CAP PSM_SDP 通道 → `SDPClient.find_rfcomm_channel(0x1101)` 返回 SPP_SERVER_CHANNEL。
+  - `test_e2e_classic_rfcomm_spp_echo`：connect → SSP JW → SPPClient.connect 内部走 SDP 查找 + RFCOMM SABM/UA → 双向回显两条消息 → DISC 拆链。
+  - `test_e2e_classic_bonded_reconnect_auto_encrypt`：双 session。Session 1 配对，`BondInfo.link_key_type=0x05` 持久化到 JsonBondStorage；Session 2 重连 → 桥接识别 positive Link_Key_Request_Reply 直接发 Auth_Complete → 加密 → SDP 验证可用。
+  - `test_e2e_classic_pair_failure_disconnects_cleanly`：peripheral 注入拒绝型 SSP delegate（`_delegate.confirm_numeric` 返 False）→ 桥接发 `Simple_Pairing_Complete(0x05)` + `Auth_Complete(0x05)` 到 initiator → `stack.authenticate_classic` 抛 `RuntimeError('Classic authentication failed: …')` → 双端 `stack.close()` ≤ 2s。
+- transport-agnostic：用 `classic_central_peripheral_pair` + `virtual_classic_link_or_real_rf` fixtures（基于 `tests/conftest.py` 的 `stack`/`peer_stack`/`transport_mode`）。
+- Bridge fix：`VirtualClassicLink._intercept` 将 `HCI_LINK_KEY_REQUEST_REPLY`（positive，含 16-byte 链接密钥）与 `HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY` 分两条路径——positive 直接发 `Auth_Complete(0)` 给 initiator；negative 维持原 IO_Capability 派发。
+- L2CAP fix：`L2CAPManager.connect_classic_channel` 把通道构造 + CONFIG_REQ 发送从用户协程移到 CONNECTION_RESPONSE 信令 handler 内（同步于后续 ACL 分组），并在 `_handle_classic_configure_request` 中处理早到的对端 CONFIG_REQ。原本 CONNECTION_RESPONSE + CONFIGURE_REQUEST 在 virtual transport 上背靠背到达时会 race：响应完成 future 后、awaiter 注册到 `_classic_config_pending_by_cid` 之前 CONFIG_REQ 已到，触发空 fallback 静默响应，central 永不标 `peer_config_done`，connect_classic_channel 挂死。
+- 验收：`uv run pytest tests/e2e/test_classic_lifecycle.py -v --transport=virtual` PASS（8/8）；`tests/e2e/ -q --transport=virtual` PASS（15/15）；`tests/integration/ -q --transport=virtual` PASS（46/46）；全套仅 3 个 pre-existing USB diagnostics 失败。
+- 注意：Test 4 的 Test pattern 必须直接覆盖 SSPManager 的 `_delegate.confirm_numeric`（Stack._build 默认装 AutoAcceptDelegate）——legacy `on_user_confirmation` sync handler 会被 `_delegate` 路径优先吞掉。
+- 硬件运行方式（手动，未在 CI）：`uv run pytest tests/e2e/test_classic_lifecycle.py -v --transport=usb:VID:PID#1 --transport-peer=usb:VID:PID#2`；Test 3 在硬件模式 skip 直到 `build_stack_from_spec` 接受 `config=` 参数。
+- 不在范围（按设计推迟）：BR/EDR SC via bridge（key_type=0x07）= 后续 Plan；NC/Passkey BR/EDR 变体；A2DP/HFP/SCO；多通道 RFCOMM；手机互联。
 
 ---
 
