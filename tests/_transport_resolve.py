@@ -16,6 +16,7 @@ import os
 
 import pytest
 
+from pybluehost.stack import StackConfig
 from tests._fallback_tracker import TRACKER
 
 from tests._transport_select import (
@@ -115,7 +116,7 @@ def resolve_peer_spec(config: pytest.Config, primary: str) -> str | None:
     return peer
 
 
-async def build_stack_from_spec(spec: str, *, config=None):
+async def build_stack_from_spec(spec: str, *, config: StackConfig | None = None):
     """Construct a powered Stack matching the selected transport spec.
 
     The optional ``config`` kwarg is threaded through every transport branch
@@ -126,9 +127,7 @@ async def build_stack_from_spec(spec: str, *, config=None):
 
     family, params = parse_spec(spec)
     if family == "virtual":
-        if config is not None:
-            return await Stack.virtual(config=config)
-        return await Stack.virtual()
+        return await Stack.virtual(config=config)
     if family == "usb":
         bus, address = usb_spec_bus_address(spec)
         vid, pid, serial, occurrence = usb_spec_identity(spec)
