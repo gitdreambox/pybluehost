@@ -115,12 +115,19 @@ def resolve_peer_spec(config: pytest.Config, primary: str) -> str | None:
     return peer
 
 
-async def build_stack_from_spec(spec: str):
-    """Construct a powered Stack matching the selected transport spec."""
+async def build_stack_from_spec(spec: str, *, config=None):
+    """Construct a powered Stack matching the selected transport spec.
+
+    The optional ``config`` kwarg is threaded through every transport branch
+    so tests that need per-test ``StackConfig`` (bond storage, security mode)
+    can use the same factory in both virtual and hardware modes.
+    """
     from pybluehost.stack import Stack
 
     family, params = parse_spec(spec)
     if family == "virtual":
+        if config is not None:
+            return await Stack.virtual(config=config)
         return await Stack.virtual()
     if family == "usb":
         bus, address = usb_spec_bus_address(spec)
@@ -133,10 +140,11 @@ async def build_stack_from_spec(spec: str):
             pid=pid,
             serial=serial,
             occurrence=occurrence,
+            config=config,
         )
     if family == "uart":
         port, baudrate = uart_spec_port_baud(spec)
-        return await Stack.from_uart(port=port, baudrate=baudrate)
+        return await Stack.from_uart(port=port, baudrate=baudrate, config=config)
     raise InvalidSpec(f"Cannot build stack from spec: {spec!r}")
 
 

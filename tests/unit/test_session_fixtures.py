@@ -369,6 +369,7 @@ async def test_build_stack_from_vid_pid_occurrence_spec(monkeypatch: pytest.Monk
         "pid": 0x0001,
         "serial": None,
         "occurrence": 2,
+        "config": None,
     }
 
 
