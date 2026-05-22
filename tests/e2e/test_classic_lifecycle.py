@@ -272,3 +272,58 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
             with contextlib.suppress(Exception):
                 await stack_c.gap.classic_connections.disconnect(handle)
         await _close_pair(stack_c, stack_p, link)
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_e2e_classic_pair_failure_disconnects_cleanly(
+    classic_central_peripheral_pair, virtual_classic_link_or_real_rf,
+):
+    """Inject a Peripheral SSP handler that rejects User_Confirmation →
+    stack.authenticate_classic() raises → connection disconnect + stack
+    teardown both complete within 2s. Regression guard against leaked
+    auth-completion futures.
+    """
+    import asyncio
+
+    from tests.e2e._helpers import (
+        _supports_classic_ssp, classic_discover_peripheral,
+    )
+
+    stack_c, stack_p = classic_central_peripheral_pair
+    if not _supports_classic_ssp(stack_c):
+        pytest.skip("adapter does not support BR/EDR SSP")
+
+    # Inject a rejecting delegate on the peripheral. SSPManager checks
+    # delegate.confirm_numeric FIRST (preferred over the legacy sync
+    # on_user_confirmation handler), so we must override the delegate to
+    # propagate the rejection — the legacy handler would be ignored when
+    # the stack already has an auto-accept SMP delegate plumbed in.
+    from pybluehost.ble.smp import AutoAcceptDelegate
+
+    class _RejectClassicConfirm(AutoAcceptDelegate):
+        async def confirm_numeric(self, peer_addr, value):
+            return False
+
+    stack_p.gap.classic_ssp._delegate = _RejectClassicConfirm()
+
+    handle = None
+    try:
+        await classic_discover_peripheral(
+            stack_c, stack_p._local_address, timeout=3.0,
+        )
+        handle = await stack_c.connect_classic(
+            stack_p._local_address, timeout=3.0,
+        )
+
+        # Authenticate must raise on Auth_Complete with non-zero status.
+        with pytest.raises(Exception, match=r"(authentication|Auth_Complete|SSP|status|fail)"):
+            await stack_c.authenticate_classic(handle, timeout=3.0)
+
+        # Critical: cleanup completes within 2s.
+        await asyncio.wait_for(
+            stack_c.gap.classic_connections.disconnect(handle), timeout=2.0,
+        )
+    finally:
+        # fixture teardown closes both stacks within 2s
+        pass
