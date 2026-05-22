@@ -209,3 +209,30 @@ async def classic_discover_and_pair_jw(
     handle = await stack_c.connect_classic(peripheral_addr, timeout=scan_timeout)
     await stack_c.authenticate_classic(handle, timeout=pair_timeout)
     return handle
+
+
+# ---------------------------------------------------------------------------
+# Transport-aware timeout helper (used by e2e scenarios)
+# ---------------------------------------------------------------------------
+
+def e2e_timeout(
+    transport_mode: str,
+    *,
+    virtual: float,
+    usb: float | None = None,
+    uart: float | None = None,
+) -> float:
+    """Return a transport-appropriate timeout budget.
+
+    Virtual transport completes operations in sub-second time; real RF needs
+    more headroom for inquiry timing, page-scan windows, and connection setup.
+    Defaults: usb = 5x virtual, uart = 8x virtual. Unknown transports fall
+    back to the virtual budget.
+    """
+    if transport_mode == "virtual":
+        return virtual
+    if transport_mode == "usb":
+        return usb if usb is not None else virtual * 5
+    if transport_mode == "uart":
+        return uart if uart is not None else virtual * 8
+    return virtual
