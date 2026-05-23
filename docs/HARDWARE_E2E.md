@@ -4,6 +4,8 @@ Manual smoke-testing of the PyBlueHost e2e suite against real BR/EDR + LE
 USB adapters. Hardware verification runs **outside** CI and is performed
 before each release.
 
+> **Windows 用户**：本文档假设 Linux 主机（`lsusb`、`udev` 规则）。Windows 上做 survey 请参考 [`HARDWARE_SURVEY_WINDOWS.md`](HARDWARE_SURVEY_WINDOWS.md)——驱动绑定（Zadig 换 WinUSB）、PowerShell 等价命令、Windows-specific 常见坑都在那里。
+
 ## 1. Quick start (5-minute happy path)
 
 **Prerequisites**:
