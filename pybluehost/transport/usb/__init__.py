@@ -58,23 +58,23 @@ from pybluehost.transport.usb.realtek import RealtekLocalVersion, RealtekUSBTran
 # fields can reference real classes.
 KNOWN_CHIPS: list[ChipInfo] = [
     # Intel
-    ChipInfo("intel", "AX200",  0x8087, 0x0029, "ibt-20-*",   IntelUSBTransport),
-    ChipInfo("intel", "AX201",  0x8087, 0x0026, "ibt-20-*",   IntelUSBTransport),
-    ChipInfo("intel", "AX210",  0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport),
-    ChipInfo("intel", "AX211",  0x8087, 0x0033, "ibt-0040-*", IntelUSBTransport),
-    ChipInfo("intel", "AC9560", 0x8087, 0x0025, "ibt-18-*",   IntelUSBTransport),
-    ChipInfo("intel", "AC8265", 0x8087, 0x0A2B, "ibt-12-*",   IntelUSBTransport),
-    ChipInfo("intel", "BE200",  0x8087, 0x0036, "ibt-0040-*", IntelUSBTransport),
+    ChipInfo("intel", "AX200",  0x8087, 0x0029, "ibt-20-*",    IntelUSBTransport),
+    ChipInfo("intel", "AX201",  0x8087, 0x0026, "ibt-20-*",    IntelUSBTransport),
+    ChipInfo("intel", "AX210",  0x8087, 0x0032, "ibt-0040-*",  IntelUSBTransport),
+    ChipInfo("intel", "AX211",  0x8087, 0x0033, "ibt-0040-*",  IntelUSBTransport),
+    ChipInfo("intel", "AC9560", 0x8087, 0x0025, "ibt-18-*",    IntelUSBTransport),
+    ChipInfo("intel", "AC8265", 0x8087, 0x0A2B, "ibt-12-*",    IntelUSBTransport),
+    ChipInfo("intel", "BE200",  0x8087, 0x0036, "ibt-0040-*",  IntelUSBTransport),  # WiFi 7 / BT 5.4
     # Realtek
-    ChipInfo("realtek", "RTL8761B",  0x0BDA, 0x8771, "rtl8761bu_fw.bin", RealtekUSBTransport),
+    ChipInfo("realtek", "RTL8761B", 0x0BDA, 0x8771, "rtl8761bu_fw.bin", RealtekUSBTransport),
     ChipInfo("realtek", "RTL8852AE", 0x0BDA, 0x2852, "rtl8852au_fw.bin", RealtekUSBTransport),
     ChipInfo("realtek", "RTL8852BE", 0x0BDA, 0x887B, "rtl8852bu_fw.bin", RealtekUSBTransport),
     ChipInfo("realtek", "RTL8852BE", 0x0BDA, 0x4853, "rtl8852bu_fw.bin", RealtekUSBTransport),
-    ChipInfo("realtek", "RTL8723DE", 0x0BDA, 0xB009, "rtl8723d_fw.bin",  RealtekUSBTransport),
+    ChipInfo("realtek", "RTL8723DE", 0x0BDA, 0xB009, "rtl8723d_fw.bin", RealtekUSBTransport),
     # CSR
     ChipInfo("csr", "CSR8510", 0x0A12, 0x0001, "", CSRUSBTransport),
-    # BARROT (no firmware, uses generic USBTransport)
-    ChipInfo("barrot", "BT6.0", 0x33FA, 0x0011, "", USBTransport),
+    # BARROT
+    ChipInfo("barrot", "BR8654A02", 0x33FA, 0x0012, "", USBTransport),
 ]
 
 __all__ = [
