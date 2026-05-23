@@ -17,6 +17,7 @@ from pybluehost.hci.capabilities import _OPCODE_BIT_POSITIONS
 from pybluehost.hci.features_decode import (
     BREDR_FEATURE_BIT_NAMES,
     LE_FEATURE_BIT_NAMES,
+    hci_version_name,
     manufacturer_name,
 )
 
@@ -76,7 +77,9 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
         str(stack._local_address) if stack._local_address is not None else "unknown"
     )
     manufacturer_id = hci.manufacturer_id or 0
-    hci_version = hci.hci_version if hci.hci_version is not None else "unknown"
+    hci_version = hci.hci_version if hci.hci_version is not None else 0
+    hci_revision = hci.hci_revision if hci.hci_revision is not None else 0
+    lmp_version = hci.lmp_version if hci.lmp_version is not None else 0
     lmp_subversion = hci.lmp_subversion if hci.lmp_subversion is not None else 0
 
     cmd_bitmap = bytes(hci.supported_commands.bitmap) if hci.supported_commands else b""
@@ -105,7 +108,13 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
         "manufacturer_id": manufacturer_id,
         "manufacturer_name": manufacturer_name(manufacturer_id),
         "hci_version": hci_version,
+        "hci_version_name": hci_version_name(hci_version),
+        "hci_revision": hci_revision,
+        "hci_revision_hex": f"0x{hci_revision:04X}",
+        "lmp_version": lmp_version,
+        "lmp_version_name": hci_version_name(lmp_version),
         "lmp_subversion": lmp_subversion,
+        "lmp_subversion_hex": f"0x{lmp_subversion:04X}",
         "capability_summary": summary,
         "le_features": le_decoded,
         "bredr_features": bredr_decoded,
@@ -193,8 +202,16 @@ def _format_human_table(data: dict[str, Any]) -> str:
         )
     lines.append(f"  Manufacturer    : {manufacturer_display}")
     lines.append(
-        f"  HCI Version     : {data['hci_version']} "
-        f"(LMP subversion 0x{data['lmp_subversion']:04X})"
+        f"  HCI Version     : {data['hci_version_name']} "
+        f"(raw 0x{data['hci_version']:02X}, revision {data['hci_revision_hex']})"
+    )
+    lines.append(
+        f"  LMP Version     : {data['lmp_version_name']} "
+        f"(raw 0x{data['lmp_version']:02X})"
+    )
+    lines.append(
+        f"  LMP Subversion  : {data['lmp_subversion_hex']} "
+        f"({data['lmp_subversion']} — vendor-specific firmware build)"
     )
     lines.append("")
 

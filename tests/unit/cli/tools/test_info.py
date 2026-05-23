@@ -75,10 +75,51 @@ async def test_info_json_output_has_required_keys(capsys):
     parsed = json.loads(captured)
     for key in (
         "transport", "bd_addr", "manufacturer_id", "manufacturer_name",
+        "hci_version", "hci_version_name", "hci_revision", "hci_revision_hex",
+        "lmp_version", "lmp_version_name", "lmp_subversion", "lmp_subversion_hex",
         "capability_summary", "le_features", "bredr_features",
         "supported_commands",
     ):
         assert key in parsed, f"missing key {key!r} in JSON output"
+
+
+@pytest.mark.asyncio
+async def test_info_json_decodes_version_names(capsys):
+    """hci_version_name / lmp_version_name should be human-readable strings,
+    not raw integers."""
+    from pybluehost.cli.tools.info import _cmd_info_async
+
+    class _Args:
+        transport = "virtual"
+        json = True
+
+    await _cmd_info_async(_Args())
+    parsed = json.loads(capsys.readouterr().out)
+    # Virtual controller reports hci_version=12 → "Bluetooth 5.3"
+    assert isinstance(parsed["hci_version_name"], str)
+    assert parsed["hci_version_name"].startswith("Bluetooth") or "Unknown" in parsed["hci_version_name"]
+    assert isinstance(parsed["lmp_version_name"], str)
+    # subversion always renders as 0xXXXX hex form
+    assert parsed["lmp_subversion_hex"].startswith("0x")
+    assert parsed["hci_revision_hex"].startswith("0x")
+
+
+@pytest.mark.asyncio
+async def test_info_human_table_shows_decoded_versions(capsys):
+    """Human table prints 'Bluetooth 5.x' next to the raw HCI Version byte."""
+    from pybluehost.cli.tools.info import _cmd_info_async
+
+    class _Args:
+        transport = "virtual"
+        json = False
+
+    await _cmd_info_async(_Args())
+    out = capsys.readouterr().out
+    assert "HCI Version" in out
+    assert "LMP Version" in out
+    assert "LMP Subversion" in out
+    # Decoded marker — either a Bluetooth spec version or an "Unknown (0xNN)" fallback
+    assert "Bluetooth" in out or "Unknown (0x" in out
 
 
 @pytest.mark.asyncio

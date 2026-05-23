@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from pybluehost.hci.features_decode import (
     BREDR_FEATURE_BIT_NAMES,
+    HCI_VERSION_NAMES,
     LE_FEATURE_BIT_NAMES,
     MANUFACTURER_NAMES,
+    hci_version_name,
     manufacturer_name,
 )
 
@@ -50,3 +52,19 @@ def test_manufacturer_name_unknown_id_returns_fallback():
 
 def test_manufacturer_name_known_id_returns_name():
     assert manufacturer_name(0x0002) == "Intel Corp."
+
+
+def test_hci_version_names_cover_4_0_through_5_4():
+    assert HCI_VERSION_NAMES[0x06] == "Bluetooth 4.0"
+    assert HCI_VERSION_NAMES[0x08] == "Bluetooth 4.2"
+    assert HCI_VERSION_NAMES[0x09] == "Bluetooth 5.0"
+    assert HCI_VERSION_NAMES[0x0D] == "Bluetooth 5.4"
+
+
+def test_hci_version_name_known_returns_name():
+    assert hci_version_name(0x0D) == "Bluetooth 5.4"
+
+
+def test_hci_version_name_unknown_returns_fallback():
+    name = hci_version_name(0xFF)
+    assert "Unknown" in name and "FF" in name.upper()

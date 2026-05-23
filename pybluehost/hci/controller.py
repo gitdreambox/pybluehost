@@ -118,6 +118,8 @@ class HCIController:
         # Capability data cached during initialize() (consumed by `pybluehost tools info`).
         self._manufacturer_id: int | None = None
         self._hci_version: int | None = None
+        self._hci_revision: int | None = None
+        self._lmp_version: int | None = None
         self._lmp_subversion: int | None = None
         self._bredr_features: bytes | None = None
         self._le_features: bytes | None = None
@@ -201,6 +203,14 @@ class HCIController:
     @property
     def hci_version(self) -> int | None:
         return self._hci_version
+
+    @property
+    def hci_revision(self) -> int | None:
+        return self._hci_revision
+
+    @property
+    def lmp_version(self) -> int | None:
+        return self._lmp_version
 
     @property
     def lmp_subversion(self) -> int | None:
@@ -300,9 +310,12 @@ class HCIController:
         # return_parameters[0] is the status byte.
         if opcode == HCI_READ_LOCAL_VERSION and len(return_parameters) >= 9:
             payload = return_parameters[1:]  # skip status
+            # Layout per Core Spec 5.4 Vol 4 Part E §7.4.1:
+            #   hci_version(1) + hci_revision(2) + lmp_version(1)
+            #   + manufacturer(2) + lmp_subversion(2)
             self._hci_version = payload[0]
-            # payload[1:3] is HCI revision
-            # payload[3] is LMP version
+            self._hci_revision = int.from_bytes(payload[1:3], "little")
+            self._lmp_version = payload[3]
             self._manufacturer_id = int.from_bytes(payload[4:6], "little")
             self._lmp_subversion = int.from_bytes(payload[6:8], "little")
         elif opcode == HCI_READ_LOCAL_SUPPORTED_FEATURES and len(return_parameters) >= 9:

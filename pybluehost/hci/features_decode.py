@@ -162,3 +162,36 @@ def manufacturer_name(manufacturer_id: int) -> str:
     return MANUFACTURER_NAMES.get(
         manufacturer_id, f"Unknown (0x{manufacturer_id:04X})"
     )
+
+
+# ---------------------------------------------------------------------------
+# HCI / LMP version identifiers
+# Core Spec 5.4 Vol 4 Part E §7.4.1, also Assigned Numbers - Host Controller
+# Interface. HCI_Version and LMP_Version share the same enumeration.
+# ---------------------------------------------------------------------------
+
+HCI_VERSION_NAMES: dict[int, str] = {
+    0x00: "Bluetooth 1.0b",
+    0x01: "Bluetooth 1.1",
+    0x02: "Bluetooth 1.2",
+    0x03: "Bluetooth 2.0 + EDR",
+    0x04: "Bluetooth 2.1 + EDR",
+    0x05: "Bluetooth 3.0 + HS",
+    0x06: "Bluetooth 4.0",
+    0x07: "Bluetooth 4.1",
+    0x08: "Bluetooth 4.2",
+    0x09: "Bluetooth 5.0",
+    0x0A: "Bluetooth 5.1",
+    0x0B: "Bluetooth 5.2",
+    0x0C: "Bluetooth 5.3",
+    0x0D: "Bluetooth 5.4",
+    0x0E: "Bluetooth 6.0",
+}
+
+
+def hci_version_name(version: int) -> str:
+    """Human-readable name for an HCI_Version / LMP_Version byte.
+
+    Returns "Unknown (0x..)" for values not in :data:`HCI_VERSION_NAMES`.
+    """
+    return HCI_VERSION_NAMES.get(version, f"Unknown (0x{version:02X})")
