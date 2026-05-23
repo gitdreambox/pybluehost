@@ -105,6 +105,34 @@ async def test_info_json_decodes_version_names(capsys):
 
 
 @pytest.mark.asyncio
+async def test_info_capability_summary_keys_present(capsys):
+    """capability_summary exposes a fixed set of 7 derived capability flags."""
+    from pybluehost.cli.tools.info import _cmd_info_async
+
+    class _Args:
+        transport = "virtual"
+        json = True
+
+    await _cmd_info_async(_Args())
+    parsed = json.loads(capsys.readouterr().out)
+    summary = parsed["capability_summary"]
+    expected_keys = {
+        "le_secure_connections",
+        "le_privacy_rpa",
+        "le_extended_advertising",
+        "le_2m_phy",
+        "le_coded_phy",
+        "bredr_encryption",
+        "bredr_ssp",
+        "extended_inquiry_response",
+    }
+    assert set(summary.keys()) == expected_keys
+    # Every value must be a boolean (not None, not int).
+    for key, val in summary.items():
+        assert isinstance(val, bool), f"{key!r} = {val!r} (expected bool)"
+
+
+@pytest.mark.asyncio
 async def test_info_human_table_shows_decoded_versions(capsys):
     """Human table prints 'Bluetooth 5.x' next to the raw HCI Version byte."""
     from pybluehost.cli.tools.info import _cmd_info_async

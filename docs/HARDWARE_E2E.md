@@ -84,6 +84,62 @@ diff my-adapter.json my-adapter-updated.json
 **Per-adapter baseline files** live under `docs/hardware/<vendor>-<product>.json`
 (populated as adapters are surveyed — see §6).
 
+### 3.1 How `capability_summary` is computed
+
+`capability_summary` is a small set of derived **bool** flags answering "can
+this adapter do X?" by combining bits from the three raw bitmaps the
+controller returns:
+
+- **LE Features bitmap** (8 bytes from `HCI_LE_Read_Local_Supported_Features`,
+  Core Spec 5.4 Vol 6 Part B §4.6 Table 4.6.1). Surfaced in JSON as `le_features`.
+- **BR/EDR LMP Features page 0** (8 bytes from `HCI_Read_Local_Supported_Features`,
+  Core Spec 5.4 Vol 2 Part C §3.3 Table 3.2). Surfaced as `bredr_features`.
+- **HCI Supported_Commands bitmap** (64 bytes from `HCI_Read_Local_Supported_Commands`,
+  Core Spec 5.4 Vol 4 Part E §6.27 Table 6.27). Surfaced under `supported_commands`.
+
+Each summary row checks one or more (octet, bit) positions:
+
+| Summary flag | Source | Position | Spec ref |
+|---|---|---|---|
+| `le_secure_connections` | Supported_Commands AND | (34, 1) **and** (34, 2) | Vol 4 Part E §6.27 — `HCI_LE_Read_Local_P-256_Public_Key` + `HCI_LE_Generate_DHKey` |
+| `le_privacy_rpa` | LE Features | (0, 6) | Vol 6 Part B §4.6 "LL Privacy" |
+| `le_extended_advertising` | LE Features | (1, 4) | Vol 6 Part B §4.6 "LE Extended Advertising" |
+| `le_2m_phy` | LE Features | (1, 0) | Vol 6 Part B §4.6 "LE 2M PHY" |
+| `le_coded_phy` | LE Features | (1, 3) | Vol 6 Part B §4.6 "LE Coded PHY" |
+| `bredr_encryption` | BR/EDR Features | (0, 2) | Vol 2 Part C §3.3 "Encryption" |
+| `bredr_ssp` | Supported_Commands | cmd (32, 5) | Vol 4 Part E §6.27 `HCI_IO_Capability_Request_Reply` (matches `tests/e2e/_helpers.py:_supports_classic_ssp`) |
+| `extended_inquiry_response` | BR/EDR Features | (6, 0) | Vol 2 Part C §3.3 "Extended Inquiry Response" |
+
+**Why some checks combine multiple bits**:
+- `le_secure_connections` needs both P-256 and DHKey — host-side SC implementation requires both controller primitives to be exposed via HCI.
+
+**Why some checks DON'T combine bits even though the spec offers both**:
+- `bredr_ssp` only checks the HCI command bit, not the LMP page-0 feature bit. The Classic e2e test gate `_supports_classic_ssp` uses the same single-bit definition; reporting differently here would create confusion when the matrix says ✓ but tests skip (or vice versa). If you need to know whether the LMP feature bit is set independently, read `bredr_features["6/3"].supported` directly from the JSON.
+
+**What `capability_summary` deliberately does NOT include**:
+- **LE Audio host support** — this is set BY the host via `HCI_LE_Set_Host_Feature` bit 32, not read from the controller. Reporting it from these bitmaps would be misleading.
+- **BR/EDR Secure Connections (controller)** — sits on LMP page 2, which PyBlueHost doesn't currently fetch (only page 0). Would need a separate `HCI_Read_Local_Extended_Features` round-trip.
+- **LE Audio CIS/BIS** — there are LE Feature bits and HCI commands for these, but they require multi-bit combinations and are out-of-scope for the current capability gate.
+
+If you need a raw bit not in the summary, read it from `le_features` /
+`bredr_features` / `supported_commands.decoded` in the JSON — every named
+feature bit is decoded there with its `(octet, bit)` key.
+
+### 3.2 What to do when `capability_summary` reports `-`
+
+For each row that's `-` (no support), the affected test scenarios will
+`pytest.skip` with a clear reason. Examples:
+
+| Flag = `-` | Affected tests skip with |
+|---|---|
+| `le_secure_connections` | "adapter does not support LE Secure Connections" — LE pairing/encryption tests |
+| `bredr_ssp` | "adapter does not support BR/EDR SSP" — Classic pairing/encryption tests |
+| `bredr_encryption` | All BR/EDR encryption-dependent tests skip implicitly via SSP gate |
+
+A `-` in the matrix doesn't always mean "the adapter is broken" — it can
+mean the standard predates the feature (CSR8510 is BT 4.0, predates LE SC).
+The skip reason will tell you which.
+
 ## 4. Two-adapter pairing convention
 
 Test convention:

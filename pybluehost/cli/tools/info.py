@@ -90,15 +90,31 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
     bredr_decoded = _decode_bitmap(bredr_features, BREDR_FEATURE_BIT_NAMES)
     cmd_decoded, unknown_bits = _decode_commands_bitmap(cmd_bitmap)
 
+    # See docs/HARDWARE_E2E.md §3.1 for the spec references behind each row.
     summary = {
-        "le_secure_connections": _bit_set(le_features, 1, 0)
-            and _opcode_set(cmd_bitmap, 34, 1),
-        "le_audio_host_support": _bit_set(le_features, 4, 4),
+        # LE Secure Connections: controller exposes both P-256 ECDH commands
+        # via HCI Supported_Commands octet 34 bits 1+2.
+        "le_secure_connections": (
+            _opcode_set(cmd_bitmap, 34, 1)   # HCI_LE_Read_Local_P-256_Public_Key
+            and _opcode_set(cmd_bitmap, 34, 2)  # HCI_LE_Generate_DHKey
+        ),
+        # LL Privacy / Resolvable Private Address resolution in controller.
+        # LE Features octet 0 bit 6.
         "le_privacy_rpa": _bit_set(le_features, 0, 6),
+        # LE Extended Advertising (BT 5.0+). LE Features octet 1 bit 4.
         "le_extended_advertising": _bit_set(le_features, 1, 4),
+        # LE 2M PHY (high-throughput). LE Features octet 1 bit 0.
+        "le_2m_phy": _bit_set(le_features, 1, 0),
+        # LE Coded PHY (long range). LE Features octet 1 bit 3.
+        "le_coded_phy": _bit_set(le_features, 1, 3),
+        # BR/EDR Baseline encryption. LMP Features page 0 octet 0 bit 2.
         "bredr_encryption": _bit_set(bredr_features, 0, 2),
+        # BR/EDR Secure Simple Pairing: controller advertises the IO Capability
+        # reply command (Supported_Commands octet 32 bit 5). Matches
+        # tests/e2e/_helpers.py:_supports_classic_ssp — the gate that decides
+        # whether Classic e2e tests run vs skip.
         "bredr_ssp": _opcode_set(cmd_bitmap, 32, 5),
-        "bredr_sc_controller": _bit_set(bredr_features, 6, 3),
+        # Extended Inquiry Response. LMP Features page 0 octet 6 bit 0.
         "extended_inquiry_response": _bit_set(bredr_features, 6, 0),
     }
 
