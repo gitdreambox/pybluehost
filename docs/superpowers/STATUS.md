@@ -6,8 +6,8 @@
 
 ## 快速定位
 
-**当前进行中**：Classic Workflow E2E — ✅ 完成
-**下一步**：断线重连闭环 / 真机 E2E 验证（同套测试用 --transport=usb）
+**当前进行中**：Hardware E2E Readiness — ✅ 完成
+**下一步**：自托管硬件 CI runner / 真机首批 adapter survey（手动 `pybluehost tools info` + 跑 e2e）/ 断线重连闭环
 **不在路线图**：SMP Sub-Plan 3c (OOB) — 暂无计划支持
 
 > **注意（2026-04-18 深度审查后更新）**：
@@ -55,8 +55,9 @@
 | E2E LE Lifecycle | tests/e2e/ 首轮覆盖：scan→connect→pair→GATT 4 个端到端场景；transport-agnostic（virtual 自动跑 / hardware 用 --transport=usb 手动跑） | ✅ 完成 | [2026-05-20-e2e-le-lifecycle](plans/2026-05-20-e2e-le-lifecycle.md) | `tests/e2e/{conftest,_test_service,_helpers,test_le_lifecycle}.py` |
 | VirtualClassicLink | BR/EDR (Classic) peer-to-peer 桥接：Inquiry / Connection / ACL / Auth (SSP+Legacy) / Encryption / Disconnect 六个子桥；两个 Stack.virtual() 真实 inquiry→connect→SSP JW pair→encrypt→disconnect 端到端 | ✅ 完成 | [2026-05-20-virtual-classic-link](plans/2026-05-20-virtual-classic-link.md) | `pybluehost/hci/virtual_classic_link.py`, `pybluehost/hci/virtual.py`, `pybluehost/hci/constants.py` |
 | Classic Workflow E2E | tests/e2e/ Classic 4 个端到端场景：SDP browse + RFCOMM/SPP echo + bonded reconnect 双 session + pair-failure 清洁拆链；transport-agnostic（virtual 自动跑 / hardware 用 --transport=usb 手动跑） | ✅ 完成 | [2026-05-21-classic-workflow-e2e](plans/2026-05-21-classic-workflow-e2e.md) | `tests/e2e/{_classic_test_service,_helpers,conftest,test_classic_lifecycle}.py`, `pybluehost/hci/virtual_classic_link.py`, `pybluehost/l2cap/manager.py` |
+| Hardware E2E Readiness | `build_stack_from_spec(config=)` 解锁 hardware-mode skips；`e2e_timeout` 传输自适应超时；`pybluehost tools info` 全量 HCI 能力 dump CLI；`docs/HARDWARE_E2E.md` runbook。HCIController 缓存 manufacturer/version/features 响应。所有可在 virtual 上验证；真机验证待 adapter 到货后手动执行。 | ✅ 完成 | [2026-05-22-hardware-e2e-readiness](plans/2026-05-22-hardware-e2e-readiness.md) | `tests/_transport_resolve.py`, `tests/e2e/_helpers.py`, `tests/e2e/test_*_lifecycle.py`, `pybluehost/hci/{features_decode,capabilities,controller,constants}.py`, `pybluehost/cli/tools/info.py`, `docs/HARDWARE_E2E.md` |
 
-**总计：30 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle + VirtualClassicLink + Classic Workflow E2E）**
+**总计：31 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle + VirtualClassicLink + Classic Workflow E2E + Hardware E2E Readiness）**
 
 ---
 
@@ -435,6 +436,20 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 - 注意：Test 4 的 Test pattern 必须直接覆盖 SSPManager 的 `_delegate.confirm_numeric`（Stack._build 默认装 AutoAcceptDelegate）——legacy `on_user_confirmation` sync handler 会被 `_delegate` 路径优先吞掉。
 - 硬件运行方式（手动，未在 CI）：`uv run pytest tests/e2e/test_classic_lifecycle.py -v --transport=usb:VID:PID#1 --transport-peer=usb:VID:PID#2`；Test 3 在硬件模式 skip 直到 `build_stack_from_spec` 接受 `config=` 参数。
 - 不在范围（按设计推迟）：BR/EDR SC via bridge（key_type=0x07）= 后续 Plan；NC/Passkey BR/EDR 变体；A2DP/HFP/SCO；多通道 RFCOMM；手机互联。
+
+### ✅ Hardware E2E Readiness
+- 完成时间：2026-05-22
+- Plan 文档：[2026-05-22-hardware-e2e-readiness.md](plans/2026-05-22-hardware-e2e-readiness.md)
+- 设计 spec：[2026-05-22-hardware-e2e-readiness-design.md](specs/2026-05-22-hardware-e2e-readiness-design.md)
+- 提交范围：`tests/_transport_resolve.py`（`config=` kwarg）、`tests/e2e/_helpers.py`（`e2e_timeout`）、`tests/e2e/test_le_lifecycle.py` / `tests/e2e/test_classic_lifecycle.py`（去 skip + timeout 包装）、`pybluehost/hci/features_decode.py`（LE/BR-EDR/vendor 表）、`pybluehost/hci/capabilities.py`（扩展 `_OPCODE_BIT_POSITIONS`）、`pybluehost/hci/constants.py`（LE SC 两个新 opcode 常量）、`pybluehost/hci/controller.py`（缓存 manufacturer/version/features 响应 + 5 个新只读 property）、`pybluehost/cli/tools/info.py` + `pybluehost/cli/tools/__init__.py`（新 CLI）、`docs/HARDWARE_E2E.md`（runbook）。
+- 四件交付物：
+  - `build_stack_from_spec(spec, *, config=None)`：把 `StackConfig` 透传到每个 transport 分支（virtual/usb/uart），unblock 三个 hardware-mode skip（LE Test 3 / LE Test 4 / Classic Test 3）。
+  - `e2e_timeout(transport_mode, virtual=, usb=, uart=)`：virtual passthrough；usb 默认 5×、uart 默认 8×。e2e 套件里所有 < 5s 的 `asyncio.wait_for`/`timeout=` 都包了一层。virtual 模式行为不变，hardware 模式自动获得更宽超时预算。
+  - `pybluehost tools info --transport=<spec>` CLI：开适配器、跑 HCI init、打印能力 dump——adapter identity（BD_ADDR / 厂商 / HCI/LMP 版本）、capability summary（LE SC / LE Audio / BR/EDR SSP / SC / EIR 等）、LE Features 64-bit 解码、BR/EDR Features page 0 解码、Supported Commands 位图（已知 opcode 解码 + 未知 bit 列出）。`--json` 输出可写文件做基线，跨固件版本 diff。`HCIController` 现缓存 `Read_Local_Version`、`Read_Local_Supported_Features`、`LE_Read_Local_Supported_Features` 的响应（之前是丢弃的）。
+  - `docs/HARDWARE_E2E.md` runbook：quick-start、适配器兼容矩阵模板、`info` 用法、双适配器测试约定、失败分诊表、新增适配器流程、什么不在套件覆盖范围、CI 现状。
+- 设计上不需要硬件即可落地：26 个新单测全部在 virtual 上跑（3 build_stack_from_spec + 5 e2e_timeout + 9 features_decode + 5 capabilities opcodes + 6 cli info）；e2e 套件 15/15 PASS；全套仅 3 个 pre-existing USB diagnostics 失败。
+- 真机到货后执行流程：把适配器插上 → `lsusb` 找 VID:PID → `pybluehost tools info` 双 adapter survey → 用 `--transport=usb:VID:PID#1 --transport-peer=usb:VID:PID#2` 跑 e2e 套件。Test 3 / Test 4 / Classic Test 3 现在能跑而不是 skip。
+- 不在范围（按设计推迟）：自托管硬件 CI runner（独立 ops 决策）；手机互联；A2DP/HFP/SCO/LE Audio；高吞吐持续流量；`info --diff <baseline.json>` 标志；CLI 彩色输出。
 
 ---
 
