@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
+import sys
 from typing import Any
 
 from pybluehost.hci.capabilities import _OPCODE_BIT_POSITIONS
@@ -45,11 +47,21 @@ async def _cmd_info_async(args: argparse.Namespace) -> int:
     """Async body of the info command."""
     from tests._transport_resolve import build_stack_from_spec
 
-    stack = await build_stack_from_spec(args.transport)
-    try:
-        data = _collect_capability_data(stack, transport=args.transport)
-    finally:
-        await stack.close()
+    # In --json mode, stack init can emit INFO-level logs to stdout (transport
+    # init banners, firmware load progress, etc.) which would contaminate the
+    # JSON output. Redirect stdout to stderr for the duration of init so the
+    # final JSON print is the only thing on stdout.
+    json_stdout_redirect: contextlib.AbstractContextManager[Any] = (
+        contextlib.redirect_stdout(sys.stderr) if args.json
+        else contextlib.nullcontext()
+    )
+
+    with json_stdout_redirect:
+        stack = await build_stack_from_spec(args.transport)
+        try:
+            data = _collect_capability_data(stack, transport=args.transport)
+        finally:
+            await stack.close()
 
     if args.json:
         print(json.dumps(data, indent=2))

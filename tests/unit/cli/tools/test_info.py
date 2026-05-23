@@ -96,3 +96,45 @@ async def test_info_unknown_command_bits_appear_in_unknown_list(capsys):
     parsed = json.loads(captured)
     assert "unknown_bits_set" in parsed["supported_commands"]
     assert isinstance(parsed["supported_commands"]["unknown_bits_set"], list)
+
+
+@pytest.mark.asyncio
+async def test_info_json_stdout_is_pure_json_even_when_logs_emit(capsys):
+    """Regression: transport-layer print/log emissions to stdout during
+    stack init must not leak into --json output. Downstream tools like
+    `jq` / json.load require pure JSON on stdout.
+    """
+    import sys
+
+    from pybluehost.cli.tools import info as info_module
+
+    class _Args:
+        transport = "virtual"
+        json = True
+
+    # Wrap the underlying factory so it prints to stdout during init —
+    # simulating a transport-layer banner ("Generic USBTransport initialized"
+    # / "Intel TLV: ..."). The CLI's --json path must redirect this to
+    # stderr; stdout should contain ONLY the JSON document.
+    original_build = info_module.__dict__.get("_orig_build")
+    if original_build is None:
+        from tests._transport_resolve import build_stack_from_spec as original_build
+
+    async def _noisy_build(spec, *, config=None):
+        print("LEAK: simulated transport banner")  # would normally go to stdout
+        return await original_build(spec, config=config)
+
+    # Patch the import inside the function by intercepting tests._transport_resolve.
+    import tests._transport_resolve as resolve_mod
+    saved = resolve_mod.build_stack_from_spec
+    resolve_mod.build_stack_from_spec = _noisy_build
+    try:
+        await info_module._cmd_info_async(_Args())
+    finally:
+        resolve_mod.build_stack_from_spec = saved
+
+    out = capsys.readouterr().out
+    # stdout must parse cleanly as JSON — no LEAK: prefix.
+    assert "LEAK" not in out, f"stdout contaminated by transport-layer print: {out!r}"
+    parsed = json.loads(out)
+    assert "transport" in parsed
