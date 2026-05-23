@@ -171,10 +171,15 @@ def _format_human_table(data: dict[str, Any]) -> str:
     lines.append("----------------")
     lines.append(f"  Transport       : {data['transport']}")
     lines.append(f"  BD_ADDR         : {data['bd_addr']}")
-    lines.append(
-        f"  Manufacturer    : {data['manufacturer_name']} "
-        f"(0x{data['manufacturer_id']:04X})"
-    )
+    # manufacturer_name already embeds the ID for unknown vendors; avoid
+    # printing it twice.
+    if data["manufacturer_name"].startswith("Unknown"):
+        manufacturer_display = data["manufacturer_name"]
+    else:
+        manufacturer_display = (
+            f"{data['manufacturer_name']} (0x{data['manufacturer_id']:04X})"
+        )
+    lines.append(f"  Manufacturer    : {manufacturer_display}")
     lines.append(
         f"  HCI Version     : {data['hci_version']} "
         f"(LMP subversion 0x{data['lmp_subversion']:04X})"
