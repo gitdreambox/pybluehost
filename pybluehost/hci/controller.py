@@ -115,6 +115,13 @@ class HCIController:
         # Supported_Commands bitmap parsed during initialize()
         self._supported_commands: "SupportedCommands | None" = None
 
+        # Capability data cached during initialize() (consumed by `pybluehost tools info`).
+        self._manufacturer_id: int | None = None
+        self._hci_version: int | None = None
+        self._lmp_subversion: int | None = None
+        self._bredr_features: bytes | None = None
+        self._le_features: bytes | None = None
+
         # Upper-layer callbacks (set via set_upstream)
         self._on_hci_event: OnHCIEvent | None = None
         self._on_acl_data: OnACLData | None = None
@@ -186,6 +193,26 @@ class HCIController:
     def supported_commands(self) -> "SupportedCommands | None":
         """The parsed Supported_Commands bitmap from initialize(), or None before init."""
         return self._supported_commands
+
+    @property
+    def manufacturer_id(self) -> int | None:
+        return self._manufacturer_id
+
+    @property
+    def hci_version(self) -> int | None:
+        return self._hci_version
+
+    @property
+    def lmp_subversion(self) -> int | None:
+        return self._lmp_subversion
+
+    @property
+    def bredr_features(self) -> bytes | None:
+        return self._bredr_features
+
+    @property
+    def le_features(self) -> bytes | None:
+        return self._le_features
 
     # ------------------------------------------------------------------
     # TransportSink protocol
@@ -262,6 +289,26 @@ class HCIController:
             le_acl_len, le_acl_count = struct.unpack_from("<HB", params, 1)
             if le_acl_len and le_acl_count:
                 self._acl_flow.configure(num_buffers=le_acl_count, buffer_size=le_acl_len)
+
+    def _capture_capability_response(self, opcode: int, return_parameters: bytes) -> None:
+        """Parse and cache capability-bearing Command_Complete payloads."""
+        from pybluehost.hci.constants import (
+            HCI_READ_LOCAL_VERSION,
+            HCI_READ_LOCAL_SUPPORTED_FEATURES,
+            HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
+        )
+        # return_parameters[0] is the status byte.
+        if opcode == HCI_READ_LOCAL_VERSION and len(return_parameters) >= 9:
+            payload = return_parameters[1:]  # skip status
+            self._hci_version = payload[0]
+            # payload[1:3] is HCI revision
+            # payload[3] is LMP version
+            self._manufacturer_id = int.from_bytes(payload[4:6], "little")
+            self._lmp_subversion = int.from_bytes(payload[6:8], "little")
+        elif opcode == HCI_READ_LOCAL_SUPPORTED_FEATURES and len(return_parameters) >= 9:
+            self._bredr_features = bytes(return_parameters[1:9])
+        elif opcode == HCI_LE_READ_LOCAL_SUPPORTED_FEATURES and len(return_parameters) >= 9:
+            self._le_features = bytes(return_parameters[1:9])
 
     # ------------------------------------------------------------------
     # ACL data sending
@@ -349,6 +396,8 @@ class HCIController:
             HCI_LE_Set_Random_Address_Command(random_address=RANDOM_ADDRESS),
         ]
 
+        # Issue optional commands; capture responses for the three that yield
+        # capability data we cache for `pybluehost tools info`.
         for cmd in optional_commands:
             opcode = cmd.opcode
             if not self._supported_commands.has(opcode):
@@ -357,7 +406,9 @@ class HCIController:
                     opcode,
                 )
                 continue
-            await self.send_command(cmd)
+            rsp = await self.send_command(cmd)
+            if isinstance(rsp, HCI_Command_Complete_Event):
+                self._capture_capability_response(opcode, rsp.return_parameters)
 
         # BR/EDR Secure Connections — gated on config AND controller support
         if self._security_config is not None and self._security_config.enable_secure_connections:
