@@ -311,13 +311,10 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
                 peripheral_address=peripheral_addr,
             )
         else:
-            # Hardware mode: build_stack_from_spec does not accept a config=
-            # kwarg today, so the on-disk bond store can't be wired in for
-            # this scenario. Skip rather than silently mis-test.
-            pytest.skip(
-                "bonded-reconnect E2E test requires per-stack JsonBondStorage; "
-                "hardware build_stack_from_spec does not accept config= yet"
-            )
+            from tests._transport_resolve import build_stack_from_spec
+            stack_c = await build_stack_from_spec(selected_transport_spec, config=cfg_c)
+            stack_p = await build_stack_from_spec(selected_peer_spec, config=cfg_p)
+            link = None
         stack_p._gatt_server.add_service(build_test_service())
         return stack_c, stack_p, link
 
@@ -335,6 +332,10 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
     if not _supports_le_sc(stack_c):
         await _close_pair(stack_c, stack_p, link)
         pytest.skip("adapter does not support LE Secure Connections")
+    # In hardware mode the adapter's real BD_ADDR is canonical
+    if transport_mode != "virtual":
+        central_addr = stack_c._local_address
+        peripheral_addr = stack_p._local_address
 
     ad_data = _build_test_ad_data()
     await stack_p.gap.ble_advertiser.start(ad_data=ad_data)
@@ -369,6 +370,10 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
 
     # ===== Session 2: reconnect + auto-encrypt + GATT read =====
     stack_c, stack_p, link = await _open_pair()
+    # In hardware mode the adapter's real BD_ADDR is canonical
+    if transport_mode != "virtual":
+        central_addr = stack_c._local_address
+        peripheral_addr = stack_p._local_address
 
     encrypted_events: list = []
 
@@ -420,7 +425,7 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
 @pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_e2e_pair_failure_disconnects_cleanly(
-    tmp_path, transport_mode,
+    tmp_path, selected_transport_spec, selected_peer_spec, transport_mode,
 ):
     """Mismatched NC delegates -> pair() raises with reason=3 -> teardown
     completes within 2s on each stack. Regression guard against leaked
@@ -435,15 +440,11 @@ async def test_e2e_pair_failure_disconnects_cleanly(
     from pybluehost.hci.virtual_link import VirtualLELink
     from pybluehost.stack import Stack, StackConfig
 
+    from tests._transport_resolve import build_stack_from_spec
     from tests.e2e._helpers import _supports_le_sc
 
     # This test requires SecurityConfig(mitm_required=True), which is not the
     # default session fixture; build our own stacks.
-    if transport_mode != "virtual":
-        pytest.skip(
-            "hardware mode: build_stack_from_spec doesn't accept config= yet"
-        )
-
     central_addr = BDAddress(b"\x0A\x0A\x0A\x0A\x0A\x0A")
     peripheral_addr = BDAddress(b"\x0B\x0B\x0B\x0B\x0B\x0B")
 
@@ -462,18 +463,26 @@ async def test_e2e_pair_failure_disconnects_cleanly(
         le_io_capability=IOCapability.DISPLAY_YES_NO,
     )
 
-    stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
-    stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
-    link = VirtualLELink(
-        central=stack_c._virtual_controller,
-        peripheral=stack_p._virtual_controller,
-        central_address=central_addr,
-        peripheral_address=peripheral_addr,
-    )
+    if transport_mode == "virtual":
+        stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
+        stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
+        link = VirtualLELink(
+            central=stack_c._virtual_controller,
+            peripheral=stack_p._virtual_controller,
+            central_address=central_addr,
+            peripheral_address=peripheral_addr,
+        )
+    else:
+        stack_c = await build_stack_from_spec(selected_transport_spec, config=cfg_c)
+        stack_p = await build_stack_from_spec(selected_peer_spec, config=cfg_p)
+        central_addr = stack_c._local_address
+        peripheral_addr = stack_p._local_address
+        link = None
 
     if not _supports_le_sc(stack_c):
-        with contextlib.suppress(Exception):
-            await link.disconnect()
+        if link is not None:
+            with contextlib.suppress(Exception):
+                await link.disconnect()
         await stack_c.close()
         await stack_p.close()
         pytest.skip("adapter does not support LE Secure Connections")
@@ -494,13 +503,17 @@ async def test_e2e_pair_failure_disconnects_cleanly(
     await stack_p.gap.ble_advertiser.start(ad_data=ad_data)
     handle = None
     try:
-        # Establish connection (virtual injection pattern)
-        connect_task = asyncio.create_task(
-            stack_c.connect_gatt(peripheral_addr, timeout=10.0)
-        )
-        await asyncio.sleep(0.1)
-        await link.connect()
-        client = await connect_task
+        # Establish connection (virtual injection pattern in virtual mode;
+        # hardware uses real LE advertising/scan).
+        if link is not None:
+            connect_task = asyncio.create_task(
+                stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+            )
+            await asyncio.sleep(0.1)
+            await link.connect()
+            client = await connect_task
+        else:
+            client = await stack_c.connect_gatt(peripheral_addr, timeout=10.0)
         handle = client._connection_handle
 
         # Pair must raise; reason matches "SMP pairing failed"
@@ -515,8 +528,9 @@ async def test_e2e_pair_failure_disconnects_cleanly(
     finally:
         with contextlib.suppress(Exception):
             await stack_p.gap.ble_advertiser.stop()
-        with contextlib.suppress(Exception):
-            await link.disconnect()
+        if link is not None:
+            with contextlib.suppress(Exception):
+                await link.disconnect()
         # The regression guard: stack.close() must complete within 2s.
         await asyncio.wait_for(stack_c.close(), timeout=2.0)
         await asyncio.wait_for(stack_p.close(), timeout=2.0)

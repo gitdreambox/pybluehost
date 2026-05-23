@@ -182,15 +182,11 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
         SPP_CLASS_UUID, SPP_SERVER_CHANNEL, SPP_SERVICE_NAME,
         register_spp_echo_service,
     )
+    from tests._transport_resolve import build_stack_from_spec
     from tests.e2e._helpers import (
         _supports_classic_ssp, classic_discover_and_pair_jw,
         classic_discover_peripheral,
     )
-
-    if transport_mode != "virtual":
-        pytest.skip(
-            "hardware mode: build_stack_from_spec doesn't accept config= yet"
-        )
 
     central_addr = BDAddress.from_string("0A:0A:0A:0A:0A:0A")
     peripheral_addr = BDAddress.from_string("0B:0B:0B:0B:0B:0B")
@@ -206,25 +202,31 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
             bond_storage=JsonBondStorage(bonds_p_path),
             security=SecurityConfig(enable_secure_connections=False),
         )
-        stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
-        stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
+        if transport_mode == "virtual":
+            stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
+            stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
+            link = VirtualClassicLink(
+                central=stack_c._virtual_controller,
+                peripheral=stack_p._virtual_controller,
+                central_address=central_addr,
+                peripheral_address=peripheral_addr,
+                page_timeout_seconds=0.5,
+            )
+            link.attach()
+        else:
+            stack_c = await build_stack_from_spec(selected_transport_spec, config=cfg_c)
+            stack_p = await build_stack_from_spec(selected_peer_spec, config=cfg_p)
+            link = None
         service = register_spp_echo_service(stack_p)
         await service.register(channel=SPP_SERVER_CHANNEL, name=SPP_SERVICE_NAME)
         await stack_p.gap.classic_discoverability.set_connectable(True)
         await stack_p.gap.classic_discoverability.set_discoverable(True)
-        link = VirtualClassicLink(
-            central=stack_c._virtual_controller,
-            peripheral=stack_p._virtual_controller,
-            central_address=central_addr,
-            peripheral_address=peripheral_addr,
-            page_timeout_seconds=0.5,
-        )
-        link.attach()
         return stack_c, stack_p, link
 
     async def _close_pair(stack_c, stack_p, link):
-        with contextlib.suppress(Exception):
-            await link.disconnect()
+        if link is not None:
+            with contextlib.suppress(Exception):
+                await link.disconnect()
         with contextlib.suppress(Exception):
             await stack_c.close()
         with contextlib.suppress(Exception):
@@ -235,6 +237,9 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
     if not _supports_classic_ssp(stack_c):
         await _close_pair(stack_c, stack_p, link)
         pytest.skip("adapter does not support BR/EDR SSP")
+    if transport_mode != "virtual":
+        central_addr = stack_c._local_address
+        peripheral_addr = stack_p._local_address
 
     handle = None
     try:
@@ -253,6 +258,9 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
 
     # ===== Session 2 =====
     stack_c, stack_p, link = await _open_pair()
+    if transport_mode != "virtual":
+        central_addr = stack_c._local_address
+        peripheral_addr = stack_p._local_address
     handle = None
     try:
         await classic_discover_peripheral(stack_c, peripheral_addr, timeout=3.0)
