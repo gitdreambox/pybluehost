@@ -173,14 +173,14 @@ async def test_e2e_scan_connect_pair_read(central_peripheral_pair, virtual_link_
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_e2e_gatt_write_and_notify(central_peripheral_pair, virtual_link_or_real_rf):
+async def test_e2e_gatt_write_and_notify(central_peripheral_pair, virtual_link_or_real_rf, transport_mode):
     """Write a characteristic; subscribe to notifications; observe two
     notifications; unsubscribe; verify a third notification is NOT observed."""
     import contextlib
 
     from tests.e2e._helpers import (
         _supports_le_sc, central_discover_peripheral,
-        resolve_handles, wait_for_notifications,
+        e2e_timeout, resolve_handles, wait_for_notifications,
     )
     from tests.e2e._test_service import (
         TEST_SERVICE_UUID, TEST_WRITE_CHAR_UUID, TEST_NOTIFY_CHAR_UUID,
@@ -243,7 +243,7 @@ async def test_e2e_gatt_write_and_notify(central_peripheral_pair, virtual_link_o
         # Peripheral emits two notifications
         await stack_p._gatt_server.notify(handles["notify"], b"ping-1")
         await stack_p._gatt_server.notify(handles["notify"], b"ping-2")
-        await wait_for_notifications(notify_events, n=2, timeout=2.0)
+        await wait_for_notifications(notify_events, n=2, timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0))
         assert notify_events == [b"ping-1", b"ping-2"]
 
         # Unsubscribe (CCCD = 0x0000)
@@ -280,7 +280,7 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
     from pybluehost.stack import Stack, StackConfig
 
     from tests.e2e._helpers import (
-        _supports_le_sc, central_discover_peripheral, resolve_handles,
+        _supports_le_sc, central_discover_peripheral, e2e_timeout, resolve_handles,
     )
     from tests.e2e._test_service import (
         TEST_SERVICE_UUID, TEST_READ_CHAR_UUID, INITIAL_READ_VALUE,
@@ -399,8 +399,8 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
             client = await stack_c.connect_gatt(peripheral_addr, timeout=10.0)
         handle = client._connection_handle
 
-        # Wait up to 2s for the encryption-change event
-        for _ in range(40):
+        # Wait up to e2e_timeout budget for the encryption-change event
+        for _ in range(int(e2e_timeout(transport_mode, virtual=2.0, usb=10.0) / 0.05)):
             if encrypted_events:
                 break
             await asyncio.sleep(0.05)
@@ -441,7 +441,7 @@ async def test_e2e_pair_failure_disconnects_cleanly(
     from pybluehost.stack import Stack, StackConfig
 
     from tests._transport_resolve import build_stack_from_spec
-    from tests.e2e._helpers import _supports_le_sc
+    from tests.e2e._helpers import _supports_le_sc, e2e_timeout
 
     # This test requires SecurityConfig(mitm_required=True), which is not the
     # default session fixture; build our own stacks.
@@ -520,10 +520,10 @@ async def test_e2e_pair_failure_disconnects_cleanly(
         with pytest.raises(Exception, match="SMP pairing failed"):
             await stack_c.pair(handle, timeout=5.0)
 
-        # Critical assertion: cleanup completes within 2s on each side.
+        # Critical assertion: cleanup completes within budget on each side.
         with contextlib.suppress(Exception):
             await asyncio.wait_for(
-                stack_c.gap.ble_connections.disconnect(handle), timeout=2.0,
+                stack_c.gap.ble_connections.disconnect(handle), timeout=e2e_timeout(transport_mode, virtual=2.0, usb=3.0),
             )
     finally:
         with contextlib.suppress(Exception):
@@ -531,6 +531,6 @@ async def test_e2e_pair_failure_disconnects_cleanly(
         if link is not None:
             with contextlib.suppress(Exception):
                 await link.disconnect()
-        # The regression guard: stack.close() must complete within 2s.
-        await asyncio.wait_for(stack_c.close(), timeout=2.0)
-        await asyncio.wait_for(stack_p.close(), timeout=2.0)
+        # The regression guard: stack.close() must complete within budget.
+        await asyncio.wait_for(stack_c.close(), timeout=e2e_timeout(transport_mode, virtual=2.0, usb=3.0))
+        await asyncio.wait_for(stack_p.close(), timeout=e2e_timeout(transport_mode, virtual=2.0, usb=3.0))
