@@ -133,6 +133,16 @@ class HCIController:
         self._le_features_pages: dict[int, bytes] = {}
         self._le_features_max_page: int | None = None
 
+        # ACL buffer parameters (HCI_Read_Buffer_Size / HCI_LE_Read_Buffer_Size).
+        # _acl_* are BR/EDR pool size; _le_acl_* are LE pool size if the
+        # controller exposes a separate LE buffer pool (some adapters share
+        # the BR/EDR pool — in that case _le_acl_total_packets == 0 in the
+        # raw response, and L2CAP flow control falls back to the BR/EDR pool).
+        self._acl_packet_length: int | None = None
+        self._acl_total_packets: int | None = None
+        self._le_acl_packet_length: int | None = None
+        self._le_acl_total_packets: int | None = None
+
         # Upper-layer callbacks (set via set_upstream)
         self._on_hci_event: OnHCIEvent | None = None
         self._on_acl_data: OnACLData | None = None
@@ -253,6 +263,22 @@ class HCIController:
     def le_features_max_page(self) -> int | None:
         return self._le_features_max_page
 
+    @property
+    def acl_packet_length(self) -> int | None:
+        return self._acl_packet_length
+
+    @property
+    def acl_total_packets(self) -> int | None:
+        return self._acl_total_packets
+
+    @property
+    def le_acl_packet_length(self) -> int | None:
+        return self._le_acl_packet_length
+
+    @property
+    def le_acl_total_packets(self) -> int | None:
+        return self._le_acl_total_packets
+
     # ------------------------------------------------------------------
     # TransportSink protocol
     # ------------------------------------------------------------------
@@ -322,10 +348,14 @@ class HCIController:
 
         if event.command_opcode == HCI_READ_BUFFER_SIZE and len(params) >= 8:
             acl_len, _sco_len, acl_count, _sco_count = struct.unpack_from("<HBHH", params, 1)
+            self._acl_packet_length = acl_len
+            self._acl_total_packets = acl_count
             if acl_len and acl_count:
                 self._acl_flow.configure(num_buffers=acl_count, buffer_size=acl_len)
         elif event.command_opcode == HCI_LE_READ_BUFFER_SIZE and len(params) >= 4:
             le_acl_len, le_acl_count = struct.unpack_from("<HB", params, 1)
+            self._le_acl_packet_length = le_acl_len
+            self._le_acl_total_packets = le_acl_count
             if le_acl_len and le_acl_count:
                 self._acl_flow.configure(num_buffers=le_acl_count, buffer_size=le_acl_len)
 

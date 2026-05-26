@@ -147,6 +147,17 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
         "lmp_subversion": lmp_subversion,
         "lmp_subversion_hex": f"0x{lmp_subversion:04X}",
         "capability_summary": summary,
+        # ACL buffer pool sizes from HCI_Read_Buffer_Size / HCI_LE_Read_Buffer_Size.
+        # ``total_packets`` is the Total_Num_*_ACL_Data_Packets credit count
+        # that L2CAP flow control uses (HCIController._acl_flow semaphore).
+        # On dual-mode adapters where LE shares the BR/EDR pool, the LE
+        # response's total_packets is 0 (controller signals "use BR/EDR pool").
+        "acl_buffers": {
+            "bredr_packet_length": hci.acl_packet_length,
+            "bredr_total_packets": hci.acl_total_packets,
+            "le_packet_length": hci.le_acl_packet_length,
+            "le_total_packets": hci.le_acl_total_packets,
+        },
         "le_features": le_decoded,
         "bredr_features": bredr_decoded,
         "bredr_features_page1": bredr_decoded_p1,
@@ -252,6 +263,33 @@ def _format_human_table(data: dict[str, Any]) -> str:
     for key, val in data["capability_summary"].items():
         marker = "yes" if val else "-"
         lines.append(f"  {key:<32} : {marker}")
+    lines.append("")
+
+    buf = data["acl_buffers"]
+    lines.append("ACL buffer pool (L2CAP flow control credit source)")
+    lines.append("---------------------------------------------------")
+    lines.append(
+        f"  BR/EDR packet length  : "
+        f"{buf['bredr_packet_length'] if buf['bredr_packet_length'] is not None else '-'}"
+    )
+    lines.append(
+        f"  BR/EDR total packets  : "
+        f"{buf['bredr_total_packets'] if buf['bredr_total_packets'] is not None else '-'}"
+    )
+    lines.append(
+        f"  LE packet length      : "
+        f"{buf['le_packet_length'] if buf['le_packet_length'] is not None else '-'}"
+    )
+    le_total = buf["le_total_packets"]
+    if le_total == 0:
+        lines.append(
+            "  LE total packets      : 0 (shares BR/EDR pool — per Spec 5.4 Vol 4 §4.1.1)"
+        )
+    else:
+        lines.append(
+            f"  LE total packets      : "
+            f"{le_total if le_total is not None else '-'}"
+        )
     lines.append("")
 
     lines.append("LE Features (octet/bit)")

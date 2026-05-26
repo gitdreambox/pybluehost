@@ -254,6 +254,46 @@ async def test_info_decoded_commands_use_supported_command_names(capsys):
 
 
 @pytest.mark.asyncio
+async def test_info_json_exposes_acl_buffer_pool(capsys):
+    """JSON output exposes the ACL buffer pool sizes (HC_ACL_Data_Packet_Length
+    + Total_Num_ACL_Data_Packets). These drive L2CAP flow control via the
+    ACLFlowController semaphore."""
+    from pybluehost.cli.tools.info import _cmd_info_async
+
+    class _Args:
+        transport = "virtual"
+        json = True
+
+    await _cmd_info_async(_Args())
+    parsed = json.loads(capsys.readouterr().out)
+    assert "acl_buffers" in parsed
+    buf = parsed["acl_buffers"]
+    for key in ("bredr_packet_length", "bredr_total_packets",
+                "le_packet_length", "le_total_packets"):
+        assert key in buf, f"missing {key!r} in acl_buffers"
+    # Virtual controller responds with positive sizes for both pools
+    assert isinstance(buf["bredr_total_packets"], int)
+    assert buf["bredr_total_packets"] > 0
+    assert isinstance(buf["le_total_packets"], int)
+    assert buf["le_total_packets"] > 0
+
+
+@pytest.mark.asyncio
+async def test_info_human_table_shows_acl_buffer_section(capsys):
+    from pybluehost.cli.tools.info import _cmd_info_async
+
+    class _Args:
+        transport = "virtual"
+        json = False
+
+    await _cmd_info_async(_Args())
+    out = capsys.readouterr().out
+    assert "ACL buffer pool" in out
+    assert "BR/EDR packet length" in out
+    assert "LE packet length" in out
+
+
+@pytest.mark.asyncio
 async def test_info_json_includes_le_features_pages_structural_hook(capsys):
     """JSON output exposes le_features_pages + le_features_max_page even
     when empty. Virtual controller reports hci_version < 0x0E (Bluetooth 6.0),
