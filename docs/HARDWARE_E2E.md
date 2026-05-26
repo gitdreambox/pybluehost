@@ -140,6 +140,88 @@ A `-` in the matrix doesn't always mean "the adapter is broken" — it can
 mean the standard predates the feature (CSR8510 is BT 4.0, predates LE SC).
 The skip reason will tell you which.
 
+### 3.3 Where the data comes from — HCI commands, bitmaps, and `unknown_bits_set`
+
+The five raw fields in the JSON come from five separate HCI commands
+issued during stack initialization. Each surfaces a different bitmap or
+struct from the controller.
+
+| JSON field | HCI command | OGF/OCF | Opcode | Returned size | Spec ref |
+|---|---|---|---|---|---|
+| `bd_addr` | `HCI_Read_BD_ADDR` | 0x04 / 0x09 | 0x1009 | 6 bytes | Vol 4 Part E §7.4.6 |
+| `manufacturer_id`, `hci_version`, `hci_revision`, `lmp_version`, `lmp_subversion` | `HCI_Read_Local_Version_Information` | 0x04 / 0x01 | 0x1001 | 8-byte payload | Vol 4 Part E §7.4.1 |
+| `supported_commands` | `HCI_Read_Local_Supported_Commands` | 0x04 / 0x02 | 0x1002 | **64 bytes** | Vol 4 Part E §7.4.2 |
+| `bredr_features` | `HCI_Read_Local_Supported_Features` | 0x04 / 0x03 | 0x1003 | 8 bytes (LMP page 0) | Vol 4 Part E §7.4.3 |
+| `bredr_features_page1`, `bredr_features_page2` | `HCI_Read_Local_Extended_Features(page=N)` | 0x04 / 0x04 | 0x1004 | page + max_page + 8-byte features | Vol 4 Part E §7.4.4 |
+| `le_features` | `HCI_LE_Read_Local_Supported_Features` | 0x08 / 0x03 | 0x2003 | 8 bytes | Vol 4 Part E §7.8.3 |
+| `le_features_pages` (Spec 6.0+) | `HCI_LE_Read_Local_Supported_Features_Page(page=N)` | 0x08 / 0x87 | 0x2087 | page + max_page + 8-byte features | Spec 6.0+ — best-effort interpretation |
+
+All issued by `HCIController.initialize()` in `pybluehost/hci/controller.py`,
+each gated on a bit in the Supported_Commands bitmap (so the host doesn't
+send a command the controller doesn't implement).
+
+#### Why bitmaps are paged
+
+The two BR/EDR features bitmaps reached spec capacity over time:
+
+- **Page 0** (the original `Read_Local_Supported_Features`, BT 1.0+): 8 bytes
+  of controller-side legacy LMP features.
+- **Page 1** (`Read_Local_Extended_Features` with `page=1`, BT 4.0+): 8 bytes
+  of *host-side* features — what the host has WRITTEN to the controller. Holds
+  "LE Supported (Host)", "Secure Connections (Host Support)", etc.
+- **Page 2** (`Read_Local_Extended_Features` with `page=2`, BT 4.2+): 8 bytes
+  of extended controller features — "Secure Connections (Controller Support)",
+  "Ping", "Slot Availability Mask", etc.
+
+The Supported_Commands bitmap (64 bytes) does NOT page — new commands fill
+previously-unused (octet, bit) slots within the same 64-byte envelope. As of
+Spec 5.4 we're around octet 46.
+
+The LE Features bitmap (8 bytes) stayed flat through Spec 5.4. Spec 6.0
+added paged access for features beyond bit 63. PyBlueHost's
+`HCI_LE_Read_Local_Supported_Features_Page` is a forward-compat hook —
+**no Spec 5.4 controller advertises this command**, so on every adapter
+you currently own, `le_features_pages` will be `{}` and
+`le_features_max_page` will be `null`. Spec 6.0+ adapters (none widely
+shipped yet) will populate it.
+
+#### What `unknown_bits_set` means
+
+The 64-byte Supported_Commands bitmap has up to 512 bit positions. Core
+Spec 5.4 Table 6.27 names ~280 of them; the rest are reserved.
+PyBlueHost's display table (`SUPPORTED_COMMAND_NAMES` in
+`pybluehost/hci/features_decode.py`) covers ~313 named positions across
+octets 0–46.
+
+When the info CLI walks the bitmap:
+- Every set bit at a known position → decoded into
+  `supported_commands.decoded` keyed by `"<octet>/<bit>"`.
+- Every set bit at an unknown position → added to
+  `supported_commands.unknown_bits_set` as `{"octet": N, "bit": M}`.
+
+A bit ending up in `unknown_bits_set` means one of two things:
+1. **Spec reserved** — the (octet, bit) slot has no command assigned in
+   Spec 5.4. Vendor or future spec versions may use it.
+2. **Vendor-specific** — proprietary HCI command extensions (Intel, Realtek,
+   Broadcom all add their own). These have no name in our display table.
+
+On a Spec 5.4 adapter, expect 0–10 unknown bits at most after this work
+landed. Far more than that suggests either (a) the adapter advertises
+Spec 6.0 commands (good — file an issue with the bit positions), or (b) it
+has heavy vendor extensions (normal for Realtek/Broadcom).
+
+If you find a bit you want decoded, look up the (octet, bit) in Core Spec
+5.4 Vol 4 Part E §6.27 Table 6.27, then add an entry to
+`SUPPORTED_COMMAND_NAMES`.
+
+#### Quick reference: what's NOT fetched
+
+| Capability data | Why not fetched |
+|---|---|
+| `Read_Local_Supported_Codecs` / `_V2` | Audio codec inventory; out of scope for hardware survey |
+| `Read_Local_Simple_Pairing_Options` | Pairing option bitfield; rarely diagnostic |
+| Vendor-specific opcodes (Intel, Realtek, Broadcom) | Per-vendor; handled inside transport layer for firmware loading |
+
 ## 4. Two-adapter pairing convention
 
 Test convention:
