@@ -231,28 +231,29 @@ def hci_version_name(version: int) -> str:
     return HCI_VERSION_NAMES.get(version, f"Unknown (0x{version:02X})")
 
 
+
 # ---------------------------------------------------------------------------
 # HCI Supported_Commands bitmap — (octet, bit) -> command name
-# Core Spec 5.4 Vol 4 Part E §6.27 Table 6.27.
+# Bluetooth Core Spec 6.1 Vol 4 Part E §6.27 Table 6.27.
 #
 # This is the DISPLAY table used by `pybluehost tools info` to decode the
 # 64-byte bitmap into human-readable names. It's a separate concern from
 # `pybluehost.hci.capabilities._OPCODE_BIT_POSITIONS`, which is the RUNTIME
 # gate (only opcodes PyBlueHost issues + needs to check support of).
 #
-# Not exhaustive — covers ~270 of the ~280 named positions in Spec 5.4.
-# Positions not in this table are reserved or vendor-reserved in the spec.
+# Transcribed verbatim from Spec 6.1 Table 6.27 (2026-05 verification by
+# user against the official spec). Positions marked "Previously used" or
+# "Reserved for future use" in the spec are omitted from this table.
 # ---------------------------------------------------------------------------
 
 SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
-    # Octet 0 — Link Control (OGF 0x01)
+    # Octet 0
     (0, 0): "Inquiry",
     (0, 1): "Inquiry_Cancel",
     (0, 2): "Periodic_Inquiry_Mode",
     (0, 3): "Exit_Periodic_Inquiry_Mode",
     (0, 4): "Create_Connection",
     (0, 5): "Disconnect",
-    (0, 6): "Add_SCO_Connection",  # deprecated
     (0, 7): "Create_Connection_Cancel",
     # Octet 1
     (1, 0): "Accept_Connection_Request",
@@ -266,7 +267,7 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     # Octet 2
     (2, 0): "Set_Connection_Encryption",
     (2, 1): "Change_Connection_Link_Key",
-    (2, 2): "Master_Link_Key",
+    (2, 2): "Link_Key_Selection",
     (2, 3): "Remote_Name_Request",
     (2, 4): "Remote_Name_Request_Cancel",
     (2, 5): "Read_Remote_Supported_Features",
@@ -275,81 +276,73 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     # Octet 3
     (3, 0): "Read_Clock_Offset",
     (3, 1): "Read_LMP_Handle",
-    # 3,2..3,7 reserved
     # Octet 4
-    (4, 0): "Hold_Mode",
-    (4, 1): "Sniff_Mode",
-    (4, 2): "Exit_Sniff_Mode",
-    (4, 3): "Park_State",  # deprecated
-    (4, 4): "Exit_Park_State",  # deprecated
-    (4, 5): "QoS_Setup",
-    (4, 6): "Role_Discovery",
-    (4, 7): "Switch_Role",
+    (4, 1): "Hold_Mode",
+    (4, 2): "Sniff_Mode",
+    (4, 3): "Exit_Sniff_Mode",
+    (4, 6): "QoS_Setup",
+    (4, 7): "Role_Discovery",
     # Octet 5
-    (5, 0): "Read_Link_Policy_Settings",
-    (5, 1): "Write_Link_Policy_Settings",
-    (5, 2): "Read_Default_Link_Policy_Settings",
-    (5, 3): "Write_Default_Link_Policy_Settings",
-    (5, 4): "Flow_Specification",
-    (5, 5): "Set_Event_Mask",
-    (5, 6): "Reset",
-    (5, 7): "Set_Event_Filter",
+    (5, 0): "Switch_Role",
+    (5, 1): "Read_Link_Policy_Settings",
+    (5, 2): "Write_Link_Policy_Settings",
+    (5, 3): "Read_Default_Link_Policy_Settings",
+    (5, 4): "Write_Default_Link_Policy_Settings",
+    (5, 5): "Flow_Specification",
+    (5, 6): "Set_Event_Mask",
+    (5, 7): "Reset",
     # Octet 6
-    (6, 0): "Flush",
-    (6, 1): "Read_PIN_Type",
-    (6, 2): "Write_PIN_Type",
-    (6, 3): "Create_New_Unit_Key",
-    (6, 4): "Read_Stored_Link_Key",
-    (6, 5): "Write_Stored_Link_Key",
-    (6, 6): "Delete_Stored_Link_Key",
-    (6, 7): "Write_Local_Name",
+    (6, 0): "Set_Event_Filter",
+    (6, 1): "Flush",
+    (6, 2): "Read_PIN_Type",
+    (6, 3): "Write_PIN_Type",
+    (6, 5): "Read_Stored_Link_Key",
+    (6, 6): "Write_Stored_Link_Key",
+    (6, 7): "Delete_Stored_Link_Key",
     # Octet 7
-    (7, 0): "Read_Local_Name",
-    (7, 1): "Read_Connection_Accept_Timeout",
-    (7, 2): "Write_Connection_Accept_Timeout",
-    (7, 3): "Read_Page_Timeout",
-    (7, 4): "Write_Page_Timeout",
-    (7, 5): "Read_Scan_Enable",
-    (7, 6): "Write_Scan_Enable",
-    (7, 7): "Read_Page_Scan_Activity",
+    (7, 0): "Write_Local_Name",
+    (7, 1): "Read_Local_Name",
+    (7, 2): "Read_Connection_Accept_Timeout",
+    (7, 3): "Write_Connection_Accept_Timeout",
+    (7, 4): "Read_Page_Timeout",
+    (7, 5): "Write_Page_Timeout",
+    (7, 6): "Read_Scan_Enable",
+    (7, 7): "Write_Scan_Enable",
     # Octet 8
-    (8, 0): "Write_Page_Scan_Activity",
-    (8, 1): "Read_Inquiry_Scan_Activity",
-    (8, 2): "Write_Inquiry_Scan_Activity",
-    (8, 3): "Read_Authentication_Enable",
-    (8, 4): "Write_Authentication_Enable",
-    (8, 5): "Read_Encryption_Mode",  # deprecated
-    (8, 6): "Write_Encryption_Mode",  # deprecated
-    (8, 7): "Read_Class_Of_Device",
+    (8, 0): "Read_Page_Scan_Activity",
+    (8, 1): "Write_Page_Scan_Activity",
+    (8, 2): "Read_Inquiry_Scan_Activity",
+    (8, 3): "Write_Inquiry_Scan_Activity",
+    (8, 4): "Read_Authentication_Enable",
+    (8, 5): "Write_Authentication_Enable",
     # Octet 9
-    (9, 0): "Write_Class_Of_Device",
-    (9, 1): "Read_Voice_Setting",
-    (9, 2): "Write_Voice_Setting",
-    (9, 3): "Read_Automatic_Flush_Timeout",
-    (9, 4): "Write_Automatic_Flush_Timeout",
-    (9, 5): "Read_Num_Broadcast_Retransmissions",
-    (9, 6): "Write_Num_Broadcast_Retransmissions",
-    (9, 7): "Read_Hold_Mode_Activity",
+    (9, 0): "Read_Class_Of_Device",
+    (9, 1): "Write_Class_Of_Device",
+    (9, 2): "Read_Voice_Setting",
+    (9, 3): "Write_Voice_Setting",
+    (9, 4): "Read_Automatic_Flush_Timeout",
+    (9, 5): "Write_Automatic_Flush_Timeout",
+    (9, 6): "Read_Num_Broadcast_Retransmissions",
+    (9, 7): "Write_Num_Broadcast_Retransmissions",
     # Octet 10
-    (10, 0): "Write_Hold_Mode_Activity",
-    (10, 1): "Read_Transmit_Power_Level",
-    (10, 2): "Read_Synchronous_Flow_Control_Enable",
-    (10, 3): "Write_Synchronous_Flow_Control_Enable",
-    (10, 4): "Set_Controller_To_Host_Flow_Control",
-    (10, 5): "Host_Buffer_Size",
-    (10, 6): "Host_Number_Of_Completed_Packets",
-    (10, 7): "Read_Link_Supervision_Timeout",
+    (10, 0): "Read_Hold_Mode_Activity",
+    (10, 1): "Write_Hold_Mode_Activity",
+    (10, 2): "Read_Transmit_Power_Level",
+    (10, 3): "Read_Synchronous_Flow_Control_Enable",
+    (10, 4): "Write_Synchronous_Flow_Control_Enable",
+    (10, 5): "Set_Controller_To_Host_Flow_Control",
+    (10, 6): "Host_Buffer_Size",
+    (10, 7): "Host_Number_Of_Completed_Packets",
     # Octet 11
-    (11, 0): "Write_Link_Supervision_Timeout",
-    (11, 1): "Read_Number_Of_Supported_IAC",
-    (11, 2): "Read_Current_IAC_LAP",
-    (11, 3): "Write_Current_IAC_LAP",
-    (11, 4): "Read_Page_Scan_Mode_Period",  # deprecated
-    (11, 5): "Write_Page_Scan_Mode_Period",  # deprecated
-    (11, 6): "Read_Page_Scan_Mode",  # deprecated
-    (11, 7): "Write_Page_Scan_Mode",  # deprecated
+    (11, 0): "Read_Link_Supervision_Timeout",
+    (11, 1): "Write_Link_Supervision_Timeout",
+    (11, 2): "Read_Number_Of_Supported_IAC",
+    (11, 3): "Read_Current_IAC_LAP",
+    (11, 4): "Write_Current_IAC_LAP",
     # Octet 12
-    (12, 0): "Set_AFH_Host_Channel_Classification",
+    (12, 1): "Set_AFH_Host_Channel_Classification",
+    (12, 2): "LE_CS_Read_Remote_FAE_Table",
+    (12, 3): "LE_CS_Write_Cached_Remote_FAE_Table",
     (12, 4): "Read_Inquiry_Scan_Type",
     (12, 5): "Write_Inquiry_Scan_Type",
     (12, 6): "Read_Inquiry_Mode",
@@ -361,12 +354,10 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (13, 3): "Write_AFH_Channel_Assessment_Mode",
     # Octet 14
     (14, 3): "Read_Local_Version_Information",
-    (14, 4): "Read_Local_Supported_Features",
-    (14, 5): "Read_Local_Supported_Commands",  # Self-referential
+    (14, 5): "Read_Local_Supported_Features",
     (14, 6): "Read_Local_Extended_Features",
     (14, 7): "Read_Buffer_Size",
     # Octet 15
-    (15, 0): "Read_Country_Code",  # deprecated
     (15, 1): "Read_BD_ADDR",
     (15, 2): "Read_Failed_Contact_Counter",
     (15, 3): "Reset_Failed_Contact_Counter",
@@ -377,10 +368,12 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     # Octet 16
     (16, 0): "Read_Loopback_Mode",
     (16, 1): "Write_Loopback_Mode",
-    (16, 2): "Enable_Device_Under_Test_Mode",
+    (16, 2): "Enable_Implementation_Under_Test_Mode",
     (16, 3): "Setup_Synchronous_Connection_Request",
     (16, 4): "Accept_Synchronous_Connection_Request",
     (16, 5): "Reject_Synchronous_Connection_Request",
+    (16, 6): "LE_CS_Create_Config",
+    (16, 7): "LE_CS_Remove_Config",
     # Octet 17
     (17, 0): "Read_Extended_Inquiry_Response",
     (17, 1): "Write_Extended_Inquiry_Response",
@@ -408,25 +401,32 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (20, 2): "Send_Keypress_Notification",
     (20, 3): "IO_Capability_Request_Negative_Reply",
     (20, 4): "Read_Encryption_Key_Size",
-    # Octet 22 — LE Controller commands begin here on most adapters
-    (22, 1): "Set_Event_Mask_Page_2",
+    (20, 5): "LE_CS_Read_Local_Supported_Capabilities",
+    (20, 6): "LE_CS_Read_Remote_Supported_Capabilities",
+    (20, 7): "LE_CS_Write_Cached_Remote_Supported_Capabilities",
+    # Octet 22
+    (22, 2): "Set_Event_Mask_Page_2",
     # Octet 23
     (23, 0): "Read_Flow_Control_Mode",
     (23, 1): "Write_Flow_Control_Mode",
     (23, 2): "Read_Data_Block_Size",
+    (23, 3): "LE_CS_Test",
+    (23, 4): "LE_CS_Test_End",
     # Octet 24
     (24, 0): "Read_Enhanced_Transmit_Power_Level",
+    (24, 1): "LE_CS_Security_Enable",
     (24, 5): "Read_LE_Host_Support",
     (24, 6): "Write_LE_Host_Support",
-    # Octet 25 — Bluetooth 4.0 LE Controller commands begin
+    (24, 7): "LE_CS_Set_Default_Settings",
+    # Octet 25
     (25, 0): "LE_Set_Event_Mask",
     (25, 1): "LE_Read_Buffer_Size_V1",
-    # Spec 6.1 renamed this to LE_Read_Local_Supported_Features_Page (same
-    # OCF 0x0003, same bit position; added optional page_number parameter).
+    # Spec 6.1 renamed (25, 2) to LE_Read_Local_Supported_Features_Page;
+    # backward-compatible with Spec 5.4 LE_Read_Local_Supported_Features.
     (25, 2): "LE_Read_Local_Supported_Features_Page",
     (25, 4): "LE_Set_Random_Address",
     (25, 5): "LE_Set_Advertising_Parameters",
-    (25, 6): "LE_Read_Advertising_Channel_TX_Power",
+    (25, 6): "LE_Read_Advertising_Physical_Channel_Tx_Power",
     (25, 7): "LE_Set_Advertising_Data",
     # Octet 26
     (26, 0): "LE_Set_Scan_Response_Data",
@@ -443,7 +443,7 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (27, 2): "LE_Connection_Update",
     (27, 3): "LE_Set_Host_Channel_Classification",
     (27, 4): "LE_Read_Channel_Map",
-    (27, 5): "LE_Read_Remote_Features",
+    (27, 5): "LE_Read_Remote_Features_Page_0",
     (27, 6): "LE_Encrypt",
     (27, 7): "LE_Rand",
     # Octet 28
@@ -454,10 +454,14 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (28, 4): "LE_Receiver_Test_V1",
     (28, 5): "LE_Transmitter_Test_V1",
     (28, 6): "LE_Test_End",
-    # Octet 29 — BT 4.1 additions
+    (28, 7): "LE_Enable_Monitoring_Advertisers",
+    # Octet 29
+    (29, 0): "LE_CS_Set_Channel_Classification",
+    (29, 1): "LE_CS_Set_Procedure_Parameters",
+    (29, 2): "LE_CS_Procedure_Enable",
     (29, 3): "Enhanced_Setup_Synchronous_Connection",
     (29, 4): "Enhanced_Accept_Synchronous_Connection",
-    (29, 5): "Read_Local_Supported_Codecs",
+    (29, 5): "Read_Local_Supported_Codecs_V1",
     (29, 6): "Set_MWS_Channel_Parameters",
     (29, 7): "Set_External_Frame_Configuration",
     # Octet 30
@@ -478,7 +482,7 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (31, 5): "Delete_Reserved_LT_ADDR",
     (31, 6): "Set_Connectionless_Peripheral_Broadcast_Data",
     (31, 7): "Read_Synchronization_Train_Parameters",
-    # Octet 32 — BT 4.2 additions
+    # Octet 32
     (32, 0): "Write_Synchronization_Train_Parameters",
     (32, 1): "Remote_OOB_Extended_Data_Request_Reply",
     (32, 2): "Read_Secure_Connections_Host_Support",
@@ -514,24 +518,24 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (35, 5): "LE_Set_Default_PHY",
     (35, 6): "LE_Set_PHY",
     (35, 7): "LE_Receiver_Test_V2",
-    # Octet 36 — BT 5.0 additions (Extended Advertising)
+    # Octet 36
     (36, 0): "LE_Transmitter_Test_V2",
     (36, 1): "LE_Set_Advertising_Set_Random_Address",
-    (36, 2): "LE_Set_Extended_Advertising_Parameters",
+    (36, 2): "LE_Set_Extended_Advertising_Parameters_V1",
     (36, 3): "LE_Set_Extended_Advertising_Data",
     (36, 4): "LE_Set_Extended_Scan_Response_Data",
     (36, 5): "LE_Set_Extended_Advertising_Enable",
     (36, 6): "LE_Read_Maximum_Advertising_Data_Length",
-    (36, 7): "LE_Read_Number_Of_Supported_Advertising_Sets",
+    (36, 7): "LE_Read_Number_of_Supported_Advertising_Sets",
     # Octet 37
     (37, 0): "LE_Remove_Advertising_Set",
     (37, 1): "LE_Clear_Advertising_Sets",
-    (37, 2): "LE_Set_Periodic_Advertising_Parameters",
+    (37, 2): "LE_Set_Periodic_Advertising_Parameters_V1",
     (37, 3): "LE_Set_Periodic_Advertising_Data",
     (37, 4): "LE_Set_Periodic_Advertising_Enable",
     (37, 5): "LE_Set_Extended_Scan_Parameters",
     (37, 6): "LE_Set_Extended_Scan_Enable",
-    (37, 7): "LE_Extended_Create_Connection",
+    (37, 7): "LE_Extended_Create_Connection_V1",
     # Octet 38
     (38, 0): "LE_Periodic_Advertising_Create_Sync",
     (38, 1): "LE_Periodic_Advertising_Create_Sync_Cancel",
@@ -550,7 +554,7 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (39, 5): "LE_Set_Connectionless_CTE_Transmit_Parameters",
     (39, 6): "LE_Set_Connectionless_CTE_Transmit_Enable",
     (39, 7): "LE_Set_Connectionless_IQ_Sampling_Enable",
-    # Octet 40 — BT 5.1 additions (Direction Finding)
+    # Octet 40
     (40, 0): "LE_Set_Connection_CTE_Receive_Parameters",
     (40, 1): "LE_Set_Connection_CTE_Transmit_Parameters",
     (40, 2): "LE_Connection_CTE_Request_Enable",
@@ -568,7 +572,7 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (41, 5): "LE_Read_Buffer_Size_V2",
     (41, 6): "LE_Read_ISO_TX_Sync",
     (41, 7): "LE_Set_CIG_Parameters",
-    # Octet 42 — BT 5.2 additions (LE Audio)
+    # Octet 42
     (42, 0): "LE_Set_CIG_Parameters_Test",
     (42, 1): "LE_Create_CIS",
     (42, 2): "LE_Remove_CIG",
@@ -588,7 +592,7 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (43, 7): "LE_ISO_Read_Test_Counters",
     # Octet 44
     (44, 0): "LE_ISO_Test_End",
-    (44, 1): "LE_Set_Host_Feature",
+    (44, 1): "LE_Set_Host_Feature_V1",
     (44, 2): "LE_Read_ISO_Link_Quality",
     (44, 3): "LE_Enhanced_Read_Transmit_Power_Level",
     (44, 4): "LE_Read_Remote_Transmit_Power_Level",
@@ -604,7 +608,22 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     (45, 5): "Configure_Data_Path",
     (45, 6): "LE_Set_Data_Related_Address_Changes",
     (45, 7): "Set_Min_Encryption_Key_Size",
-    # Octet 46 — BT 5.3 additions (Subrating)
+    # Octet 46
     (46, 0): "LE_Set_Default_Subrate",
     (46, 1): "LE_Subrate_Request",
+    (46, 2): "LE_Set_Extended_Advertising_Parameters_V2",
+    (46, 3): "LE_Set_Decision_Data",
+    (46, 4): "LE_Set_Decision_Instructions",
+    (46, 5): "LE_Set_Periodic_Advertising_Subevent_Data",
+    (46, 6): "LE_Set_Periodic_Advertising_Response_Data",
+    (46, 7): "LE_Set_Periodic_Sync_Subevent",
+    # Octet 47
+    (47, 0): "LE_Extended_Create_Connection_V2",
+    (47, 1): "LE_Frame_Space_Update",
+    (47, 2): "LE_Read_All_Local_Supported_Features",
+    (47, 3): "LE_Read_All_Remote_Features",
+    (47, 4): "LE_Set_Host_Feature_V2",
+    (47, 5): "LE_Add_Device_To_Monitored_Advertisers_List",
+    (47, 6): "LE_Remove_Device_From_Monitored_Advertisers_List",
+    (47, 7): "LE_Clear_Monitored_Advertisers_List",
 }
