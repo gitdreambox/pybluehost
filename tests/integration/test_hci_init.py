@@ -11,6 +11,7 @@ from pybluehost.hci.constants import (
     HCI_READ_LOCAL_VERSION,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
     HCI_READ_LOCAL_SUPPORTED_FEATURES,
+    HCI_READ_LOCAL_EXTENDED_FEATURES,
     HCI_READ_BD_ADDR,
     HCI_READ_BUFFER_SIZE,
     HCI_LE_READ_BUFFER_SIZE,
@@ -44,6 +45,9 @@ EXPECTED_INIT_OPCODES = [
     HCI_HOST_BUFFER_SIZE,
     HCI_LE_SET_SCAN_PARAMS,
     HCI_LE_SET_RANDOM_ADDRESS,
+    # BR/EDR Extended Features pages 1+2 (Spec 5.4 Vol 2 Part C §3.3)
+    HCI_READ_LOCAL_EXTENDED_FEATURES,
+    HCI_READ_LOCAL_EXTENDED_FEATURES,
 ]
 
 
@@ -62,7 +66,7 @@ def _record_sent_opcodes(hci):
     return transport
 
 
-async def test_hci_init_sequence_sends_all_16_commands(stack):
+async def test_hci_init_sequence_sends_all_expected_commands(stack):
     hci = stack.hci
     transport = _record_sent_opcodes(hci)
 
@@ -83,7 +87,7 @@ async def test_hci_init_sequence_all_commands_succeed(stack):
     await asyncio.wait_for(hci.initialize(), timeout=5.0)
 
     # If initialize() completed without error, all commands succeeded
-    assert len(transport.sent_opcodes) == 16
+    assert len(transport.sent_opcodes) == len(EXPECTED_INIT_OPCODES)
 
 
 async def test_hci_init_sequence_timeout_raises(stack):

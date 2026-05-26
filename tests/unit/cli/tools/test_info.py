@@ -105,6 +105,28 @@ async def test_info_json_decodes_version_names(capsys):
 
 
 @pytest.mark.asyncio
+async def test_info_json_exposes_bredr_extended_pages(capsys):
+    """BR/EDR Read_Local_Extended_Features pages 1+2 surface as separate
+    decoded sections in the JSON output."""
+    from pybluehost.cli.tools.info import _cmd_info_async
+
+    class _Args:
+        transport = "virtual"
+        json = True
+
+    await _cmd_info_async(_Args())
+    parsed = json.loads(capsys.readouterr().out)
+    assert "bredr_features_page1" in parsed
+    assert "bredr_features_page2" in parsed
+    # Each page-decoded section is a dict of (octet/bit) -> {name, supported}
+    p2 = parsed["bredr_features_page2"]
+    # (1, 0) is "Secure Connections (Controller Support)" per Spec 5.4
+    assert "1/0" in p2
+    assert "Secure Connections" in p2["1/0"]["name"]
+    assert isinstance(p2["1/0"]["supported"], bool)
+
+
+@pytest.mark.asyncio
 async def test_info_capability_summary_keys_present(capsys):
     """capability_summary exposes a fixed set of 7 derived capability flags."""
     from pybluehost.cli.tools.info import _cmd_info_async
@@ -124,6 +146,8 @@ async def test_info_capability_summary_keys_present(capsys):
         "le_coded_phy",
         "bredr_encryption",
         "bredr_ssp",
+        "bredr_sc_controller",
+        "bredr_sc_host_support",
         "extended_inquiry_response",
     }
     assert set(summary.keys()) == expected_keys

@@ -31,6 +31,7 @@ from pybluehost.hci.constants import (
     HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY,
     HCI_READ_BD_ADDR,
     HCI_READ_BUFFER_SIZE,
+    HCI_READ_LOCAL_EXTENDED_FEATURES,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
     HCI_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_READ_LOCAL_VERSION,
@@ -94,6 +95,7 @@ class VirtualController:
             HCI_LE_READ_BUFFER_SIZE: self._handle_le_read_buffer_size,
             HCI_READ_LOCAL_SUPPORTED_COMMANDS: self._handle_read_local_supported_commands,
             HCI_READ_LOCAL_SUPPORTED_FEATURES: self._handle_read_local_supported_features,
+            HCI_READ_LOCAL_EXTENDED_FEATURES: self._handle_read_local_extended_features,
             HCI_LE_READ_LOCAL_SUPPORTED_FEATURES: self._handle_le_read_local_supported_features,
             HCI_SET_EVENT_MASK: self._handle_status_only,
             HCI_LE_SET_EVENT_MASK: self._handle_status_only,
@@ -425,6 +427,15 @@ class VirtualController:
     def _handle_read_local_supported_features(self, cmd: HCICommand) -> bytes:
         # status + 8 bytes of LMP features
         return b"\x00" + b"\x00" * 8
+
+    def _handle_read_local_extended_features(self, cmd: HCICommand) -> bytes:
+        """Return an empty extended-features page with max_page=2 advertised.
+
+        Per Core Spec 5.4 Vol 4 Part E §7.4.4 the response is:
+            status(1) + page_number(1) + max_page_number(1) + features(8)
+        """
+        page = cmd.parameters[0] if cmd.parameters else 0
+        return b"\x00" + bytes([page, 2]) + b"\x00" * 8
 
     def _handle_le_read_local_supported_features(self, cmd: HCICommand) -> bytes:
         # status + 8 bytes of LE features

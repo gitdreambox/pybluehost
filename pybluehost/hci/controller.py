@@ -122,6 +122,9 @@ class HCIController:
         self._lmp_version: int | None = None
         self._lmp_subversion: int | None = None
         self._bredr_features: bytes | None = None
+        self._bredr_features_p1: bytes | None = None
+        self._bredr_features_p2: bytes | None = None
+        self._bredr_extended_max_page: int | None = None
         self._le_features: bytes | None = None
 
         # Upper-layer callbacks (set via set_upstream)
@@ -221,6 +224,18 @@ class HCIController:
         return self._bredr_features
 
     @property
+    def bredr_features_p1(self) -> bytes | None:
+        return self._bredr_features_p1
+
+    @property
+    def bredr_features_p2(self) -> bytes | None:
+        return self._bredr_features_p2
+
+    @property
+    def bredr_extended_max_page(self) -> int | None:
+        return self._bredr_extended_max_page
+
+    @property
     def le_features(self) -> bytes | None:
         return self._le_features
 
@@ -305,6 +320,7 @@ class HCIController:
         from pybluehost.hci.constants import (
             HCI_READ_LOCAL_VERSION,
             HCI_READ_LOCAL_SUPPORTED_FEATURES,
+            HCI_READ_LOCAL_EXTENDED_FEATURES,
             HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
         )
         # return_parameters[0] is the status byte.
@@ -320,6 +336,20 @@ class HCIController:
             self._lmp_subversion = int.from_bytes(payload[6:8], "little")
         elif opcode == HCI_READ_LOCAL_SUPPORTED_FEATURES and len(return_parameters) >= 9:
             self._bredr_features = bytes(return_parameters[1:9])
+        elif opcode == HCI_READ_LOCAL_EXTENDED_FEATURES and len(return_parameters) >= 11:
+            # Layout per Core Spec 5.4 Vol 4 Part E §7.4.4:
+            #   status(1) + page_number(1) + max_page_number(1) + features(8)
+            payload = return_parameters[1:]
+            page_number = payload[0]
+            self._bredr_extended_max_page = payload[1]
+            features = bytes(payload[2:10])
+            if page_number == 1:
+                self._bredr_features_p1 = features
+            elif page_number == 2:
+                self._bredr_features_p2 = features
+            # page_number == 0 is equivalent to Read_Local_Supported_Features;
+            # we don't overwrite _bredr_features here to keep the source of
+            # truth on the simple-read command.
         elif opcode == HCI_LE_READ_LOCAL_SUPPORTED_FEATURES and len(return_parameters) >= 9:
             self._le_features = bytes(return_parameters[1:9])
 
@@ -422,6 +452,29 @@ class HCIController:
             rsp = await self.send_command(cmd)
             if isinstance(rsp, HCI_Command_Complete_Event):
                 self._capture_capability_response(opcode, rsp.return_parameters)
+
+        # BR/EDR LMP Features pages 1+2 (Spec 5.4 Vol 2 Part C §3.3):
+        # page 1 = host features, page 2 = controller extended features. Both
+        # gated by Read_Local_Extended_Features command support; the response
+        # also reports the controller's max-page so we can stop early if a
+        # controller only supports page 0.
+        from pybluehost.hci.constants import HCI_READ_LOCAL_EXTENDED_FEATURES
+        if self._supported_commands.has(HCI_READ_LOCAL_EXTENDED_FEATURES):
+            from pybluehost.hci.packets import HCI_Read_Local_Extended_Features_Command
+
+            for page in (1, 2):
+                if (
+                    self._bredr_extended_max_page is not None
+                    and page > self._bredr_extended_max_page
+                ):
+                    break
+                rsp = await self.send_command(
+                    HCI_Read_Local_Extended_Features_Command(page_number=page)
+                )
+                if isinstance(rsp, HCI_Command_Complete_Event):
+                    self._capture_capability_response(
+                        HCI_READ_LOCAL_EXTENDED_FEATURES, rsp.return_parameters
+                    )
 
         # BR/EDR Secure Connections — gated on config AND controller support
         if self._security_config is not None and self._security_config.enable_secure_connections:

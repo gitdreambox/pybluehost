@@ -16,6 +16,8 @@ from typing import Any
 from pybluehost.hci.capabilities import _OPCODE_BIT_POSITIONS
 from pybluehost.hci.features_decode import (
     BREDR_FEATURE_BIT_NAMES,
+    BREDR_FEATURE_BIT_NAMES_P1,
+    BREDR_FEATURE_BIT_NAMES_P2,
     LE_FEATURE_BIT_NAMES,
     hci_version_name,
     manufacturer_name,
@@ -85,9 +87,13 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
     cmd_bitmap = bytes(hci.supported_commands.bitmap) if hci.supported_commands else b""
     le_features = hci.le_features or b""
     bredr_features = hci.bredr_features or b""
+    bredr_features_p1 = hci.bredr_features_p1 or b""
+    bredr_features_p2 = hci.bredr_features_p2 or b""
 
     le_decoded = _decode_bitmap(le_features, LE_FEATURE_BIT_NAMES)
     bredr_decoded = _decode_bitmap(bredr_features, BREDR_FEATURE_BIT_NAMES)
+    bredr_decoded_p1 = _decode_bitmap(bredr_features_p1, BREDR_FEATURE_BIT_NAMES_P1)
+    bredr_decoded_p2 = _decode_bitmap(bredr_features_p2, BREDR_FEATURE_BIT_NAMES_P2)
     cmd_decoded, unknown_bits = _decode_commands_bitmap(cmd_bitmap)
 
     # See docs/HARDWARE_E2E.md §3.1 for the spec references behind each row.
@@ -114,6 +120,13 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
         # tests/e2e/_helpers.py:_supports_classic_ssp — the gate that decides
         # whether Classic e2e tests run vs skip.
         "bredr_ssp": _opcode_set(cmd_bitmap, 32, 5),
+        # BR/EDR Secure Connections (controller). LMP page 2 octet 1 bit 0.
+        # Only populated if Read_Local_Extended_Features page 2 was fetched.
+        "bredr_sc_controller": _bit_set(bredr_features_p2, 1, 0),
+        # BR/EDR Secure Connections (host). LMP page 1 octet 0 bit 3 — what
+        # the host has WRITTEN to the controller via Write_Secure_Connections_
+        # Host_Support. Reflects PyBlueHost's own config in the current session.
+        "bredr_sc_host_support": _bit_set(bredr_features_p1, 0, 3),
         # Extended Inquiry Response. LMP Features page 0 octet 6 bit 0.
         "extended_inquiry_response": _bit_set(bredr_features, 6, 0),
     }
@@ -134,6 +147,8 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
         "capability_summary": summary,
         "le_features": le_decoded,
         "bredr_features": bredr_decoded,
+        "bredr_features_page1": bredr_decoded_p1,
+        "bredr_features_page2": bredr_decoded_p2,
         "supported_commands": {
             "decoded": cmd_decoded,
             "unknown_bits_set": unknown_bits,
@@ -251,6 +266,22 @@ def _format_human_table(data: dict[str, Any]) -> str:
         marker = "yes" if entry["supported"] else " "
         lines.append(f"  {ob:<5} {entry['name']:<55} : {marker}")
     lines.append("")
+
+    if data["bredr_features_page1"]:
+        lines.append("BR/EDR Features (page 1, host features)")
+        lines.append("---------------------------------------")
+        for ob, entry in data["bredr_features_page1"].items():
+            marker = "yes" if entry["supported"] else " "
+            lines.append(f"  {ob:<5} {entry['name']:<55} : {marker}")
+        lines.append("")
+
+    if data["bredr_features_page2"]:
+        lines.append("BR/EDR Features (page 2, controller extended)")
+        lines.append("---------------------------------------------")
+        for ob, entry in data["bredr_features_page2"].items():
+            marker = "yes" if entry["supported"] else " "
+            lines.append(f"  {ob:<5} {entry['name']:<55} : {marker}")
+        lines.append("")
 
     lines.append("Supported HCI commands (octet/bit -> name)")
     lines.append("------------------------------------------")

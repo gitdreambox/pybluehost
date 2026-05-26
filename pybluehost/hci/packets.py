@@ -32,6 +32,7 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_SCAN_PARAMS,
     HCI_LE_SET_RANDOM_ADDRESS,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
+    HCI_READ_LOCAL_EXTENDED_FEATURES,
     HCI_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_LE_START_ENCRYPTION,
@@ -329,6 +330,36 @@ class HCI_Read_Local_Supported_Features_Command(HCICommand):
     @classmethod
     def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_Read_Local_Supported_Features_Command:
         return cls()
+
+
+@PacketRegistry.register_command(HCI_READ_LOCAL_EXTENDED_FEATURES)
+@dataclass
+class HCI_Read_Local_Extended_Features_Command(HCICommand):
+    """HCI_Read_Local_Extended_Features command (Spec 5.4 Vol 4 Part E §7.4.4).
+
+    Reads one 8-byte LMP features page. page_number=0 is equivalent to
+    HCI_Read_Local_Supported_Features. Page 1 carries host-side bits
+    (LE Supported (Host), Secure Connections (Host Support), ...). Page 2
+    carries controller-side extended bits (Secure Connections (Controller), ...).
+    """
+
+    opcode: int = field(default=HCI_READ_LOCAL_EXTENDED_FEATURES, init=False)
+    page_number: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return bytes([self.page_number & 0xFF])
+
+    @parameters.setter
+    def parameters(self, _value: bytes) -> None:  # type: ignore[override]
+        pass
+
+    @classmethod
+    def from_bytes(
+        cls, opcode: int, parameters: bytes
+    ) -> HCI_Read_Local_Extended_Features_Command:
+        page = parameters[0] if parameters else 0
+        return cls(page_number=page)
 
 
 @PacketRegistry.register_command(HCI_LE_READ_LOCAL_SUPPORTED_FEATURES)

@@ -126,6 +126,39 @@ BREDR_FEATURE_BIT_NAMES: dict[tuple[int, int], str] = {
 
 
 # ---------------------------------------------------------------------------
+# BR/EDR LMP Features page 1 — host-side features
+# Core Spec 5.4 Vol 2 Part C §3.3 Table 3.3
+# ---------------------------------------------------------------------------
+
+BREDR_FEATURE_BIT_NAMES_P1: dict[tuple[int, int], str] = {
+    (0, 0): "Secure Simple Pairing (Host Support)",
+    (0, 1): "LE Supported (Host)",
+    (0, 2): "Simultaneous LE and BR/EDR to Same Device Capable (Host)",
+    (0, 3): "Secure Connections (Host Support)",
+}
+
+
+# ---------------------------------------------------------------------------
+# BR/EDR LMP Features page 2 — extended controller-side features
+# Core Spec 5.4 Vol 2 Part C §3.3 Table 3.4
+# ---------------------------------------------------------------------------
+
+BREDR_FEATURE_BIT_NAMES_P2: dict[tuple[int, int], str] = {
+    (0, 0): "Connectionless Slave Broadcast - Transmitter Operation",
+    (0, 1): "Connectionless Slave Broadcast - Receiver Operation",
+    (0, 2): "Synchronization Train",
+    (0, 3): "Synchronization Scan",
+    (0, 4): "HCI_Inquiry_Response_Notification Event",
+    (0, 5): "Generalized interlaced scan",
+    (0, 6): "Coarse Clock Adjustment",
+    (1, 0): "Secure Connections (Controller Support)",
+    (1, 1): "Ping",
+    (1, 2): "Slot Availability Mask",
+    (1, 3): "Train Nudging",
+}
+
+
+# ---------------------------------------------------------------------------
 # Bluetooth SIG Company Identifiers (common chipset vendors)
 # Full list: https://www.bluetooth.com/specifications/assigned-numbers/company-identifiers/
 # ---------------------------------------------------------------------------
