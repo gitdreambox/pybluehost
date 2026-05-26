@@ -18,6 +18,7 @@ from pybluehost.hci.features_decode import (
     BREDR_FEATURE_BIT_NAMES_P1,
     BREDR_FEATURE_BIT_NAMES_P2,
     LE_FEATURE_BIT_NAMES,
+    LE_FEATURE_BIT_NAMES_EXT,
     SUPPORTED_COMMAND_NAMES,
     hci_version_name,
     manufacturer_name,
@@ -167,8 +168,14 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
         "bredr_features_page2": bredr_decoded_p2,
         # LE Features extension pages (Spec 6.0+). Empty dict on Spec 5.4
         # controllers since they don't advertise Read_Local_Supported_Features_Page.
+        # Page 1 (bits 64+) decoded via LE_FEATURE_BIT_NAMES_EXT; other pages
+        # surfaced as raw hex since the spec hasn't assigned names yet.
         "le_features_pages": {
-            str(page): bytes(features).hex()
+            str(page): (
+                _decode_bitmap(features, LE_FEATURE_BIT_NAMES_EXT)
+                if page == 1
+                else bytes(features).hex()
+            )
             for page, features in sorted(le_features_pages.items())
         },
         "le_features_max_page": le_features_max_page,

@@ -20,11 +20,11 @@ LE_FEATURE_BIT_NAMES: dict[tuple[int, int], str] = {
     (0, 0): "LE Encryption",
     (0, 1): "Connection Parameters Request Procedure",
     (0, 2): "Extended Reject Indication",
-    (0, 3): "Slave-initiated Features Exchange",
+    (0, 3): "Peripheral-initiated Features Exchange",
     (0, 4): "LE Ping",
     (0, 5): "LE Data Packet Length Extension",
     (0, 6): "LL Privacy",
-    (0, 7): "Extended Scanner Filter Policies",
+    (0, 7): "Extended Scanning Filter Policies",
     (1, 0): "LE 2M PHY",
     (1, 1): "Stable Modulation Index - Transmitter",
     (1, 2): "Stable Modulation Index - Receiver",
@@ -57,6 +57,31 @@ LE_FEATURE_BIT_NAMES: dict[tuple[int, int], str] = {
     (4, 5): "Connection Subrating",
     (4, 6): "Connection Subrating (Host Support)",
     (4, 7): "Channel Classification",
+    # Octet 5 — Spec 6.0 additions (LE Audio + Channel Sounding era)
+    (5, 0): "Advertising Coding Selection",
+    (5, 1): "Advertising Coding Selection (Host Support)",
+    (5, 2): "Decision-Based Advertising Filtering",
+    (5, 3): "Periodic Advertising with Responses - Advertiser",
+    (5, 4): "Periodic Advertising with Responses - Scanner",
+    (5, 5): "Unsegmented Framed Mode",
+    (5, 6): "Channel Sounding",
+    (5, 7): "Channel Sounding (Host Support)",
+    # Octet 6
+    (6, 0): "Channel Sounding Tone Quality Indication",
+    # Octet 7 — Spec 6.0 reserves bit 63 as the extended-feature-set indicator
+    (7, 7): "LL Extended Feature Set",
+}
+
+
+# ---------------------------------------------------------------------------
+# LE Features extension page 1 (bits 64+) — Spec 6.0 additions, returned
+# by HCI_LE_Read_Local_Supported_Features_Page(page=1) on Spec 6.0+ adapters.
+# Core Spec 6.0 Vol 6 Part B §4.6 Table 4.10 (bits 64-65).
+# ---------------------------------------------------------------------------
+
+LE_FEATURE_BIT_NAMES_EXT: dict[tuple[int, int], str] = {
+    (0, 0): "Monitoring Advertisers",     # bit 64
+    (0, 1): "Frame Space Update",         # bit 65
 }
 
 
@@ -74,7 +99,7 @@ BREDR_FEATURE_BIT_NAMES: dict[tuple[int, int], str] = {
     (0, 5): "Role switch",
     (0, 6): "Hold mode",
     (0, 7): "Sniff mode",
-    (1, 0): "Park state",
+    (1, 0): "Previously used (was Park state)",
     (1, 1): "Power control requests",
     (1, 2): "Channel quality driven data rate (CQDDR)",
     (1, 3): "SCO link",
@@ -101,7 +126,7 @@ BREDR_FEATURE_BIT_NAMES: dict[tuple[int, int], str] = {
     (4, 1): "EV5 packets",
     (4, 3): "AFH capable peripheral",
     (4, 4): "AFH classification peripheral",
-    (4, 5): "BR/EDR Not Supported",
+    (4, 5): "Previously used",
     (4, 6): "LE Supported (Controller)",
     (4, 7): "3-slot EDR ACL packets",
     (5, 0): "5-slot EDR ACL packets",
@@ -133,7 +158,7 @@ BREDR_FEATURE_BIT_NAMES: dict[tuple[int, int], str] = {
 BREDR_FEATURE_BIT_NAMES_P1: dict[tuple[int, int], str] = {
     (0, 0): "Secure Simple Pairing (Host Support)",
     (0, 1): "LE Supported (Host)",
-    (0, 2): "Simultaneous LE and BR/EDR to Same Device Capable (Host)",
+    (0, 2): "Previously used (was Simultaneous LE and BR/EDR Host)",
     (0, 3): "Secure Connections (Host Support)",
 }
 
@@ -144,8 +169,8 @@ BREDR_FEATURE_BIT_NAMES_P1: dict[tuple[int, int], str] = {
 # ---------------------------------------------------------------------------
 
 BREDR_FEATURE_BIT_NAMES_P2: dict[tuple[int, int], str] = {
-    (0, 0): "Connectionless Slave Broadcast - Transmitter Operation",
-    (0, 1): "Connectionless Slave Broadcast - Receiver Operation",
+    (0, 0): "Connectionless Peripheral Broadcast - Transmitter Operation",
+    (0, 1): "Connectionless Peripheral Broadcast - Receiver Operation",
     (0, 2): "Synchronization Train",
     (0, 3): "Synchronization Scan",
     (0, 4): "HCI_Inquiry_Response_Notification Event",
