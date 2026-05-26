@@ -67,11 +67,12 @@ _OPCODE_BIT_POSITIONS: dict[int, tuple[int, int]] = {
     HCI_PIN_CODE_REQUEST_NEGATIVE_REPLY:          (1, 5),
     HCI_AUTH_REQUESTED:                           (1, 7),
     HCI_SET_CONNECTION_ENCRYPTION:                (2, 1),
-    # Controller & Baseband
-    HCI_SET_EVENT_MASK:                           (5, 6),
-    HCI_RESET:                                    (5, 7),
-    HCI_WRITE_SCAN_ENABLE:                        (6, 2),
-    HCI_HOST_BUFFER_SIZE:                         (10, 6),
+    # Controller & Baseband — positions per Spec 5.4 Vol 4 Part E §6.27
+    # Table 6.27. Verified against real hardware (CSR8510 BT 4.0) 2026-05.
+    HCI_SET_EVENT_MASK:                           (5, 5),
+    HCI_RESET:                                    (5, 6),
+    HCI_WRITE_SCAN_ENABLE:                        (7, 6),
+    HCI_HOST_BUFFER_SIZE:                         (10, 5),
     HCI_READ_LOCAL_VERSION:                       (14, 3),
     HCI_READ_LOCAL_SUPPORTED_FEATURES:            (14, 4),
     HCI_READ_LOCAL_SUPPORTED_COMMANDS:            (14, 5),
@@ -80,18 +81,22 @@ _OPCODE_BIT_POSITIONS: dict[int, tuple[int, int]] = {
     HCI_READ_BD_ADDR:                             (15, 1),
     HCI_WRITE_SIMPLE_PAIRING_MODE:                (17, 6),
     HCI_WRITE_LE_HOST_SUPPORTED:                  (24, 6),
-    # LE
+    # LE — positions per Spec 5.4 Vol 4 Part E §6.27 Table 6.27.
     HCI_LE_SET_EVENT_MASK:                        (25, 0),
+    HCI_LE_READ_BUFFER_SIZE:                      (25, 1),
+    HCI_LE_READ_LOCAL_SUPPORTED_FEATURES:         (25, 2),
     HCI_LE_SET_RANDOM_ADDRESS:                    (25, 4),
-    HCI_LE_READ_BUFFER_SIZE:                      (25, 7),
-    HCI_LE_READ_LOCAL_SUPPORTED_FEATURES:         (26, 0),
     HCI_LE_SET_SCAN_PARAMS:                       (26, 2),
     # SSP commands at octet 32-33
     HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT:    (32, 3),
-    HCI_IO_CAPABILITY_REQUEST_REPLY:              (32, 5),
-    HCI_USER_CONFIRMATION_REQUEST_REPLY:          (32, 6),
-    HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY: (32, 7),
-    HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY:     (33, 5),
+    # SSP reply commands — Spec 5.4 Vol 4 Part E §6.27 Table 6.27 puts these
+    # at octets 18–20, NOT 32 as an earlier version of this map incorrectly
+    # claimed. (Real-hardware survey 2026-05 confirmed: BT 4.0 era adapters
+    # like CSR8510 have SSP but lack BT 4.1 commands at octet 32.)
+    HCI_IO_CAPABILITY_REQUEST_REPLY:              (18, 7),
+    HCI_USER_CONFIRMATION_REQUEST_REPLY:          (19, 0),
+    HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY: (19, 1),
+    HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY:     (20, 3),
     # LE Secure Connections (verified by tests/e2e/_helpers.py:25-27)
     HCI_LE_READ_LOCAL_P256_PUBLIC_KEY:            (34, 1),
     HCI_LE_GENERATE_DHKEY:                        (34, 2),

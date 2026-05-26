@@ -185,6 +185,7 @@ MANUFACTURER_NAMES: dict[int, str] = {
     0x0075: "Samsung Electronics Co. Ltd.",
     0x00E0: "Google",
     0x05A7: "Linux Foundation",
+    0x08E7: "Barrot Technology Co., Ltd.",
 }
 
 
