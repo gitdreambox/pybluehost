@@ -145,9 +145,13 @@ def _supports_classic_ssp(stack) -> bool:
     """True iff the controller advertises BR/EDR SSP support.
 
     Virtual mode short-circuits True. Hardware adapters consult the HCI
-    Read_Local_Supported_Commands bitmap for SSP opcodes
-    (IO_Capability_Request_Reply at octet 32 bit 5 per Core Spec 5.4
-    Vol 4 Part E §6.27).
+    Read_Local_Supported_Commands bitmap for IO_Capability_Request_Reply
+    at octet 18 bit 7 (Core Spec 5.4 Vol 4 Part E §6.27 Table 6.27).
+
+    Earlier versions of this helper checked octet 32 bit 5 — that bit is
+    actually Write_Authenticated_Payload_Timeout (a BT 4.1 command), and
+    BT 4.0 era adapters like CSR8510 lack it even though they fully support
+    SSP. Verified by real-hardware survey 2026-05.
     """
     if getattr(stack, "_virtual_controller", None) is not None:
         return True
@@ -159,7 +163,7 @@ def _supports_classic_ssp(stack) -> bool:
         return False
     bitmap = getattr(caps, "bitmap", None) or caps
     try:
-        return bool(bitmap[32] & (1 << 5))
+        return bool(bitmap[18] & (1 << 7))
     except (IndexError, TypeError):
         return False
 

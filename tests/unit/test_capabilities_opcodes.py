@@ -50,6 +50,22 @@ def test_le_sc_opcode_positions_match_octet_34():
     assert _OPCODE_BIT_POSITIONS[HCI_LE_GENERATE_DHKEY] == (34, 2)
 
 
+def test_ssp_opcode_positions_match_spec():
+    """SSP reply commands live at octets 18-20 per Spec 5.4 Table 6.27.
+    Real-hardware survey 2026-05 verified BT 4.0 adapters (CSR8510) have
+    these bits set even when BT 4.1 commands at octet 32 are missing."""
+    from pybluehost.hci.constants import (
+        HCI_IO_CAPABILITY_REQUEST_REPLY,
+        HCI_USER_CONFIRMATION_REQUEST_REPLY,
+        HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
+        HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY,
+    )
+    assert _OPCODE_BIT_POSITIONS[HCI_IO_CAPABILITY_REQUEST_REPLY] == (18, 7)
+    assert _OPCODE_BIT_POSITIONS[HCI_USER_CONFIRMATION_REQUEST_REPLY] == (19, 0)
+    assert _OPCODE_BIT_POSITIONS[HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY] == (19, 1)
+    assert _OPCODE_BIT_POSITIONS[HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY] == (20, 3)
+
+
 def test_write_scan_enable_still_in_map():
     assert HCI_WRITE_SCAN_ENABLE in _OPCODE_BIT_POSITIONS
 

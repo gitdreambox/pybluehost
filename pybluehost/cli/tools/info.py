@@ -118,10 +118,13 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
         # BR/EDR Baseline encryption. LMP Features page 0 octet 0 bit 2.
         "bredr_encryption": _bit_set(bredr_features, 0, 2),
         # BR/EDR Secure Simple Pairing: controller advertises the IO Capability
-        # reply command (Supported_Commands octet 32 bit 5). Matches
-        # tests/e2e/_helpers.py:_supports_classic_ssp — the gate that decides
-        # whether Classic e2e tests run vs skip.
-        "bredr_ssp": _opcode_set(cmd_bitmap, 32, 5),
+        # reply command (Supported_Commands octet 18 bit 7).
+        # Earlier this checked (32, 5) which is actually
+        # Write_Authenticated_Payload_Timeout (BT 4.1 command); BT 4.0 era
+        # adapters like CSR8510 have SSP but lack the 4.1 command, so the
+        # old gate gave false negatives. Matches tests/e2e/_helpers.py:
+        # _supports_classic_ssp.
+        "bredr_ssp": _opcode_set(cmd_bitmap, 18, 7),
         # BR/EDR Secure Connections (controller). LMP page 2 octet 1 bit 0.
         # Only populated if Read_Local_Extended_Features page 2 was fetched.
         "bredr_sc_controller": _bit_set(bredr_features_p2, 1, 0),
