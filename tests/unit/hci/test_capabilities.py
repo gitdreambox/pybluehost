@@ -47,18 +47,18 @@ def test_opcode_outside_registry_returns_false():
     assert caps.has(0xFFFF) is False
 
 
-def test_hci_reset_bit_is_octet5_bit6():
-    """HCI_Reset is at octet 5 bit 6 (Core 5.4 Vol 4 Part E Table 6.27).
+def test_hci_reset_bit_is_octet5_bit7():
+    """HCI_Reset is at octet 5 bit 7 (Spec 6.1 §6.27 Table 6.27).
 
-    Earlier this test asserted (5, 7) — that's actually Set_Event_Filter.
-    Real-hardware survey 2026-05 confirmed Reset is at (5, 6).
+    Octet 5 layout per spec: bit 5=Flow_Specification, bit 6=Set_Event_Mask,
+    bit 7=Reset.
     """
     bitmap = bytearray(64)
-    bitmap[5] = 0b0100_0000
+    bitmap[5] = 0b1000_0000
     caps = SupportedCommands(bytes(bitmap))
     assert caps.has(HCI_RESET)
 
-    bitmap[5] = 0b1011_1111
+    bitmap[5] = 0b0111_1111
     caps = SupportedCommands(bytes(bitmap))
     assert not caps.has(HCI_RESET)
 

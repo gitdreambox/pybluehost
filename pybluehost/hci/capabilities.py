@@ -66,15 +66,18 @@ _OPCODE_BIT_POSITIONS: dict[int, tuple[int, int]] = {
     HCI_PIN_CODE_REQUEST_REPLY:                   (1, 4),
     HCI_PIN_CODE_REQUEST_NEGATIVE_REPLY:          (1, 5),
     HCI_AUTH_REQUESTED:                           (1, 7),
-    HCI_SET_CONNECTION_ENCRYPTION:                (2, 1),
-    # Controller & Baseband — positions per Spec 5.4 Vol 4 Part E §6.27
-    # Table 6.27. Verified against real hardware (CSR8510 BT 4.0) 2026-05.
-    HCI_SET_EVENT_MASK:                           (5, 5),
-    HCI_RESET:                                    (5, 6),
-    HCI_WRITE_SCAN_ENABLE:                        (7, 6),
-    HCI_HOST_BUFFER_SIZE:                         (10, 5),
+    HCI_SET_CONNECTION_ENCRYPTION:                (2, 0),
+    # Controller & Baseband — positions per Spec 6.1 §6.27 Table 6.27.
+    HCI_SET_EVENT_MASK:                           (5, 6),
+    HCI_RESET:                                    (5, 7),
+    HCI_WRITE_SCAN_ENABLE:                        (7, 7),
+    HCI_HOST_BUFFER_SIZE:                         (10, 6),
     HCI_READ_LOCAL_VERSION:                       (14, 3),
-    HCI_READ_LOCAL_SUPPORTED_FEATURES:            (14, 4),
+    HCI_READ_LOCAL_SUPPORTED_FEATURES:            (14, 5),
+    # Read_Local_Supported_Commands has NO dedicated bit per Spec (it's the
+    # foundational query). Mapped here to the same bit as Supported_Features
+    # so has() returns sensible results on real adapters; the command is
+    # always sent unconditionally in initialize().
     HCI_READ_LOCAL_SUPPORTED_COMMANDS:            (14, 5),
     HCI_READ_LOCAL_EXTENDED_FEATURES:             (14, 6),
     HCI_READ_BUFFER_SIZE:                         (14, 7),

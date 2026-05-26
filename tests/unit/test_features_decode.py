@@ -82,7 +82,9 @@ def test_supported_command_names_has_le_create_connection():
 
 def test_supported_command_names_has_le_extended_adv():
     from pybluehost.hci.features_decode import SUPPORTED_COMMAND_NAMES
-    assert "LE_Set_Extended_Advertising_Parameters" in SUPPORTED_COMMAND_NAMES.values()
+    # Spec 6.0+ has v1 and v2 of this command at different bit positions;
+    # check the V1 form (older, more widely supported).
+    assert "LE_Set_Extended_Advertising_Parameters_V1" in SUPPORTED_COMMAND_NAMES.values()
 
 
 def test_supported_command_names_covers_octets_0_to_46():
