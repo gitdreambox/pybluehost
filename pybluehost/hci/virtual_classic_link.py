@@ -241,7 +241,7 @@ class VirtualClassicLink:
         if peer._inquiry_scan:
             body = (
                 bytes([0x01])
-                + peer_addr.address
+                + peer_addr.to_hci()
                 + bytes([0x01])              # page_scan_repetition_mode R1
                 + bytes([0x00, 0x00])         # reserved
                 + bytes([0x00, 0x00, 0x00])   # class_of_device (unspecified)
@@ -271,11 +271,11 @@ class VirtualClassicLink:
             await asyncio.sleep(self.page_timeout_seconds)
             await self._emit_connection_complete(
                 initiator, status=0x04, handle=0x0000,
-                peer_addr=BDAddress(peer_addr_bytes),
+                peer_addr=BDAddress.from_hci(peer_addr_bytes),
             )
             return
         handle = self._allocate_handle()
-        peer_addr = BDAddress(peer_addr_bytes)
+        peer_addr = BDAddress.from_hci(peer_addr_bytes)
         initiator_addr = self._addr_of(initiator)
         self._handles[handle] = _ConnEntry(
             handle=handle, state=_ConnState.PENDING,
@@ -283,7 +283,7 @@ class VirtualClassicLink:
             acceptor=peer, acceptor_addr=peer_addr,
         )
         # Connection_Request: BD_ADDR(6) + Class_Of_Device(3) + Link_Type(1=ACL)
-        body = initiator_addr.address + bytes([0x00, 0x00, 0x00, 0x01])
+        body = initiator_addr.to_hci() + bytes([0x00, 0x00, 0x00, 0x01])
         event = HCIEvent(
             event_code=int(EventCode.CONNECTION_REQUEST), parameters=body,
         )
@@ -334,7 +334,7 @@ class VirtualClassicLink:
         body = (
             bytes([status])
             + struct.pack("<H", handle)
-            + peer_addr.address
+            + peer_addr.to_hci()
             + bytes([0x01, 0x00])  # link_type=ACL, encryption_mode=disabled
         )
         event = HCIEvent(
@@ -363,7 +363,7 @@ class VirtualClassicLink:
     async def _auth_emit_link_key_request(
         self, initiator: VirtualController, entry: _ConnEntry,
     ) -> None:
-        body = entry.acceptor_addr.address
+        body = entry.acceptor_addr.to_hci()
         event = HCIEvent(
             event_code=int(EventCode.LINK_KEY_REQUEST), parameters=body,
         )
@@ -392,8 +392,8 @@ class VirtualClassicLink:
     ) -> None:
         """Emit IO_Capability_Request to BOTH sides."""
         peer = self._peer_of(initiator)
-        body_to_initiator = self._addr_of(peer).address
-        body_to_peer = self._addr_of(initiator).address
+        body_to_initiator = self._addr_of(peer).to_hci()
+        body_to_peer = self._addr_of(initiator).to_hci()
         await asyncio.gather(
             initiator._send_event_to_host(HCIEvent(
                 event_code=int(EventCode.IO_CAPABILITY_REQUEST),
@@ -412,7 +412,7 @@ class VirtualClassicLink:
         """Forward IO_Capability_Response to peer; when both have arrived,
         emit User_Confirmation_Request to both."""
         peer = self._peer_of(source)
-        source_addr = self._addr_of(source).address
+        source_addr = self._addr_of(source).to_hci()
         body = source_addr + bytes([io_cap, oob, auth_req])
         await peer._send_event_to_host(HCIEvent(
             event_code=int(EventCode.IO_CAPABILITY_RESPONSE),
@@ -427,11 +427,11 @@ class VirtualClassicLink:
             await asyncio.gather(
                 source._send_event_to_host(HCIEvent(
                     event_code=int(EventCode.USER_CONFIRMATION_REQUEST),
-                    parameters=self._addr_of(peer).address + struct.pack("<I", 0),
+                    parameters=self._addr_of(peer).to_hci() + struct.pack("<I", 0),
                 )),
                 peer._send_event_to_host(HCIEvent(
                     event_code=int(EventCode.USER_CONFIRMATION_REQUEST),
-                    parameters=self._addr_of(source).address + struct.pack("<I", 0),
+                    parameters=self._addr_of(source).to_hci() + struct.pack("<I", 0),
                 )),
             )
 
@@ -449,11 +449,11 @@ class VirtualClassicLink:
             await asyncio.gather(
                 source._send_event_to_host(HCIEvent(
                     event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
-                    parameters=bytes([0x05]) + self._addr_of(peer).address,
+                    parameters=bytes([0x05]) + self._addr_of(peer).to_hci(),
                 )),
                 peer._send_event_to_host(HCIEvent(
                     event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
-                    parameters=bytes([0x05]) + self._addr_of(source).address,
+                    parameters=bytes([0x05]) + self._addr_of(source).to_hci(),
                 )),
             )
             # SSP failed after Authentication_Requested: per Core Spec
@@ -488,19 +488,19 @@ class VirtualClassicLink:
             await asyncio.gather(
                 source._send_event_to_host(HCIEvent(
                     event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
-                    parameters=bytes([0x00]) + self._addr_of(peer).address,
+                    parameters=bytes([0x00]) + self._addr_of(peer).to_hci(),
                 )),
                 peer._send_event_to_host(HCIEvent(
                     event_code=int(EventCode.SIMPLE_PAIRING_COMPLETE),
-                    parameters=bytes([0x00]) + self._addr_of(source).address,
+                    parameters=bytes([0x00]) + self._addr_of(source).to_hci(),
                 )),
                 source._send_event_to_host(HCIEvent(
                     event_code=int(EventCode.LINK_KEY_NOTIFICATION),
-                    parameters=self._addr_of(peer).address + link_key + bytes([0x05]),
+                    parameters=self._addr_of(peer).to_hci() + link_key + bytes([0x05]),
                 )),
                 peer._send_event_to_host(HCIEvent(
                     event_code=int(EventCode.LINK_KEY_NOTIFICATION),
-                    parameters=self._addr_of(source).address + link_key + bytes([0x05]),
+                    parameters=self._addr_of(source).to_hci() + link_key + bytes([0x05]),
                 )),
             )
             if entry is not None:

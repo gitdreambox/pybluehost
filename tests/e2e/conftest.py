@@ -19,15 +19,25 @@ from tests.e2e._test_service import build_test_service
 
 
 @pytest_asyncio.fixture
-async def central_peripheral_pair(stack, peer_stack):
+async def central_peripheral_pair(
+    stack, peer_stack, selected_transport_spec, selected_peer_spec, transport_mode,
+):
     """Yields (stack_central, stack_peripheral) with the E2E test service
     registered on the Peripheral.
 
     `stack` and `peer_stack` come from tests/conftest.py session fixtures and
     are already initialized for the active --transport / --transport-peer.
     """
-    peer_stack._gatt_server.add_service(build_test_service())
-    yield stack, peer_stack
+    from tests.e2e._helpers import le_role_swap_required
+
+    if le_role_swap_required(
+        selected_transport_spec, selected_peer_spec, transport_mode,
+    ):
+        stack_c, stack_p = peer_stack, stack
+    else:
+        stack_c, stack_p = stack, peer_stack
+    stack_p._gatt_server.add_service(build_test_service())
+    yield stack_c, stack_p
 
 
 @pytest_asyncio.fixture

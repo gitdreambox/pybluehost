@@ -235,7 +235,7 @@ class BLEScanner:
             rssi = struct.unpack("b", data[offset : offset + 1])[0]
             offset += 1
             result = ScanResult(
-                address=BDAddress(address, AddressType(address_type)),
+                address=BDAddress.from_hci(address, AddressType(address_type)),
                 rssi=rssi,
                 advertising_data=ad_data,
                 connectable=event_type in (0x00, 0x01, 0x04),
@@ -286,7 +286,7 @@ class BLEConnectionManager:
             scan_interval, scan_window,
             0x00,  # filter policy
             target.type,  # peer address type
-            target.address[::-1],  # HCI peer address is little-endian on the wire
+            target.to_hci(),
             0x00,  # own address type
             min_interval, max_interval,
             config.latency,
@@ -348,12 +348,12 @@ class WhiteList:
         self._entries: list[tuple[BDAddress, int]] = []
 
     async def add(self, address: BDAddress, address_type: int = 0x00) -> None:
-        params = bytes([address_type]) + address.address
+        params = bytes([address_type]) + address.to_hci()
         await self._hci.send_command(_make_cmd(HCI_LE_ADD_DEVICE_TO_WHITE_LIST, params))
         self._entries.append((address, address_type))
 
     async def remove(self, address: BDAddress, address_type: int = 0x00) -> None:
-        params = bytes([address_type]) + address.address
+        params = bytes([address_type]) + address.to_hci()
         await self._hci.send_command(_make_cmd(HCI_LE_REMOVE_DEVICE_FROM_WHITE_LIST, params))
         self._entries = [(a, t) for a, t in self._entries if a != address]
 

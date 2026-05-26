@@ -49,7 +49,7 @@ async def test_le_connection_complete_triggers_start_encryption_when_bonded(tmp_
             + struct.pack("<H", 0x0040)              # handle = 0x0040
             + bytes([0x00])                          # role = Central
             + bytes([0x00])                          # peer_address_type = public
-            + bytes(peer.address)                    # peer_bd_addr (6 bytes)
+            + peer.to_hci()                          # peer_bd_addr (HCI order)
             + struct.pack("<HHH", 0x0028, 0, 0x0048) # interval, latency, timeout
             + bytes([0])                             # master_clock_accuracy
         )
@@ -95,7 +95,7 @@ async def test_no_auto_encrypt_when_config_disabled(tmp_path, monkeypatch):
             + struct.pack("<H", 0x0040)
             + bytes([0x00])
             + bytes([0x00])
-            + bytes(peer.address)
+            + peer.to_hci()
             + struct.pack("<HHH", 0x0028, 0, 0x0048)
             + bytes([0])
         )

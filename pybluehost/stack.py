@@ -169,7 +169,7 @@ class Stack:
         addr_event = await hci.send_command(HCI_Read_BD_ADDR_Command())
         if hasattr(addr_event, "return_parameters") and len(addr_event.return_parameters) >= 7:
             raw_addr = addr_event.return_parameters[1:7]
-            stack._local_address = BDAddress(raw_addr)
+            stack._local_address = BDAddress.from_hci(raw_addr)
 
         # 4. L2CAP
         l2cap = L2CAPManager(hci=hci)
@@ -572,7 +572,7 @@ class Stack:
             params = getattr(event, "parameters", b"")
             if len(params) >= 10 and params[9] == 0x01 and self._gap is not None:
                 asyncio.create_task(
-                    self._gap.classic_connections.accept(BDAddress(params[:6]), role=0x01)
+                    self._gap.classic_connections.accept(BDAddress.from_hci(params[:6]), role=0x01)
                 )
             return
         if getattr(event, "event_code", None) == EventCode.ENCRYPTION_CHANGE:
@@ -649,7 +649,7 @@ class Stack:
             params = event.subevent_parameters
             if len(params) >= 11:
                 role = params[3]
-                peer_addr = BDAddress(params[5:11])
+                peer_addr = BDAddress.from_hci(params[5:11])
                 # Always register peer address so SMP.start_initiator() can look it up
                 if self._smp is not None:
                     self._smp.register_peer_address(handle, peer_addr)

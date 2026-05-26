@@ -88,13 +88,16 @@ def _build_test_ad_data() -> AdvertisingData:
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_e2e_scan_connect_pair_read(central_peripheral_pair, virtual_link_or_real_rf):
+async def test_e2e_scan_connect_pair_read(
+    central_peripheral_pair, virtual_link_or_real_rf, transport_mode,
+):
     """Scan -> Connect -> SC JW Pair -> discover service -> read characteristic.
 
     Smoke baseline: shortest valuable end-to-end path.
     """
     from tests.e2e._helpers import (
-        _supports_le_sc, central_discover_and_pair_sc_jw, resolve_handles,
+        _supports_le_sc, central_discover_and_pair_sc_jw, e2e_timeout,
+        disconnect_le_and_wait, resolve_handles,
     )
     from tests.e2e._test_service import (
         TEST_SERVICE_UUID, TEST_READ_CHAR_UUID, INITIAL_READ_VALUE,
@@ -125,7 +128,10 @@ async def test_e2e_scan_connect_pair_read(central_peripheral_pair, virtual_link_
             # Bypass scanning in virtual mode (no ADV bridge); connect_gatt
             # is what registers the LE_Connection_Complete waiter.
             connect_task = asyncio.create_task(
-                stack_c.connect_gatt(stack_p._local_address, timeout=10.0)
+                stack_c.connect_gatt(
+                    stack_p._local_address,
+                    timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+                )
             )
             # Give connect_gatt a turn to register its waiter, then drive the
             # virtual link to emit LE_Connection_Complete to both controllers.
@@ -133,11 +139,16 @@ async def test_e2e_scan_connect_pair_read(central_peripheral_pair, virtual_link_
             await link.connect()
             client = await connect_task
             handle = client._connection_handle
-            await stack_c.pair(handle, timeout=20.0)
+            await stack_c.pair(
+                handle,
+                timeout=e2e_timeout(transport_mode, virtual=20.0, usb=40.0),
+            )
         else:
             # Real RF: scan + connect + SC JW pair via canonical helper.
             client, handle = await central_discover_and_pair_sc_jw(
                 stack_c, stack_p._local_address,
+                scan_timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+                pair_timeout=e2e_timeout(transport_mode, virtual=20.0, usb=40.0),
             )
 
         # Discover services
@@ -162,7 +173,10 @@ async def test_e2e_scan_connect_pair_read(central_peripheral_pair, virtual_link_
         # Clean disconnect
         if handle is not None:
             try:
-                await stack_c.gap.ble_connections.disconnect(handle)
+                await disconnect_le_and_wait(
+                    stack_c, handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
             except Exception:
                 pass
         try:
@@ -173,14 +187,17 @@ async def test_e2e_scan_connect_pair_read(central_peripheral_pair, virtual_link_
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_e2e_gatt_write_and_notify(central_peripheral_pair, virtual_link_or_real_rf, transport_mode):
+async def test_e2e_gatt_write_and_notify(
+    central_peripheral_pair, virtual_link_or_real_rf, transport_mode,
+):
     """Write a characteristic; subscribe to notifications; observe two
     notifications; unsubscribe; verify a third notification is NOT observed."""
     import contextlib
 
     from tests.e2e._helpers import (
         _supports_le_sc, central_discover_peripheral,
-        e2e_timeout, resolve_handles, wait_for_notifications,
+        disconnect_le_and_wait, e2e_timeout, resolve_handles,
+        wait_for_notifications,
     )
     from tests.e2e._test_service import (
         TEST_SERVICE_UUID, TEST_WRITE_CHAR_UUID, TEST_NOTIFY_CHAR_UUID,
@@ -199,16 +216,29 @@ async def test_e2e_gatt_write_and_notify(central_peripheral_pair, virtual_link_o
         link = virtual_link_or_real_rf
         if link is not None:
             connect_task = asyncio.create_task(
-                stack_c.connect_gatt(stack_p._local_address, timeout=10.0)
+                stack_c.connect_gatt(
+                    stack_p._local_address,
+                    timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+                )
             )
             await asyncio.sleep(0.05)
             await link.connect()
             client = await connect_task
         else:
-            await central_discover_peripheral(stack_c, stack_p._local_address)
-            client = await stack_c.connect_gatt(stack_p._local_address, timeout=10.0)
+            await central_discover_peripheral(
+                stack_c,
+                stack_p._local_address,
+                timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+            )
+            client = await stack_c.connect_gatt(
+                stack_p._local_address,
+                timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+            )
         handle = client._connection_handle
-        await stack_c.pair(handle, timeout=20.0)
+        await stack_c.pair(
+            handle,
+            timeout=e2e_timeout(transport_mode, virtual=20.0, usb=40.0),
+        )
 
         # === Discover service + characteristics + CCCD ===
         services = await client.discover_all_services()
@@ -258,7 +288,10 @@ async def test_e2e_gatt_write_and_notify(central_peripheral_pair, virtual_link_o
     finally:
         if handle is not None:
             with contextlib.suppress(Exception):
-                await stack_c.gap.ble_connections.disconnect(handle)
+                await disconnect_le_and_wait(
+                    stack_c, handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
         with contextlib.suppress(Exception):
             await stack_p.gap.ble_advertiser.stop()
 
@@ -280,7 +313,8 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
     from pybluehost.stack import Stack, StackConfig
 
     from tests.e2e._helpers import (
-        _supports_le_sc, central_discover_peripheral, e2e_timeout, resolve_handles,
+        _supports_le_sc, central_discover_peripheral, e2e_timeout,
+        disconnect_le_and_wait, resolve_handles, select_le_role_specs,
     )
     from tests.e2e._test_service import (
         TEST_SERVICE_UUID, TEST_READ_CHAR_UUID, INITIAL_READ_VALUE,
@@ -312,8 +346,11 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
             )
         else:
             from tests._transport_resolve import build_stack_from_spec
-            stack_c = await build_stack_from_spec(selected_transport_spec, config=cfg_c)
-            stack_p = await build_stack_from_spec(selected_peer_spec, config=cfg_p)
+            central_spec, peripheral_spec = select_le_role_specs(
+                selected_transport_spec, selected_peer_spec, transport_mode,
+            )
+            stack_c = await build_stack_from_spec(central_spec, config=cfg_c)
+            stack_p = await build_stack_from_spec(peripheral_spec, config=cfg_p)
             link = None
         stack_p._gatt_server.add_service(build_test_service())
         return stack_c, stack_p, link
@@ -344,16 +381,29 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
         # Mirror Test 1's virtual-mode connection injection
         if link is not None:
             connect_task = asyncio.create_task(
-                stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+                stack_c.connect_gatt(
+                    peripheral_addr,
+                    timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+                )
             )
             await asyncio.sleep(0.1)
             await link.connect()
             client = await connect_task
         else:
-            await central_discover_peripheral(stack_c, peripheral_addr)
-            client = await stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+            await central_discover_peripheral(
+                stack_c,
+                peripheral_addr,
+                timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+            )
+            client = await stack_c.connect_gatt(
+                peripheral_addr,
+                timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+            )
         handle = client._connection_handle
-        await stack_c.pair(handle, timeout=20.0)
+        await stack_c.pair(
+            handle,
+            timeout=e2e_timeout(transport_mode, virtual=20.0, usb=40.0),
+        )
 
         # Verify bond was persisted
         bond_c = await JsonBondStorage(bonds_c_path).load_bond(peripheral_addr)
@@ -362,7 +412,10 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
 
         # Clean disconnect before tearing down session 1
         with contextlib.suppress(Exception):
-            await stack_c.gap.ble_connections.disconnect(handle)
+            await disconnect_le_and_wait(
+                stack_c, handle,
+                timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+            )
     finally:
         with contextlib.suppress(Exception):
             await stack_p.gap.ble_advertiser.stop()
@@ -384,19 +437,30 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
     stack_c.on_connection_event(_on_event)
 
     await stack_p.gap.ble_advertiser.start(ad_data=_build_test_ad_data())
+    await asyncio.sleep(e2e_timeout(transport_mode, virtual=0.1, usb=0.5))
     handle = None
     try:
         # Reconnect — NO pair() call; auto-encrypt should fire automatically.
         if link is not None:
             connect_task = asyncio.create_task(
-                stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+                stack_c.connect_gatt(
+                    peripheral_addr,
+                    timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+                )
             )
             await asyncio.sleep(0.1)
             await link.connect()
             client = await connect_task
         else:
-            await central_discover_peripheral(stack_c, peripheral_addr)
-            client = await stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+            await central_discover_peripheral(
+                stack_c,
+                peripheral_addr,
+                timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+            )
+            client = await stack_c.connect_gatt(
+                peripheral_addr,
+                timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+            )
         handle = client._connection_handle
 
         # Wait up to e2e_timeout budget for the encryption-change event
@@ -416,7 +480,10 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
     finally:
         if handle is not None:
             with contextlib.suppress(Exception):
-                await stack_c.gap.ble_connections.disconnect(handle)
+                await disconnect_le_and_wait(
+                    stack_c, handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
         with contextlib.suppress(Exception):
             await stack_p.gap.ble_advertiser.stop()
         await _close_pair(stack_c, stack_p, link)
@@ -441,7 +508,10 @@ async def test_e2e_pair_failure_disconnects_cleanly(
     from pybluehost.stack import Stack, StackConfig
 
     from tests._transport_resolve import build_stack_from_spec
-    from tests.e2e._helpers import _supports_le_sc, e2e_timeout
+    from tests.e2e._helpers import (
+        _supports_le_sc, central_discover_peripheral, e2e_timeout,
+        disconnect_le_and_wait, select_le_role_specs,
+    )
 
     # This test requires SecurityConfig(mitm_required=True), which is not the
     # default session fixture; build our own stacks.
@@ -473,8 +543,11 @@ async def test_e2e_pair_failure_disconnects_cleanly(
             peripheral_address=peripheral_addr,
         )
     else:
-        stack_c = await build_stack_from_spec(selected_transport_spec, config=cfg_c)
-        stack_p = await build_stack_from_spec(selected_peer_spec, config=cfg_p)
+        central_spec, peripheral_spec = select_le_role_specs(
+            selected_transport_spec, selected_peer_spec, transport_mode,
+        )
+        stack_c = await build_stack_from_spec(central_spec, config=cfg_c)
+        stack_p = await build_stack_from_spec(peripheral_spec, config=cfg_p)
         central_addr = stack_c._local_address
         peripheral_addr = stack_p._local_address
         link = None
@@ -486,7 +559,6 @@ async def test_e2e_pair_failure_disconnects_cleanly(
         await stack_c.close()
         await stack_p.close()
         pytest.skip("adapter does not support LE Secure Connections")
-
     # Inject mismatched delegates: Central accepts, Peripheral rejects.
     class _AcceptNC(AutoAcceptDelegate):
         async def confirm_numeric(self, peer_addr, value):
@@ -507,23 +579,38 @@ async def test_e2e_pair_failure_disconnects_cleanly(
         # hardware uses real LE advertising/scan).
         if link is not None:
             connect_task = asyncio.create_task(
-                stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+                stack_c.connect_gatt(
+                    peripheral_addr,
+                    timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+                )
             )
             await asyncio.sleep(0.1)
             await link.connect()
             client = await connect_task
         else:
-            client = await stack_c.connect_gatt(peripheral_addr, timeout=10.0)
+            await central_discover_peripheral(
+                stack_c,
+                peripheral_addr,
+                timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+            )
+            client = await stack_c.connect_gatt(
+                peripheral_addr,
+                timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+            )
         handle = client._connection_handle
 
         # Pair must raise; reason matches "SMP pairing failed"
         with pytest.raises(Exception, match="SMP pairing failed"):
-            await stack_c.pair(handle, timeout=5.0)
+            await stack_c.pair(
+                handle,
+                timeout=e2e_timeout(transport_mode, virtual=5.0, usb=20.0),
+            )
 
         # Critical assertion: cleanup completes within budget on each side.
         with contextlib.suppress(Exception):
-            await asyncio.wait_for(
-                stack_c.gap.ble_connections.disconnect(handle), timeout=e2e_timeout(transport_mode, virtual=2.0, usb=3.0),
+            await disconnect_le_and_wait(
+                stack_c, handle,
+                timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
             )
     finally:
         with contextlib.suppress(Exception):

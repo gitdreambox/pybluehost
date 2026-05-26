@@ -56,6 +56,40 @@ def _supports_le_sc(stack) -> bool:
     return p256 and dhkey
 
 
+def le_role_swap_required(
+    transport_spec: str,
+    peer_spec: str | None,
+    transport_mode: str,
+) -> bool:
+    """Return True for real-hardware LE role pairs that need role reversal.
+
+    Intel BE200 as central can scan other advertisers, and Barrot BR8654A02
+    accepts HCI_LE_Set_Advertising_* successfully, but the Intel central never
+    observes Barrot's legacy advertising in this role. The reverse role is
+    observable and completes pairing/GATT, so keep this narrowly scoped to the
+    proven pair/direction.
+    """
+    if transport_mode != "usb":
+        return False
+    if peer_spec is None:
+        return False
+    return (
+        transport_spec.lower().startswith("usb:8087:0036")
+        and peer_spec.lower().startswith("usb:33fa:0012")
+    )
+
+
+def select_le_role_specs(
+    transport_spec: str,
+    peer_spec: str,
+    transport_mode: str,
+) -> tuple[str, str]:
+    """Return ``(central_spec, peripheral_spec)`` for LE e2e scenarios."""
+    if le_role_swap_required(transport_spec, peer_spec, transport_mode):
+        return peer_spec, transport_spec
+    return transport_spec, peer_spec
+
+
 # ---------------------------------------------------------------------------
 # Discovery helpers
 # ---------------------------------------------------------------------------
@@ -112,6 +146,32 @@ async def wait_for_notifications(events: list, n: int, timeout: float = 1.0) -> 
                 f"only received {len(events)}/{n} notifications within {timeout}s"
             )
         await asyncio.sleep(0.01)
+
+
+async def disconnect_le_and_wait(stack, handle: int, timeout: float) -> None:
+    """Disconnect an LE ACL handle and wait for Disconnection_Complete."""
+    seen = asyncio.Event()
+
+    def _on_event(event) -> None:
+        if getattr(event, "state", None) == "disconnected" and getattr(event, "handle", None) == handle:
+            seen.set()
+
+    stack.on_connection_event(_on_event)
+    await stack.gap.ble_connections.disconnect(handle)
+    await asyncio.wait_for(seen.wait(), timeout=timeout)
+
+
+async def disconnect_classic_and_wait(stack, handle: int, timeout: float) -> None:
+    """Disconnect a Classic ACL handle and wait for Disconnection_Complete."""
+    seen = asyncio.Event()
+
+    def _on_event(event) -> None:
+        if getattr(event, "state", None) == "disconnected" and getattr(event, "handle", None) == handle:
+            seen.set()
+
+    stack.on_connection_event(_on_event)
+    await stack.gap.classic_connections.disconnect(handle)
+    await asyncio.wait_for(seen.wait(), timeout=timeout)
 
 
 # ---------------------------------------------------------------------------

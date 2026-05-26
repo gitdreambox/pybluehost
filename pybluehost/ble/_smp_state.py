@@ -831,6 +831,16 @@ async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
         csrk = os.urandom(16)
         await ctx.send(SMPSigningInformation(signature_key=csrk).to_bytes())
 
+    while (
+        ctx.pending_phase3_pdus
+        and ctx.state_machine.state == SMPState.KEY_DISTRIBUTION
+    ):
+        event, pdu = ctx.pending_phase3_pdus.pop(0)
+        await ctx.state_machine.fire(event, pdu=pdu)
+
+    if ctx.state_machine.state != SMPState.KEY_DISTRIBUTION:
+        return
+
     # If we expect no keys from peer, finalize immediately.
     # In SC mode, strip out the EncKey bit (0x01) since we will never receive a peer LTK.
     expected = ctx.peer_resp_key_dist if ctx.role == PairingRole.INITIATOR else ctx.peer_init_key_dist

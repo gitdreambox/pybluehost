@@ -689,7 +689,7 @@ class HCI_Link_Key_Request_Reply_Command(HCICommand):
         if len(self.link_key) != 16:
             raise ValueError("link_key must be 16 bytes")
         # BT wire is little-endian; BDAddress.address is big-endian
-        self.parameters = bytes(self.bd_addr.address[::-1]) + self.link_key
+        self.parameters = self.bd_addr.to_hci() + self.link_key
 
 
 # ---------------------------------------------------------------------------

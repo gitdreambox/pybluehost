@@ -82,6 +82,27 @@ async def test_ssp_link_key_notification_legacy_key_type_sets_sc_false(tmp_path)
     assert bond.link_key_type == 0x00
 
 
+async def test_ssp_link_key_notification_p192_key_type_sets_sc_false(tmp_path):
+    """key_type 0x05 is authenticated P-192, not Secure Connections/P-256."""
+    hci = FakeHCI()
+    storage = JsonBondStorage(tmp_path / "bonds.json")
+    mgr = SSPManager(
+        hci=hci,
+        security_config=SecurityConfig(enable_secure_connections=False),
+        bond_storage=storage,
+    )
+    addr = BDAddress(b"\x01\x02\x03\x04\x05\x06")
+    params = bytes(reversed(addr.address)) + b"\xCC" * 16 + bytes([0x05])
+    evt = HCIEvent(event_code=int(EventCode.LINK_KEY_NOTIFICATION), parameters=params)
+    await mgr.on_hci_event(evt)
+    await asyncio.sleep(0.05)
+    bond = await storage.load_bond(addr)
+    assert bond is not None
+    assert bond.sc is False
+    assert bond.authenticated is True
+    assert bond.link_key_type == 0x05
+
+
 async def test_ssp_simple_pairing_complete_does_not_raise():
     hci = FakeHCI()
     mgr = SSPManager(

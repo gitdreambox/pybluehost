@@ -58,6 +58,15 @@ def _log_pairing_failed(*, handle: int, reason: int) -> None:
     logger.warning("SMP pairing failed handle=0x%04X reason=%s", handle, name)
 
 
+def _consume_future_exception(fut: "asyncio.Future[object]") -> None:
+    if fut.cancelled():
+        return
+    try:
+        fut.exception()
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # SMP Code (opcode) enum
 # ---------------------------------------------------------------------------
@@ -724,6 +733,7 @@ class SMPPairingContext:
     local_ltk: bytes = b""
     local_ediv: int = 0
     local_rand: bytes = b""
+    pending_phase3_pdus: list[tuple["SMPEvent", SMPPdu]] = field(default_factory=list)
 
     # SC working state (Sub-Plan 2)
     local_private_key: bytes = b""
@@ -900,6 +910,7 @@ class SMPManager:
             ctx.security_config = self._security_config
             ctx._delegate = self._delegate
             ctx.pairing_complete = asyncio.get_running_loop().create_future()
+            ctx.pairing_complete.add_done_callback(_consume_future_exception)
             from pybluehost.ble._smp_state import register_transitions
             register_transitions(ctx)
             self._contexts[connection_handle] = ctx
@@ -908,6 +919,13 @@ class SMPManager:
         event = _pdu_to_event(pdu)
         if event is None:
             logger.debug("Unhandled SMP opcode 0x%02X", opcode)
+            return
+        if _should_defer_phase3_pdu(ctx, event):
+            ctx.pending_phase3_pdus.append((event, pdu))
+            logger.debug(
+                "SMP deferred Phase 3 %s while state=%s handle=0x%04X",
+                event.name, ctx.state_machine.state.name, connection_handle,
+            )
             return
         from pybluehost.core.errors import InvalidTransitionError
         try:
@@ -961,3 +979,19 @@ def _pdu_to_event(pdu: SMPPdu) -> "SMPEvent | None":
     if isinstance(pdu, SMPPairingDHKeyCheck):
         return SMPEvent.PAIRING_DHKEY_CHECK_RX
     return None
+
+
+def _should_defer_phase3_pdu(ctx: SMPPairingContext, event: "SMPEvent") -> bool:
+    if event not in {
+        SMPEvent.ENCRYPTION_INFO_RX,
+        SMPEvent.MASTER_IDENT_RX,
+        SMPEvent.IDENTITY_INFO_RX,
+        SMPEvent.IDENTITY_ADDR_RX,
+        SMPEvent.SIGNING_INFO_RX,
+    }:
+        return False
+    return ctx.state_machine.state in {
+        SMPState.RANDOM_EXCHANGE,
+        SMPState.STK_ENCRYPTING,
+        SMPState.DHKEY_CHECK,
+    }

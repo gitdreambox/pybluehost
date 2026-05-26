@@ -139,7 +139,7 @@ async def test_stack_routes_hci_le_advertising_report_to_ble_scanner():
             b"\x01"
             b"\x00"
             b"\x00"
-            b"\x11\x22\x33\x44\x55\x66"
+            b"\x6b\xf5\x1b\x8d\x8d\x1a"
             + bytes([len(raw_ad)])
             + raw_ad
             + bytes([0xD6])
@@ -152,7 +152,7 @@ async def test_stack_routes_hci_le_advertising_report_to_ble_scanner():
     await stack.hci.on_transport_data(raw_event)
 
     assert len(results) == 1
-    assert str(results[0].address) == "11:22:33:44:55:66"
+    assert str(results[0].address) == "1A:8D:8D:1B:F5:6B"
     await stack.close()
 
 
@@ -434,7 +434,7 @@ async def test_stack_accepts_incoming_classic_connection_request(monkeypatch):
     await asyncio.sleep(0)
 
     assert len(accepted) == 1
-    assert str(accepted[0][0]) == "20:E8:A5:6B:6F:38"
+    assert str(accepted[0][0]) == "38:6F:6B:A5:E8:20"
     assert accepted[0][1] == 0x01
     await stack.close()
 

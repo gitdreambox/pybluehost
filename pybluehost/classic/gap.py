@@ -1,4 +1,4 @@
-"""Classic GAP — inquiry, discoverability, connections, and SSP."""
+"""Classic GAP: inquiry, discoverability, connections, and SSP."""
 from __future__ import annotations
 
 import asyncio
@@ -135,7 +135,7 @@ class ClassicDiscovery:
 
     async def request_remote_name(self, address: BDAddress) -> None:
         """Send Remote_Name_Request for a device."""
-        params = address.address + bytes([
+        params = address.to_hci() + bytes([
             0x01,  # page scan repetition mode R1
             0x00,  # reserved
             0x00, 0x00,  # clock offset
@@ -163,7 +163,7 @@ class ClassicDiscovery:
             offset += 3
             offset += 2  # Clock offset
             await self._on_inquiry_result(
-                DeviceInfo(address=BDAddress(address), class_of_device=class_of_device)
+                DeviceInfo(address=BDAddress.from_hci(address), class_of_device=class_of_device)
             )
 
 
@@ -236,7 +236,7 @@ class ClassicConnectionManager:
     async def connect(self, target: BDAddress, allow_role_switch: bool = True) -> None:
         """Initiate an ACL connection to a remote device."""
         params = (
-            target.address[::-1]
+            target.to_hci()
             + struct.pack("<H", 0x0018)  # packet type: DM1, DH1
             + bytes([0x01])  # page scan repetition mode R1
             + bytes([0x00])  # reserved
@@ -247,7 +247,7 @@ class ClassicConnectionManager:
 
     async def accept(self, address: BDAddress, role: int = 0x01) -> None:
         """Accept an incoming connection request."""
-        params = address.address + bytes([role])
+        params = address.to_hci() + bytes([role])
         await self._hci.send_command(_make_cmd(HCI_ACCEPT_CONNECTION_REQ, params))
 
     async def disconnect(self, handle: int, reason: int = 0x13) -> None:
@@ -319,7 +319,7 @@ class SSPManager:
             else:
                 auth_req = 0x00
         params = (
-            address.address
+            address.to_hci()
             + bytes([self._io_capability])
             + bytes([0x01 if oob_present else 0x00])
             + bytes([auth_req])
@@ -332,14 +332,14 @@ class SSPManager:
         """Handle Classic SSP HCI events that require host replies."""
         if event.event_code == EventCode.IO_CAPABILITY_REQUEST:
             self._schedule_reply(
-                self.reply_io_capability(BDAddress(event.parameters[:6]))
+                self.reply_io_capability(BDAddress.from_hci(event.parameters[:6]))
             )
             return
         if event.event_code == EventCode.LINK_KEY_REQUEST:
             self._schedule_reply(self._handle_link_key_request(event.parameters))
             return
         if event.event_code == EventCode.USER_CONFIRMATION_REQUEST:
-            address = BDAddress(event.parameters[:6])
+            address = BDAddress.from_hci(event.parameters[:6])
             numeric_value = int.from_bytes(event.parameters[6:10], "little")
             self._schedule_reply(
                 self._dispatch_user_confirmation(address, numeric_value)
@@ -353,21 +353,21 @@ class SSPManager:
     async def confirm(self, address: BDAddress) -> None:
         """Accept a user confirmation request (numeric comparison)."""
         await self._hci.send_command(
-            _make_cmd(HCI_USER_CONFIRMATION_REQUEST_REPLY, address.address)
+            _make_cmd(HCI_USER_CONFIRMATION_REQUEST_REPLY, address.to_hci())
         )
 
     async def deny(self, address: BDAddress) -> None:
         """Reject a user confirmation request."""
         await self._hci.send_command(
             _make_cmd(
-                HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY, address.address
+                HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY, address.to_hci()
             )
         )
 
     async def reply_link_key_negative(self, address: BDAddress) -> None:
         """Tell the controller that no stored link key is available."""
         await self._hci.send_command(
-            _make_cmd(HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY, address.address)
+            _make_cmd(HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY, address.to_hci())
         )
 
     async def _handle_link_key_request(self, params: bytes) -> None:
@@ -375,7 +375,7 @@ class SSPManager:
         from pybluehost.hci.packets import HCI_Link_Key_Request_Reply_Command
         if len(params) < 6:
             return
-        addr = BDAddress(bytes(reversed(params[:6])))  # BT wire LE → BDAddress BE
+        addr = BDAddress.from_hci(params[:6])
         if self._bond_storage is not None:
             try:
                 bond = await self._bond_storage.load_bond(addr)
@@ -391,11 +391,11 @@ class SSPManager:
 
     async def _on_link_key_notification(self, params: bytes) -> None:
         from pybluehost.ble.smp import BondInfo
-        addr = BDAddress(bytes(reversed(params[:6])))  # BT wire LE → BDAddress BE
+        addr = BDAddress.from_hci(params[:6])
         link_key = params[6:22]
         key_type = params[22]
-        sc = key_type in {0x05, 0x06, 0x07, 0x08}
-        authenticated = key_type in {0x02, 0x04, 0x06, 0x08}
+        sc = key_type in {0x07, 0x08}
+        authenticated = key_type in {0x05, 0x08}
         if self._bond_storage is None:
             return
         bond = BondInfo(

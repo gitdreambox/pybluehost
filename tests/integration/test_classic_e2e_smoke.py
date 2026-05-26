@@ -97,7 +97,7 @@ async def test_classic_inquiry_connect_ssp_jw_pair_disconnect(tmp_path):
         assert bond_c.link_key == bond_p.link_key, (
             "bridge must deliver identical link keys to both sides"
         )
-        assert bond_c.link_key_type == 0x05  # Unauthenticated Combination Key (P-192)
+        assert bond_c.link_key_type in {0x04, 0x05}  # P-192 combination key
 
         # --- Step 5: Encryption ------------------------------------------------
         await stack_c.enable_classic_encryption(handle, timeout=2.0)

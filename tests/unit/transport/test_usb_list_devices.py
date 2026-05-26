@@ -59,7 +59,7 @@ def test_list_devices_returns_known_chips_only():
 
 
 def test_list_devices_returns_barrot_candidate():
-    barrot = _make_dev(0x33FA, 0x0011, bus=1, address=16)
+    barrot = _make_dev(0x33FA, 0x0012, bus=1, address=16)
 
     with patch("pybluehost.transport.usb.usb") as usb_mod:
         usb_mod.core.find.return_value = [barrot]
@@ -69,10 +69,10 @@ def test_list_devices_returns_barrot_candidate():
     assert len(candidates) == 1
     cand = candidates[0]
     assert cand.vendor == "barrot"
-    assert cand.name == "BT6.0"
+    assert cand.name == "BR8654A02"
     assert cand.bus == 1
     assert cand.address == 16
-    assert cand.transport_name == "usb:33FA:0011#1"
+    assert cand.transport_name == "usb:33FA:0012#1"
 
 
 def test_list_devices_suffixes_duplicate_vid_pid_candidates():
@@ -149,7 +149,7 @@ def test_auto_detect_disables_generic_fallback_when_vendor_filter_is_set():
 
 
 def test_auto_detect_vid_pid_filter_accepts_unknown_bluetooth_class_device():
-    bt_device = _make_dev(0x33FA, 0x0012, bus=3, address=7)
+    bt_device = _make_dev(0x33FA, 0x00FF, bus=3, address=7)
     bt_device.bDeviceClass = 0xE0
     bt_device.bDeviceSubClass = 0x01
     bt_device.bDeviceProtocol = 0x01
@@ -157,7 +157,7 @@ def test_auto_detect_vid_pid_filter_accepts_unknown_bluetooth_class_device():
     with patch("pybluehost.transport.usb.usb") as usb_mod:
         usb_mod.core.find.return_value = [bt_device]
         with patch.object(USBTransport, "_get_usb_backend", return_value=None):
-            t = USBTransport.auto_detect(vid=0x33FA, pid=0x0012, occurrence=1)
+            t = USBTransport.auto_detect(vid=0x33FA, pid=0x00FF, occurrence=1)
 
     assert isinstance(t, USBTransport)
     assert t._device is bt_device

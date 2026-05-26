@@ -20,6 +20,19 @@ class TestBDAddress:
         addr = BDAddress.from_string("11:22:33:44:55:66", AddressType.RANDOM)
         assert addr.type == AddressType.RANDOM
 
+    def test_from_hci_converts_little_endian_wire_order(self):
+        addr = BDAddress.from_hci(bytes.fromhex("6b f5 1b 8d 8d 1a"))
+        assert str(addr) == "1A:8D:8D:1B:F5:6B"
+        assert addr.type == AddressType.PUBLIC
+
+    def test_to_hci_returns_little_endian_wire_order(self):
+        addr = BDAddress.from_string("1A:8D:8D:1B:F5:6B")
+        assert addr.to_hci() == bytes.fromhex("6b f5 1b 8d 8d 1a")
+
+    def test_from_hci_rejects_invalid_length(self):
+        with pytest.raises(ValueError, match="6 BD_ADDR bytes"):
+            BDAddress.from_hci(b"\x01\x02")
+
     def test_from_string_lowercase(self):
         addr = BDAddress.from_string("aa:bb:cc:dd:ee:ff")
         assert addr.address == bytes([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF])

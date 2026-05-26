@@ -57,10 +57,10 @@ async def test_ssp_user_confirmation_calls_delegate_confirm_numeric() -> None:
     hci = _FakeHCI()
     delegate = _CapturingDelegate(accept=True)
     ssp = SSPManager(hci=hci, delegate=delegate)
-    addr_bytes = bytes.fromhex("010203040506")
-    await ssp.on_hci_event(_make_user_confirmation_event(addr_bytes, 314159))
+    addr = BDAddress.from_string("01:02:03:04:05:06")
+    await ssp.on_hci_event(_make_user_confirmation_event(addr.to_hci(), 314159))
     await _drain()
-    assert delegate.calls == [(BDAddress(addr_bytes), 314159)]
+    assert delegate.calls == [(addr, 314159)]
     # Positive reply: opcode 0x042C at bytes 1..3 of the H4-framed command.
     assert any(cmd[1:3] == _OPCODE_REPLY_LE for cmd in hci.commands)
     assert not any(cmd[1:3] == _OPCODE_NEG_REPLY_LE for cmd in hci.commands)
@@ -71,10 +71,10 @@ async def test_ssp_user_confirmation_negative_reply_when_delegate_rejects() -> N
     hci = _FakeHCI()
     delegate = _CapturingDelegate(accept=False)
     ssp = SSPManager(hci=hci, delegate=delegate)
-    addr_bytes = bytes.fromhex("AABBCCDDEEFF")
-    await ssp.on_hci_event(_make_user_confirmation_event(addr_bytes, 42))
+    addr = BDAddress.from_string("AA:BB:CC:DD:EE:FF")
+    await ssp.on_hci_event(_make_user_confirmation_event(addr.to_hci(), 42))
     await _drain()
-    assert delegate.calls == [(BDAddress(addr_bytes), 42)]
+    assert delegate.calls == [(addr, 42)]
     # Negative reply: opcode 0x042D at bytes 1..3.
     assert any(cmd[1:3] == _OPCODE_NEG_REPLY_LE for cmd in hci.commands)
     assert not any(cmd[1:3] == _OPCODE_REPLY_LE for cmd in hci.commands)
@@ -103,10 +103,10 @@ async def test_ssp_user_confirmation_legacy_sync_handler_still_works() -> None:
         return False  # reject
 
     ssp.on_user_confirmation(_handler)
-    addr_bytes = bytes.fromhex("0102030405AA")
-    await ssp.on_hci_event(_make_user_confirmation_event(addr_bytes, 7))
+    addr = BDAddress.from_string("01:02:03:04:05:AA")
+    await ssp.on_hci_event(_make_user_confirmation_event(addr.to_hci(), 7))
     await _drain()
-    assert seen == [(BDAddress(addr_bytes), 7)]
+    assert seen == [(addr, 7)]
     assert any(cmd[1:3] == _OPCODE_NEG_REPLY_LE for cmd in hci.commands)
 
 

@@ -111,6 +111,98 @@ async def test_phase3_initiator_sends_keys_then_collects_and_bonds(tmp_path, mon
     assert ctx.state_machine.state == SMPState.BONDED
 
 
+async def test_phase3_defers_peer_keys_until_encryption_change(tmp_path, monkeypatch):
+    """Real controllers can deliver peer keys before local Encryption_Change."""
+    monkeypatch.setattr(os, "urandom", lambda n: b"\xAB" * n)
+
+    from pybluehost.ble._smp_state import register_transitions
+    from pybluehost.ble.smp import (
+        PairingRole,
+        SMPEncryptionInformation,
+        SMPIdentityAddressInformation,
+        SMPIdentityInformation,
+        SMPMasterIdentification,
+        SMPPairingContext,
+        SMPSigningInformation,
+    )
+
+    sent: list[bytes] = []
+
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    storage = JsonBondStorage(tmp_path / "bonds.json")
+    mgr = SMPManager(
+        local_io_caps=IOCapability.NO_INPUT_NO_OUTPUT,
+        bondable=True,
+        local_address=BDAddress(b"\x0A\x0B\x0C\x0D\x0E\x0F"),
+        bond_storage=storage,
+    )
+    peer_addr = BDAddress(b"\x01\x02\x03\x04\x05\x06")
+    mgr.bind_channel(0x0040, send=send, peer_address=peer_addr)
+    ctx = SMPPairingContext.create(
+        connection_handle=0x0040,
+        peer_address=peer_addr,
+        role=PairingRole.RESPONDER,
+        send=send,
+    )
+    ctx.local_io_caps = IOCapability.NO_INPUT_NO_OUTPUT
+    ctx.bondable = True
+    ctx.local_address = BDAddress(b"\x0A\x0B\x0C\x0D\x0E\x0F")
+    ctx._bond_storage = storage
+    ctx.local_init_key_dist = 0x07
+    ctx.local_resp_key_dist = 0x07
+    ctx.peer_init_key_dist = 0x07
+    ctx.peer_resp_key_dist = 0x07
+    ctx.pairing_complete = asyncio.get_running_loop().create_future()
+    register_transitions(ctx)
+    mgr._contexts[0x0040] = ctx
+    ctx.state_machine._state = SMPState.RANDOM_EXCHANGE
+
+    peer_ltk = b"\xDE" * 16
+    peer_ediv = 0x9876
+    peer_rand = b"\xEF" * 8
+    await mgr.on_pdu(
+        SMPEncryptionInformation(long_term_key=peer_ltk).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(
+        SMPMasterIdentification(ediv=peer_ediv, rand=peer_rand).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(
+        SMPIdentityInformation(irk=b"\xF0" * 16).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(
+        SMPIdentityAddressInformation(
+            addr_type=0, bd_addr=bytes(peer_addr.address),
+        ).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(
+        SMPSigningInformation(signature_key=b"\xCC" * 16).to_bytes(),
+        connection_handle=0x0040,
+    )
+
+    assert ctx.state_machine.state == SMPState.RANDOM_EXCHANGE
+    assert len(ctx.pending_phase3_pdus) == 5
+    assert not ctx.pairing_complete.done()
+
+    await ctx.state_machine.fire(SMPEvent.ENCRYPTION_CHANGE_SUCCESS)
+
+    await asyncio.wait_for(ctx.pairing_complete, timeout=1.0)
+    assert ctx.pending_phase3_pdus == []
+    assert ctx.state_machine.state == SMPState.BONDED
+    assert SMPCode.ENCRYPTION_INFORMATION in [pdu[0] for pdu in sent]
+
+    bond = await storage.load_bond(peer_addr)
+    assert bond is not None
+    assert bond.ltk == b"\xAB" * 16
+    assert bond.ediv == 0xABAB
+    assert bond.rand == b"\xAB" * 8
+
+
 async def test_sc_initiator_phase3_skips_ltk_distribution(tmp_path, monkeypatch):
     """In SC mode, Initiator does NOT send SMPEncryptionInformation/SMPMasterIdentification.
     Bond is persisted with sc=True and ltk=ctx.ltk_sc."""

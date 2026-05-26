@@ -92,10 +92,11 @@ async def test_discovery_stop_sends_cancel():
 async def test_discovery_remote_name_request():
     hci = FakeHCI()
     disc = ClassicDiscovery(hci=hci)
-    addr = BDAddress.from_string("AA:BB:CC:DD:EE:FF")
+    addr = BDAddress.from_string("1A:8D:8D:1B:F5:6B")
     await disc.request_remote_name(addr)
-    opcodes = [c.opcode for c in hci.commands]
-    assert HCI_REMOTE_NAME_REQUEST in opcodes
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_REMOTE_NAME_REQUEST
+    assert cmd.parameters[:6] == bytes.fromhex("6b f5 1b 8d 8d 1a")
 
 
 async def test_discovery_on_result_handler():
@@ -120,7 +121,7 @@ async def test_discovery_parses_inquiry_result_event():
         event_code=EventCode.INQUIRY_RESULT,
         parameters=(
             b"\x01"  # Num responses
-            b"\x11\x22\x33\x44\x55\x66"  # BD_ADDR
+            b"\x6b\xf5\x1b\x8d\x8d\x1a"  # BD_ADDR, little-endian on HCI
             b"\x01"  # Page scan repetition mode
             b"\x00"  # Reserved
             b"\x04\x02\x0C"  # Class of device
@@ -131,7 +132,7 @@ async def test_discovery_parses_inquiry_result_event():
     await disc.on_hci_event(event)
 
     assert len(results) == 1
-    assert str(results[0].address) == "11:22:33:44:55:66"
+    assert str(results[0].address) == "1A:8D:8D:1B:F5:6B"
     assert results[0].class_of_device == 0x0C0204
 
 
@@ -218,10 +219,11 @@ async def test_classic_connect_packs_bd_addr_little_endian_on_wire():
 async def test_classic_accept():
     hci = FakeHCI()
     mgr = ClassicConnectionManager(hci=hci)
-    addr = BDAddress.from_string("AA:BB:CC:DD:EE:FF")
+    addr = BDAddress.from_string("1A:8D:8D:1B:F5:6B")
     await mgr.accept(addr)
-    opcodes = [c.opcode for c in hci.commands]
-    assert HCI_ACCEPT_CONNECTION_REQ in opcodes
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_ACCEPT_CONNECTION_REQ
+    assert cmd.parameters[:6] == bytes.fromhex("6b f5 1b 8d 8d 1a")
 
 
 async def test_classic_authenticate_sends_auth_requested():
@@ -263,12 +265,13 @@ async def test_ssp_io_capability_reply():
     hci = FakeHCI()
     ssp = SSPManager(hci=hci)
     ssp.set_io_capability(0x01)  # DisplayYesNo
-    addr = BDAddress.from_string("AA:BB:CC:DD:EE:FF")
+    addr = BDAddress.from_string("1A:8D:8D:1B:F5:6B")
     await ssp.reply_io_capability(addr)
     opcodes = [c.opcode for c in hci.commands]
     assert HCI_IO_CAPABILITY_REQUEST_REPLY in opcodes
     # Verify IO cap byte in params
     cmd = hci.commands[-1]
+    assert cmd.parameters[:6] == bytes.fromhex("6b f5 1b 8d 8d 1a")
     assert cmd.parameters[6] == 0x01  # after 6-byte address
     assert cmd.parameters[8] == 0x00  # no MITM requirement by default
 
@@ -355,26 +358,27 @@ async def test_ssp_on_link_key_request_replies_negative():
 
     cmd = hci.commands[-1]
     assert cmd.opcode == HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY
-    # reply_link_key_negative sends address.address (BE/MSB-first), i.e. reversed wire bytes
-    assert cmd.parameters == bytes.fromhex("1a 8d 8d 1b f5 6b")
+    assert cmd.parameters == bytes.fromhex("6b f5 1b 8d 8d 1a")
 
 
 async def test_ssp_confirm():
     hci = FakeHCI()
     ssp = SSPManager(hci=hci)
-    addr = BDAddress.from_string("AA:BB:CC:DD:EE:FF")
+    addr = BDAddress.from_string("1A:8D:8D:1B:F5:6B")
     await ssp.confirm(addr)
-    opcodes = [c.opcode for c in hci.commands]
-    assert HCI_USER_CONFIRMATION_REQUEST_REPLY in opcodes
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_USER_CONFIRMATION_REQUEST_REPLY
+    assert cmd.parameters == bytes.fromhex("6b f5 1b 8d 8d 1a")
 
 
 async def test_ssp_deny():
     hci = FakeHCI()
     ssp = SSPManager(hci=hci)
-    addr = BDAddress.from_string("AA:BB:CC:DD:EE:FF")
+    addr = BDAddress.from_string("1A:8D:8D:1B:F5:6B")
     await ssp.deny(addr)
-    opcodes = [c.opcode for c in hci.commands]
-    assert HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY in opcodes
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY
+    assert cmd.parameters == bytes.fromhex("6b f5 1b 8d 8d 1a")
 
 
 def test_ssp_method_enum():

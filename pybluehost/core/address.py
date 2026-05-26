@@ -28,6 +28,13 @@ class BDAddress:
         return cls(address=raw, type=type)
 
     @classmethod
+    def from_hci(cls, value: bytes, type: AddressType = AddressType.PUBLIC) -> BDAddress:
+        """Build from the little-endian BD_ADDR representation used by HCI."""
+        if len(value) != 6:
+            raise ValueError(f"Expected 6 BD_ADDR bytes, got {len(value)}")
+        return cls(address=bytes(reversed(value)), type=type)
+
+    @classmethod
     def random(cls) -> BDAddress:
         raw = bytearray(os.urandom(6))
         raw[0] = (raw[0] & 0x3F) | 0xC0  # static random: top 2 bits = 11
@@ -38,6 +45,10 @@ class BDAddress:
         if self.type != AddressType.RANDOM:
             return False
         return (self.address[0] & 0xC0) == 0x40
+
+    def to_hci(self) -> bytes:
+        """Return the little-endian BD_ADDR representation used by HCI."""
+        return bytes(reversed(self.address))
 
     def __str__(self) -> str:
         return ":".join(f"{b:02X}" for b in self.address)

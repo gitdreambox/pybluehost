@@ -72,26 +72,26 @@ def test_probe_finds_known_realtek_chip(mock_usb):
 
 @patch("pybluehost.transport.usb.usb")
 def test_probe_finds_known_barrot_chip(mock_usb):
-    mock_usb.core.find.return_value = [_mock_usb_device(0x33FA, 0x0011)]
+    mock_usb.core.find.return_value = [_mock_usb_device(0x33FA, 0x0012)]
     devices = probe_usb_devices()
     assert len(devices) == 1
     assert devices[0]["vendor"] == "barrot"
-    assert devices[0]["chip_name"] == "BT6.0"
-    assert devices[0]["vid_pid"] == "33fa:0011"
-    assert devices[0]["transport_names"] == ["usb:33FA:0011#1"]
+    assert devices[0]["chip_name"] == "BR8654A02"
+    assert devices[0]["vid_pid"] == "33fa:0012"
+    assert devices[0]["transport_names"] == ["usb:33FA:0012#1"]
 
 
 @patch("pybluehost.transport.usb.usb")
 def test_probe_unknown_bt_class_device(mock_usb):
     """Unknown VID/PID but Bluetooth device class → included as Unknown."""
     mock_usb.core.find.return_value = [
-        _mock_usb_device(0x33FA, 0x0012, dev_class=0xE0, sub=0x01, proto=0x01)
+        _mock_usb_device(0x33FA, 0x00FF, dev_class=0xE0, sub=0x01, proto=0x01)
     ]
     devices = probe_usb_devices()
     assert len(devices) == 1
     assert devices[0]["vendor"] == "unknown"
     assert devices[0]["chip_name"] == "Unknown BT Device"
-    assert devices[0]["transport_names"] == ["usb:33FA:0012#1"]
+    assert devices[0]["transport_names"] == ["usb:33FA:00FF#1"]
 
 
 @patch("pybluehost.transport.usb.usb")

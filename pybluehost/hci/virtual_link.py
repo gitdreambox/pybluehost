@@ -62,7 +62,7 @@ class VirtualLELink:
             bytes([int(LEMetaSubEvent.LE_CONNECTION_COMPLETE), 0x00])
             + struct.pack("<H", self.handle)
             + bytes([role, 0x00])
-            + peer.address
+            + peer.to_hci()
             + struct.pack("<HHH", 0x0028, 0x0000, 0x0048)
             + bytes([0x00])
         )

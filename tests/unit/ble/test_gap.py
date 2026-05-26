@@ -126,7 +126,7 @@ async def test_scanner_parses_legacy_le_advertising_report():
             b"\x01"  # Num reports
             b"\x00"  # ADV_IND
             b"\x00"  # Public address
-            b"\x11\x22\x33\x44\x55\x66"
+            b"\x6b\xf5\x1b\x8d\x8d\x1a"
             + bytes([len(raw_ad)])
             + raw_ad
             + bytes([0xD6])  # -42 dBm
@@ -136,7 +136,7 @@ async def test_scanner_parses_legacy_le_advertising_report():
     await scanner.on_hci_event(event)
 
     assert len(results) == 1
-    assert str(results[0].address) == "11:22:33:44:55:66"
+    assert str(results[0].address) == "1A:8D:8D:1B:F5:6B"
     assert results[0].rssi == -42
     assert results[0].local_name == "PBH"
 
@@ -157,9 +157,11 @@ async def test_scanner_stop():
 async def test_whitelist_add_device():
     hci = FakeHCI()
     wl = WhiteList(hci=hci)
-    addr = BDAddress.from_string("AA:BB:CC:DD:EE:FF")
+    addr = BDAddress.from_string("1A:8D:8D:1B:F5:6B")
     await wl.add(addr, address_type=0x00)
-    assert HCI_LE_ADD_DEVICE_TO_WHITE_LIST in [cmd.opcode for cmd in hci.commands]
+    cmd = hci.commands[-1]
+    assert cmd.opcode == HCI_LE_ADD_DEVICE_TO_WHITE_LIST
+    assert cmd.parameters == bytes([0x00]) + bytes.fromhex("6b f5 1b 8d 8d 1a")
 
 
 async def test_whitelist_clear():

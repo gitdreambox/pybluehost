@@ -61,10 +61,10 @@ def test_known_chips_CSR8510():
     assert csr.vendor == "csr"
 
 
-def test_known_chips_barrot_bt60():
-    barrot = next((c for c in KNOWN_CHIPS if c.vid == 0x33FA and c.pid == 0x0011), None)
+def test_known_chips_barrot_br8654a02():
+    barrot = next((c for c in KNOWN_CHIPS if c.vid == 0x33FA and c.pid == 0x0012), None)
     assert barrot is not None
-    assert barrot.name == "BT6.0"
+    assert barrot.name == "BR8654A02"
     assert barrot.vendor == "barrot"
     assert barrot.transport_class is USBTransport
 
@@ -169,7 +169,7 @@ def test_auto_detect_vendor_filter_selects_barrot(mock_usb):
 
     barrot_device = MagicMock()
     barrot_device.idVendor = 0x33FA
-    barrot_device.idProduct = 0x0011
+    barrot_device.idProduct = 0x0012
 
     mock_usb.core.find.return_value = [intel_device, barrot_device]
     transport = USBTransport.auto_detect(vendor="barrot")

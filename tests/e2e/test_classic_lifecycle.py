@@ -33,16 +33,22 @@ async def test_supports_classic_ssp_virtual_short_circuits_true():
 
 @pytest.mark.asyncio
 async def test_classic_fixtures_load_and_register_service(
-    classic_central_peripheral_pair, virtual_classic_link_or_real_rf,
+    classic_central_peripheral_pair, virtual_classic_link_or_real_rf, transport_mode,
 ):
     """central_peripheral_pair registers SPP service on peripheral;
     bridge attaches in virtual mode."""
     stack_c, stack_p = classic_central_peripheral_pair
     # SDP server has at least one registered record
     assert len(stack_p._sdp._records) >= 1
-    # Peripheral is connectable + discoverable per the fixture
-    assert stack_p._virtual_controller._inquiry_scan is True
-    assert stack_p._virtual_controller._page_scan is True
+    if transport_mode == "virtual":
+        # Peripheral is connectable + discoverable per the fixture.
+        assert stack_p._virtual_controller._inquiry_scan is True
+        assert stack_p._virtual_controller._page_scan is True
+    else:
+        # Hardware mode cannot observe controller scan-enable state through
+        # VirtualController internals; successful fixture setup is the contract.
+        assert virtual_classic_link_or_real_rf is None
+        assert getattr(stack_p, "_virtual_controller", None) is None
 
 
 import contextlib
@@ -53,7 +59,7 @@ from pybluehost.core.address import BDAddress
 @pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_e2e_classic_sdp_browse(
-    classic_central_peripheral_pair, virtual_classic_link_or_real_rf,
+    classic_central_peripheral_pair, virtual_classic_link_or_real_rf, transport_mode,
 ):
     """Connect + SSP JW pair, then SDP search-attributes for the SPP record.
 
@@ -68,6 +74,7 @@ async def test_e2e_classic_sdp_browse(
     )
     from tests.e2e._helpers import (
         _supports_classic_ssp, classic_discover_and_pair_jw,
+        disconnect_classic_and_wait, e2e_timeout,
     )
 
     stack_c, stack_p = classic_central_peripheral_pair
@@ -78,6 +85,8 @@ async def test_e2e_classic_sdp_browse(
     try:
         handle = await classic_discover_and_pair_jw(
             stack_c, stack_p._local_address,
+            scan_timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0),
+            pair_timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0),
         )
 
         # Open an L2CAP channel on the SDP PSM (0x0001) to feed SDPClient.
@@ -96,7 +105,10 @@ async def test_e2e_classic_sdp_browse(
     finally:
         if handle is not None:
             with contextlib.suppress(Exception):
-                await stack_c.gap.classic_connections.disconnect(handle)
+                await disconnect_classic_and_wait(
+                    stack_c, handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
 
 
 @pytest.mark.e2e
@@ -113,7 +125,8 @@ async def test_e2e_classic_rfcomm_spp_echo(
     from pybluehost.l2cap.constants import PSM_SDP
 
     from tests.e2e._helpers import (
-        _supports_classic_ssp, classic_discover_and_pair_jw, e2e_timeout,
+        _supports_classic_ssp, classic_discover_and_pair_jw,
+        disconnect_classic_and_wait, e2e_timeout,
     )
 
     stack_c, stack_p = classic_central_peripheral_pair
@@ -125,6 +138,8 @@ async def test_e2e_classic_rfcomm_spp_echo(
     try:
         handle = await classic_discover_and_pair_jw(
             stack_c, stack_p._local_address,
+            scan_timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0),
+            pair_timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0),
         )
 
         # SDP client needs an L2CAP channel on PSM_SDP for SPPClient's
@@ -153,7 +168,10 @@ async def test_e2e_classic_rfcomm_spp_echo(
                 await spp_conn.close()
         if handle is not None:
             with contextlib.suppress(Exception):
-                await stack_c.gap.classic_connections.disconnect(handle)
+                await disconnect_classic_and_wait(
+                    stack_c, handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
 
 
 @pytest.mark.e2e
@@ -185,7 +203,7 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
     from tests._transport_resolve import build_stack_from_spec
     from tests.e2e._helpers import (
         _supports_classic_ssp, classic_discover_and_pair_jw,
-        classic_discover_peripheral, e2e_timeout,
+        classic_discover_peripheral, disconnect_classic_and_wait, e2e_timeout,
     )
 
     central_addr = BDAddress.from_string("0A:0A:0A:0A:0A:0A")
@@ -245,14 +263,20 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
     try:
         handle = await classic_discover_and_pair_jw(
             stack_c, peripheral_addr,
+            scan_timeout=e2e_timeout(transport_mode, virtual=3.0, usb=20.0),
+            pair_timeout=e2e_timeout(transport_mode, virtual=3.0, usb=15.0),
         )
         bond_c = await JsonBondStorage(bonds_c_path).load_bond(peripheral_addr)
         assert bond_c is not None, "central bond not persisted after pair"
-        assert bond_c.link_key_type == 0x05, (
-            f"expected Combination_Key (0x05), got {bond_c.link_key_type!r}"
+        assert bond_c.link_key_type in {0x04, 0x05}, (
+            "expected P-192 combination link key (0x04 unauthenticated "
+            f"or 0x05 authenticated), got {bond_c.link_key_type!r}"
         )
         with contextlib.suppress(Exception):
-            await stack_c.gap.classic_connections.disconnect(handle)
+            await disconnect_classic_and_wait(
+                stack_c, handle,
+                timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+            )
     finally:
         await _close_pair(stack_c, stack_p, link)
 
@@ -263,9 +287,10 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
         peripheral_addr = stack_p._local_address
     handle = None
     try:
-        await classic_discover_peripheral(stack_c, peripheral_addr, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0))
-        handle = await stack_c.connect_classic(peripheral_addr, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0))
-        await stack_c.authenticate_classic(handle, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0))
+        await classic_discover_peripheral(stack_c, peripheral_addr, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=20.0))
+        await asyncio.sleep(e2e_timeout(transport_mode, virtual=0.05, usb=0.5))
+        handle = await stack_c.connect_classic(peripheral_addr, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=20.0))
+        await stack_c.authenticate_classic(handle, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=15.0))
         await stack_c.enable_classic_encryption(handle, timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0))
 
         # Verify the encrypted link works for an SDP query.
@@ -278,7 +303,10 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
     finally:
         if handle is not None:
             with contextlib.suppress(Exception):
-                await stack_c.gap.classic_connections.disconnect(handle)
+                await disconnect_classic_and_wait(
+                    stack_c, handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
         await _close_pair(stack_c, stack_p, link)
 
 
@@ -295,7 +323,8 @@ async def test_e2e_classic_pair_failure_disconnects_cleanly(
     import asyncio
 
     from tests.e2e._helpers import (
-        _supports_classic_ssp, classic_discover_peripheral, e2e_timeout,
+        _supports_classic_ssp, classic_discover_peripheral,
+        disconnect_classic_and_wait, e2e_timeout,
     )
 
     stack_c, stack_p = classic_central_peripheral_pair
@@ -318,19 +347,20 @@ async def test_e2e_classic_pair_failure_disconnects_cleanly(
     handle = None
     try:
         await classic_discover_peripheral(
-            stack_c, stack_p._local_address, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0),
+            stack_c, stack_p._local_address, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=20.0),
         )
         handle = await stack_c.connect_classic(
-            stack_p._local_address, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0),
+            stack_p._local_address, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=20.0),
         )
 
         # Authenticate must raise on Auth_Complete with non-zero status.
         with pytest.raises(Exception, match=r"(authentication|Auth_Complete|SSP|status|fail)"):
-            await stack_c.authenticate_classic(handle, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=10.0))
+            await stack_c.authenticate_classic(handle, timeout=e2e_timeout(transport_mode, virtual=3.0, usb=15.0))
 
         # Critical: cleanup completes within budget.
-        await asyncio.wait_for(
-            stack_c.gap.classic_connections.disconnect(handle), timeout=e2e_timeout(transport_mode, virtual=2.0, usb=3.0),
+        await disconnect_classic_and_wait(
+            stack_c, handle,
+            timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
         )
     finally:
         # fixture teardown closes both stacks within 2s

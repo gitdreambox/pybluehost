@@ -665,14 +665,14 @@ class HCIController:
         from pybluehost.core.address import BDAddress
 
         if event.event_code == EventCode.IO_CAPABILITY_REQUEST and len(event.parameters) >= 6:
-            addr = BDAddress(bytes(reversed(event.parameters[:6])))
+            addr = BDAddress.from_hci(event.parameters[:6])
             for listener in list(self._io_capability_request_listeners):
                 result = listener(addr)
                 if asyncio.iscoroutine(result):
                     await result
 
         if event.event_code == EventCode.USER_CONFIRMATION_REQUEST and len(event.parameters) >= 10:
-            addr = BDAddress(bytes(reversed(event.parameters[:6])))
+            addr = BDAddress.from_hci(event.parameters[:6])
             numeric = int.from_bytes(event.parameters[6:10], "little")
             for listener in list(self._user_confirmation_request_listeners):
                 result = listener(addr, numeric)
@@ -681,14 +681,14 @@ class HCIController:
 
         if event.event_code == EventCode.SIMPLE_PAIRING_COMPLETE and len(event.parameters) >= 7:
             status = event.parameters[0]
-            addr = BDAddress(bytes(reversed(event.parameters[1:7])))
+            addr = BDAddress.from_hci(event.parameters[1:7])
             for listener in list(self._simple_pairing_complete_listeners):
                 result = listener(status, addr)
                 if asyncio.iscoroutine(result):
                     await result
 
         if event.event_code == EventCode.LINK_KEY_NOTIFICATION and len(event.parameters) >= 23:
-            addr = BDAddress(bytes(reversed(event.parameters[:6])))
+            addr = BDAddress.from_hci(event.parameters[:6])
             key = event.parameters[6:22]
             key_type = event.parameters[22]
             for listener in list(self._link_key_notification_listeners):
@@ -697,7 +697,7 @@ class HCIController:
                     await result
 
         if event.event_code == EventCode.LINK_KEY_REQUEST and len(event.parameters) >= 6:
-            addr = BDAddress(bytes(reversed(event.parameters[:6])))
+            addr = BDAddress.from_hci(event.parameters[:6])
             for listener in list(self._link_key_request_listeners):
                 result = listener(addr)
                 if asyncio.iscoroutine(result):
