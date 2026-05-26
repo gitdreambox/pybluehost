@@ -154,7 +154,7 @@ struct from the controller.
 | `bredr_features` | `HCI_Read_Local_Supported_Features` | 0x04 / 0x03 | 0x1003 | 8 bytes (LMP page 0) | Vol 4 Part E §7.4.3 |
 | `bredr_features_page1`, `bredr_features_page2` | `HCI_Read_Local_Extended_Features(page=N)` | 0x04 / 0x04 | 0x1004 | page + max_page + 8-byte features | Vol 4 Part E §7.4.4 |
 | `le_features` | `HCI_LE_Read_Local_Supported_Features` | 0x08 / 0x03 | 0x2003 | 8 bytes | Vol 4 Part E §7.8.3 |
-| `le_features_pages` (Spec 6.0+) | `HCI_LE_Read_Local_Supported_Features_Page(page=N)` | 0x08 / 0x87 | 0x2087 | page + max_page + 8-byte features | Spec 6.0+ — best-effort interpretation |
+| `le_features_pages` (Spec 6.1+) | `HCI_LE_Read_Local_Supported_Features_Page(page=N)` | **same OCF 0x0003 as the 5.4 command** | 0x2003 | status + page + max_page + 8-byte features (11 bytes) | Spec 6.1 §HCI Functional Spec — renamed from 5.4 `LE_Read_Local_Supported_Features` + optional page parameter |
 
 All issued by `HCIController.initialize()` in `pybluehost/hci/controller.py`,
 each gated on a bit in the Supported_Commands bitmap (so the host doesn't
@@ -177,13 +177,17 @@ The Supported_Commands bitmap (64 bytes) does NOT page — new commands fill
 previously-unused (octet, bit) slots within the same 64-byte envelope. As of
 Spec 5.4 we're around octet 46.
 
-The LE Features bitmap (8 bytes) stayed flat through Spec 5.4. Spec 6.0
-added paged access for features beyond bit 63. PyBlueHost's
-`HCI_LE_Read_Local_Supported_Features_Page` is a forward-compat hook —
-**no Spec 5.4 controller advertises this command**, so on every adapter
-you currently own, `le_features_pages` will be `{}` and
-`le_features_max_page` will be `null`. Spec 6.0+ adapters (none widely
-shipped yet) will populate it.
+The LE Features bitmap (8 bytes) stayed flat through Spec 5.4. **Spec 6.1
+renamed** `HCI_LE_Read_Local_Supported_Features` → `_Page` and added an
+optional `page_number` parameter — same OCF 0x0003, same Supported_Commands
+bit (25, 2). The packet class supports both modes: `page=0` (default) sends
+no parameter byte and behaves exactly like the 5.4 command; `page>=1`
+unlocks the 6.1 paged read. PyBlueHost gates the paged calls on
+`hci_version >= 0x0F` (Bluetooth 6.1) so Spec 5.4 controllers see the
+unchanged parameterless call they always have. On every adapter you
+currently own, `le_features_pages` will be `{}` and `le_features_max_page`
+will be `null`. Spec 6.1+ adapters (when they ship) will populate them
+automatically.
 
 #### What `unknown_bits_set` means
 

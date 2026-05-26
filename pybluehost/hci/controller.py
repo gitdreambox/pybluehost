@@ -336,7 +336,6 @@ class HCIController:
             HCI_READ_LOCAL_SUPPORTED_FEATURES,
             HCI_READ_LOCAL_EXTENDED_FEATURES,
             HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
-            HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE,
         )
         # return_parameters[0] is the status byte.
         if opcode == HCI_READ_LOCAL_VERSION and len(return_parameters) >= 9:
@@ -365,16 +364,19 @@ class HCIController:
             # page_number == 0 is equivalent to Read_Local_Supported_Features;
             # we don't overwrite _bredr_features here to keep the source of
             # truth on the simple-read command.
-        elif opcode == HCI_LE_READ_LOCAL_SUPPORTED_FEATURES and len(return_parameters) >= 9:
-            self._le_features = bytes(return_parameters[1:9])
-        elif opcode == HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE and len(return_parameters) >= 11:
-            # Spec 6.0 layout (best-effort, mirrors Read_Local_Extended_Features):
-            #   status(1) + page_number(1) + max_page_number(1) + features(8)
-            payload = return_parameters[1:]
-            page_number = payload[0]
-            self._le_features_max_page = payload[1]
-            features = bytes(payload[2:10])
-            self._le_features_pages[page_number] = features
+        elif opcode == HCI_LE_READ_LOCAL_SUPPORTED_FEATURES:
+            # Spec 6.1 paged response carries page/max_page header; Spec 5.4
+            # response is just status + 8 features bytes. Discriminate by length.
+            if len(return_parameters) >= 11:
+                payload = return_parameters[1:]
+                page_number = payload[0]
+                self._le_features_max_page = payload[1]
+                features = bytes(payload[2:10])
+                self._le_features_pages[page_number] = features
+                if page_number == 0:
+                    self._le_features = features
+            elif len(return_parameters) >= 9:
+                self._le_features = bytes(return_parameters[1:9])
 
     # ------------------------------------------------------------------
     # ACL data sending
@@ -499,23 +501,20 @@ class HCIController:
                         HCI_READ_LOCAL_EXTENDED_FEATURES, rsp.return_parameters
                     )
 
-        # LE Features extension pages (Spec 6.0+).
+        # LE Features extension pages (Spec 6.1+, hci_version >= 0x0F).
         #
-        # Gating dilemma: the canonical gate would be Supported_Commands.has(
-        # HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE), but the exact (octet, bit)
-        # position for this Spec 6.0 command is uncertain (no Spec 6.0
-        # controllers shipped at this code's authoring time). So we fall back
-        # to an HCI_Version gate — only attempt this command on adapters
-        # reporting Bluetooth 6.0+ (hci_version >= 0x0E). The send is also
-        # wrapped in try/except so a Spec 6.0 controller that disagrees with
-        # our OCF guess (0x0087) can return Unknown_HCI_Command without
-        # crashing init.
-        if self._hci_version is not None and self._hci_version >= 0x0E:
-            from pybluehost.hci.constants import HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE
-            from pybluehost.hci.packets import (
-                HCI_LE_Read_Local_Supported_Features_Page_Command,
-            )
-
+        # Spec 6.1 renamed HCI_LE_Read_Local_Supported_Features to
+        # HCI_LE_Read_Local_Supported_Features_Page and added an optional
+        # page_number parameter. Same OCF 0x0003, same Supported_Commands bit
+        # (25, 2). Only the response length differs (9 bytes for page=0 /
+        # Spec 5.4, 11 bytes for page>=1 / Spec 6.1).
+        #
+        # Use HCI_Version as the gate — Spec 5.4 controllers don't understand
+        # the page parameter and will reject malformed-length commands.
+        # try/except wraps each send so a non-conforming 6.1 controller
+        # doesn't crash init.
+        from pybluehost.hci.constants import HCI_LE_READ_LOCAL_SUPPORTED_FEATURES
+        if self._hci_version is not None and self._hci_version >= 0x0F:
             for page in (1, 2, 3, 4):
                 if (
                     self._le_features_max_page is not None
@@ -524,18 +523,18 @@ class HCIController:
                     break
                 try:
                     rsp = await self.send_command(
-                        HCI_LE_Read_Local_Supported_Features_Page_Command(page_number=page)
+                        HCI_LE_Read_Local_Supported_Features_Command(page_number=page)
                     )
                 except Exception as exc:
                     logger.debug(
                         "HCI initialize: LE features page %d fetch failed (%s: %s); "
-                        "skipping. Likely Spec 6.0 OCF differs from our guess.",
+                        "skipping.",
                         page, type(exc).__name__, exc,
                     )
                     break
                 if isinstance(rsp, HCI_Command_Complete_Event):
                     self._capture_capability_response(
-                        HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE,
+                        HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
                         rsp.return_parameters,
                     )
 

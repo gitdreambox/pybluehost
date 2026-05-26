@@ -420,7 +420,9 @@ SUPPORTED_COMMAND_NAMES: dict[tuple[int, int], str] = {
     # Octet 25 — Bluetooth 4.0 LE Controller commands begin
     (25, 0): "LE_Set_Event_Mask",
     (25, 1): "LE_Read_Buffer_Size_V1",
-    (25, 2): "LE_Read_Local_Supported_Features",
+    # Spec 6.1 renamed this to LE_Read_Local_Supported_Features_Page (same
+    # OCF 0x0003, same bit position; added optional page_number parameter).
+    (25, 2): "LE_Read_Local_Supported_Features_Page",
     (25, 4): "LE_Set_Random_Address",
     (25, 5): "LE_Set_Advertising_Parameters",
     (25, 6): "LE_Read_Advertising_Channel_TX_Power",

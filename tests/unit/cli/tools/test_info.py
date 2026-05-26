@@ -269,8 +269,8 @@ async def test_info_json_includes_le_features_pages_structural_hook(capsys):
     parsed = json.loads(capsys.readouterr().out)
     assert "le_features_pages" in parsed
     assert "le_features_max_page" in parsed
-    # Virtual reports hci_version=12 (Bluetooth 5.3), below the 0x0E gate,
-    # so the paged fetch never runs.
-    assert parsed["hci_version"] < 0x0E
+    # Virtual reports hci_version=12 (Bluetooth 5.3), below the 0x0F
+    # (Bluetooth 6.1) gate, so the paged fetch never runs.
+    assert parsed["hci_version"] < 0x0F
     assert parsed["le_features_pages"] == {}
     assert parsed["le_features_max_page"] is None

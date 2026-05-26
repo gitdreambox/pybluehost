@@ -100,11 +100,11 @@ HCI_LE_READ_SUPPORTED_STATES = make_opcode(OGF.LE, 0x1C)
 HCI_LE_SET_DATA_LENGTH = make_opcode(OGF.LE, 0x22)
 HCI_LE_READ_LOCAL_P256_PUBLIC_KEY = make_opcode(OGF.LE, 0x0025)
 HCI_LE_GENERATE_DHKEY = make_opcode(OGF.LE, 0x0026)
-# Bluetooth Core Spec 6.0 paged LE Features read. OCF 0x0087 per spec
-# assignment. Spec 5.4 controllers do NOT support this command; gated via
-# Supported_Commands.has() in HCIController.initialize(). On 6.0+ controllers
-# it returns 8-byte feature pages beyond the original 64-bit LE_Features bitmap.
-HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE = make_opcode(OGF.LE, 0x0087)
+# Note: Bluetooth Core Spec 6.1 renamed HCI_LE_Read_Local_Supported_Features
+# (OCF 0x0003) to HCI_LE_Read_Local_Supported_Features_Page and added an
+# optional 1-byte page_number parameter. SAME OCF 0x0003; SAME
+# Supported_Commands bit (25, 2). The packet class supports both modes
+# (page=0 → no params → Spec 5.4 behavior; page>=1 → 6.1 paged read).
 HCI_LE_READ_MAXIMUM_DATA_LENGTH = make_opcode(OGF.LE, 0x2F)
 HCI_LE_SET_EXTENDED_ADVERTISING_PARAMS = make_opcode(OGF.LE, 0x36)
 HCI_LE_SET_EXTENDED_ADVERTISING_DATA = make_opcode(OGF.LE, 0x37)
