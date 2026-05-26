@@ -68,3 +68,37 @@ def test_hci_version_name_known_returns_name():
 def test_hci_version_name_unknown_returns_fallback():
     name = hci_version_name(0xFF)
     assert "Unknown" in name and "FF" in name.upper()
+
+
+def test_supported_command_names_has_inquiry():
+    from pybluehost.hci.features_decode import SUPPORTED_COMMAND_NAMES
+    assert SUPPORTED_COMMAND_NAMES[(0, 0)] == "Inquiry"
+
+
+def test_supported_command_names_has_le_create_connection():
+    from pybluehost.hci.features_decode import SUPPORTED_COMMAND_NAMES
+    assert SUPPORTED_COMMAND_NAMES[(26, 4)] == "LE_Create_Connection"
+
+
+def test_supported_command_names_has_le_extended_adv():
+    from pybluehost.hci.features_decode import SUPPORTED_COMMAND_NAMES
+    assert "LE_Set_Extended_Advertising_Parameters" in SUPPORTED_COMMAND_NAMES.values()
+
+
+def test_supported_command_names_covers_octets_0_to_46():
+    """Spot-check that the table covers each octet at 0..46 with at least one entry."""
+    from pybluehost.hci.features_decode import SUPPORTED_COMMAND_NAMES
+    octets_with_entries = {octet for (octet, _bit) in SUPPORTED_COMMAND_NAMES.keys()}
+    for octet in range(0, 47):
+        if octet in (21,):
+            continue  # octet 21 is fully reserved in Spec 5.4
+        assert octet in octets_with_entries, f"octet {octet} has no entries"
+
+
+def test_supported_command_names_keys_are_octet_bit_tuples():
+    from pybluehost.hci.features_decode import SUPPORTED_COMMAND_NAMES
+    for key in SUPPORTED_COMMAND_NAMES:
+        assert isinstance(key, tuple) and len(key) == 2
+        octet, bit = key
+        assert 0 <= octet <= 63
+        assert 0 <= bit <= 7

@@ -231,3 +231,23 @@ async def test_info_json_stdout_is_pure_json_even_when_logs_emit(capsys):
     assert "LEAK" not in out, f"stdout contaminated by transport-layer print: {out!r}"
     parsed = json.loads(out)
     assert "transport" in parsed
+
+
+@pytest.mark.asyncio
+async def test_info_decoded_commands_use_supported_command_names(capsys):
+    """supported_commands.decoded uses SUPPORTED_COMMAND_NAMES for naming,
+    so common commands like Inquiry / Reset / LE_Set_Event_Mask appear by
+    spec name (not by HCI_INQUIRY-style constant name)."""
+    from pybluehost.cli.tools.info import _cmd_info_async
+
+    class _Args:
+        transport = "virtual"
+        json = True
+
+    await _cmd_info_async(_Args())
+    parsed = json.loads(capsys.readouterr().out)
+    decoded_values = set(parsed["supported_commands"]["decoded"].values())
+    # Virtual advertises everything in _OPCODE_BIT_POSITIONS — those should
+    # decode using SUPPORTED_COMMAND_NAMES's spec-style names now.
+    assert "Reset" in decoded_values  # (5, 7)
+    assert "Inquiry" in decoded_values  # (0, 0)

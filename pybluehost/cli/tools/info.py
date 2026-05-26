@@ -13,12 +13,12 @@ import json
 import sys
 from typing import Any
 
-from pybluehost.hci.capabilities import _OPCODE_BIT_POSITIONS
 from pybluehost.hci.features_decode import (
     BREDR_FEATURE_BIT_NAMES,
     BREDR_FEATURE_BIT_NAMES_P1,
     BREDR_FEATURE_BIT_NAMES_P2,
     LE_FEATURE_BIT_NAMES,
+    SUPPORTED_COMMAND_NAMES,
     hci_version_name,
     manufacturer_name,
 )
@@ -184,30 +184,22 @@ def _decode_bitmap(
 def _decode_commands_bitmap(
     cmd_bitmap: bytes,
 ) -> tuple[dict[str, str], list[dict[str, int]]]:
-    """Decode the Supported_Commands bitmap.
+    """Decode the 64-byte Supported_Commands bitmap.
 
-    Returns (decoded, unknown_bits_set). decoded is {'<octet>/<bit>': '<name>'}
-    for every known opcode whose bit is set. unknown_bits_set lists set bits
-    that don't appear in _OPCODE_BIT_POSITIONS.
+    Returns (decoded, unknown_bits_set). decoded is {"<octet>/<bit>": "<name>"}
+    for every set bit whose position appears in SUPPORTED_COMMAND_NAMES.
+    Set bits at positions not in that table are reserved or vendor-specific
+    in Spec 5.4; they end up in unknown_bits_set.
     """
-    import pybluehost.hci.constants as hci_constants
-
-    opcode_to_name: dict[int, str] = {
-        v: k for k, v in vars(hci_constants).items()
-        if k.startswith("HCI_") and isinstance(v, int)
-    }
-    position_to_name: dict[tuple[int, int], str] = {}
-    for opcode, (octet, bit) in _OPCODE_BIT_POSITIONS.items():
-        position_to_name[(octet, bit)] = opcode_to_name.get(opcode, f"opcode_0x{opcode:04X}")
-
     decoded: dict[str, str] = {}
     unknown: list[dict[str, int]] = []
     for octet in range(len(cmd_bitmap)):
         byte = cmd_bitmap[octet]
         for bit in range(8):
             if byte & (1 << bit):
-                if (octet, bit) in position_to_name:
-                    decoded[f"{octet}/{bit}"] = position_to_name[(octet, bit)]
+                name = SUPPORTED_COMMAND_NAMES.get((octet, bit))
+                if name is not None:
+                    decoded[f"{octet}/{bit}"] = name
                 else:
                     unknown.append({"octet": octet, "bit": bit})
     return decoded, unknown
