@@ -499,12 +499,19 @@ class HCIController:
                         HCI_READ_LOCAL_EXTENDED_FEATURES, rsp.return_parameters
                     )
 
-        # LE Features extension pages (Spec 6.0+). Gated on
-        # Read_Local_Supported_Features_Page command support — Spec 5.4 era
-        # controllers don't advertise it, so this block is a no-op for them
-        # and the structural hooks become live when 6.0 adapters arrive.
-        from pybluehost.hci.constants import HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE
-        if self._supported_commands.has(HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE):
+        # LE Features extension pages (Spec 6.0+).
+        #
+        # Gating dilemma: the canonical gate would be Supported_Commands.has(
+        # HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE), but the exact (octet, bit)
+        # position for this Spec 6.0 command is uncertain (no Spec 6.0
+        # controllers shipped at this code's authoring time). So we fall back
+        # to an HCI_Version gate — only attempt this command on adapters
+        # reporting Bluetooth 6.0+ (hci_version >= 0x0E). The send is also
+        # wrapped in try/except so a Spec 6.0 controller that disagrees with
+        # our OCF guess (0x0087) can return Unknown_HCI_Command without
+        # crashing init.
+        if self._hci_version is not None and self._hci_version >= 0x0E:
+            from pybluehost.hci.constants import HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE
             from pybluehost.hci.packets import (
                 HCI_LE_Read_Local_Supported_Features_Page_Command,
             )
@@ -519,10 +526,11 @@ class HCIController:
                     rsp = await self.send_command(
                         HCI_LE_Read_Local_Supported_Features_Page_Command(page_number=page)
                     )
-                except Exception:
+                except Exception as exc:
                     logger.debug(
-                        "HCI initialize: LE features page %d fetch failed; skipping",
-                        page,
+                        "HCI initialize: LE features page %d fetch failed (%s: %s); "
+                        "skipping. Likely Spec 6.0 OCF differs from our guess.",
+                        page, type(exc).__name__, exc,
                     )
                     break
                 if isinstance(rsp, HCI_Command_Complete_Event):
