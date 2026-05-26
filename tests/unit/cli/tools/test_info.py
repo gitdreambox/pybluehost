@@ -251,3 +251,24 @@ async def test_info_decoded_commands_use_supported_command_names(capsys):
     # decode using SUPPORTED_COMMAND_NAMES's spec-style names now.
     assert "Reset" in decoded_values  # (5, 7)
     assert "Inquiry" in decoded_values  # (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_info_json_includes_le_features_pages_structural_hook(capsys):
+    """JSON output exposes le_features_pages + le_features_max_page even
+    when empty. Spec 5.4 controllers don't support
+    Read_Local_Supported_Features_Page — these fields stay empty/None as
+    structural hooks for Spec 6.0+ adapters."""
+    from pybluehost.cli.tools.info import _cmd_info_async
+
+    class _Args:
+        transport = "virtual"
+        json = True
+
+    await _cmd_info_async(_Args())
+    parsed = json.loads(capsys.readouterr().out)
+    assert "le_features_pages" in parsed
+    assert "le_features_max_page" in parsed
+    # Virtual doesn't advertise the Spec 6.0 command, so the page dict is empty
+    assert parsed["le_features_pages"] == {}
+    assert parsed["le_features_max_page"] is None

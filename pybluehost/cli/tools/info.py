@@ -89,6 +89,8 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
     bredr_features = hci.bredr_features or b""
     bredr_features_p1 = hci.bredr_features_p1 or b""
     bredr_features_p2 = hci.bredr_features_p2 or b""
+    le_features_pages = getattr(hci, "le_features_pages", None) or {}
+    le_features_max_page = getattr(hci, "le_features_max_page", None)
 
     le_decoded = _decode_bitmap(le_features, LE_FEATURE_BIT_NAMES)
     bredr_decoded = _decode_bitmap(bredr_features, BREDR_FEATURE_BIT_NAMES)
@@ -149,6 +151,13 @@ def _collect_capability_data(stack, *, transport: str) -> dict[str, Any]:
         "bredr_features": bredr_decoded,
         "bredr_features_page1": bredr_decoded_p1,
         "bredr_features_page2": bredr_decoded_p2,
+        # LE Features extension pages (Spec 6.0+). Empty dict on Spec 5.4
+        # controllers since they don't advertise Read_Local_Supported_Features_Page.
+        "le_features_pages": {
+            str(page): bytes(features).hex()
+            for page, features in sorted(le_features_pages.items())
+        },
+        "le_features_max_page": le_features_max_page,
         "supported_commands": {
             "decoded": cmd_decoded,
             "unknown_bits_set": unknown_bits,

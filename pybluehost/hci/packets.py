@@ -32,6 +32,7 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_SCAN_PARAMS,
     HCI_LE_SET_RANDOM_ADDRESS,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
+    HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE,
     HCI_READ_LOCAL_EXTENDED_FEATURES,
     HCI_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
@@ -373,6 +374,42 @@ class HCI_LE_Read_Local_Supported_Features_Command(HCICommand):
     @classmethod
     def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Read_Local_Supported_Features_Command:
         return cls()
+
+
+@PacketRegistry.register_command(HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE)
+@dataclass
+class HCI_LE_Read_Local_Supported_Features_Page_Command(HCICommand):
+    """HCI_LE_Read_Local_Supported_Features_Page command (Spec 6.0 era).
+
+    Reads one 8-byte LE features page beyond the original 64-bit
+    HCI_LE_Read_Local_Supported_Features bitmap. page_number=0 is
+    equivalent to the non-paged read; page 1+ are 6.0 extension bits.
+
+    Response payload (best-effort interpretation, mirrors BR/EDR
+    Read_Local_Extended_Features layout):
+        status(1) + page_number(1) + max_page_number(1) + features(8)
+
+    No Spec 5.4 controller supports this; HCIController gates the call
+    on Supported_Commands.has(opcode) so it's only sent to 6.0 adapters.
+    """
+
+    opcode: int = field(default=HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE, init=False)
+    page_number: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return bytes([self.page_number & 0xFF])
+
+    @parameters.setter
+    def parameters(self, _value: bytes) -> None:  # type: ignore[override]
+        pass
+
+    @classmethod
+    def from_bytes(
+        cls, opcode: int, parameters: bytes
+    ) -> HCI_LE_Read_Local_Supported_Features_Page_Command:
+        page = parameters[0] if parameters else 0
+        return cls(page_number=page)
 
 
 @PacketRegistry.register_command(HCI_SET_EVENT_MASK)

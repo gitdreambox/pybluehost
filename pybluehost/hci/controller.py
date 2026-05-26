@@ -126,6 +126,12 @@ class HCIController:
         self._bredr_features_p2: bytes | None = None
         self._bredr_extended_max_page: int | None = None
         self._le_features: bytes | None = None
+        # LE Features extension pages from HCI_LE_Read_Local_Supported_Features_Page
+        # (Spec 6.0+). Keyed by page_number. _le_features_max_page is the
+        # max-page the controller advertises; None means the command wasn't
+        # supported.
+        self._le_features_pages: dict[int, bytes] = {}
+        self._le_features_max_page: int | None = None
 
         # Upper-layer callbacks (set via set_upstream)
         self._on_hci_event: OnHCIEvent | None = None
@@ -239,6 +245,14 @@ class HCIController:
     def le_features(self) -> bytes | None:
         return self._le_features
 
+    @property
+    def le_features_pages(self) -> dict[int, bytes]:
+        return self._le_features_pages
+
+    @property
+    def le_features_max_page(self) -> int | None:
+        return self._le_features_max_page
+
     # ------------------------------------------------------------------
     # TransportSink protocol
     # ------------------------------------------------------------------
@@ -322,6 +336,7 @@ class HCIController:
             HCI_READ_LOCAL_SUPPORTED_FEATURES,
             HCI_READ_LOCAL_EXTENDED_FEATURES,
             HCI_LE_READ_LOCAL_SUPPORTED_FEATURES,
+            HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE,
         )
         # return_parameters[0] is the status byte.
         if opcode == HCI_READ_LOCAL_VERSION and len(return_parameters) >= 9:
@@ -352,6 +367,14 @@ class HCIController:
             # truth on the simple-read command.
         elif opcode == HCI_LE_READ_LOCAL_SUPPORTED_FEATURES and len(return_parameters) >= 9:
             self._le_features = bytes(return_parameters[1:9])
+        elif opcode == HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE and len(return_parameters) >= 11:
+            # Spec 6.0 layout (best-effort, mirrors Read_Local_Extended_Features):
+            #   status(1) + page_number(1) + max_page_number(1) + features(8)
+            payload = return_parameters[1:]
+            page_number = payload[0]
+            self._le_features_max_page = payload[1]
+            features = bytes(payload[2:10])
+            self._le_features_pages[page_number] = features
 
     # ------------------------------------------------------------------
     # ACL data sending
@@ -474,6 +497,38 @@ class HCIController:
                 if isinstance(rsp, HCI_Command_Complete_Event):
                     self._capture_capability_response(
                         HCI_READ_LOCAL_EXTENDED_FEATURES, rsp.return_parameters
+                    )
+
+        # LE Features extension pages (Spec 6.0+). Gated on
+        # Read_Local_Supported_Features_Page command support — Spec 5.4 era
+        # controllers don't advertise it, so this block is a no-op for them
+        # and the structural hooks become live when 6.0 adapters arrive.
+        from pybluehost.hci.constants import HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE
+        if self._supported_commands.has(HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE):
+            from pybluehost.hci.packets import (
+                HCI_LE_Read_Local_Supported_Features_Page_Command,
+            )
+
+            for page in (1, 2, 3, 4):
+                if (
+                    self._le_features_max_page is not None
+                    and page > self._le_features_max_page
+                ):
+                    break
+                try:
+                    rsp = await self.send_command(
+                        HCI_LE_Read_Local_Supported_Features_Page_Command(page_number=page)
+                    )
+                except Exception:
+                    logger.debug(
+                        "HCI initialize: LE features page %d fetch failed; skipping",
+                        page,
+                    )
+                    break
+                if isinstance(rsp, HCI_Command_Complete_Event):
+                    self._capture_capability_response(
+                        HCI_LE_READ_LOCAL_SUPPORTED_FEATURES_PAGE,
+                        rsp.return_parameters,
                     )
 
         # BR/EDR Secure Connections — gated on config AND controller support
