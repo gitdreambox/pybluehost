@@ -55,7 +55,7 @@ v1.0 已经把 Classic baseband（HCI / L2CAP / RFCOMM / SDP / GAP / Secure Conn
 
 **支持的 codec**：
 - SBC（Sub-Band Coding，A2DP Mandatory）—— 编码 + 解码，纯 Python
-- AAC（Advanced Audio Coding）—— 解码 + 编码，ctypes 绑定 libfdk-aac
+- **AAC 推 v2.x 单独子项目**（A2DP Optional；Apple/Android 高品质音乐场景需要；libfdk-aac 跨平台分发头痛，单独评估）
 
 **用户场景 CLI**：
 - `pybluehost app a2dp-source <wav-file>` —— 模拟手机，把 WAV 文件推到对端
@@ -124,12 +124,13 @@ v1.0 已经把 Classic baseband（HCI / L2CAP / RFCOMM / SDP / GAP / Secure Conn
 
 | Codec | 用途 | 实现 | 工作量 |
 |---|---|---|---|
-| **SBC** | A2DP mandatory | 纯 Python（~500 行，参考 ETSI / BlueZ libsbc） | ~1 周 |
-| **CVSD** | HFP narrow-band（8 kHz） | 纯 Python（~100 行 delta modulation） | ~2 天 |
-| **mSBC** | HFP wide-band（16 kHz） | 纯 Python（SBC 配置成 wide-band，~150 行追加） | ~3 天 |
-| **AAC** | A2DP 可选（Apple/Android 默认高品质音乐） | ctypes 绑定 libfdk-aac，extras dep | ~1.5 周 |
+| **SBC** | A2DP mandatory（A2DP spec 强制） | 纯 Python（~500 行，参考 ETSI / BlueZ libsbc） | ~1 周 |
+| **CVSD** | HFP/HSP narrow-band（HFP spec 强制；HSP 唯一 codec） | 纯 Python（~120 行 delta modulation） | ~3 天 |
+| **mSBC** | HFP wide-band 16 kHz（HFP 1.6+ 可选；现代设备默认） | 纯 Python（SBC 配置成 wide-band，~150 行追加） | ~3 天 |
 
-每个 codec 独立可测：用 ETSI test vectors（CVSD/SBC）、官方 conformance vectors（AAC）做单元测试。
+每个 codec 独立可测：用 ETSI test vectors 做单元测试。
+
+**AAC 推 v2.x**：A2DP 协商时如对端要求 AAC 但本地未实现，自动降级 SBC。
 
 ### 3.6 sounddevice 集成（optional extras）
 
@@ -309,15 +310,14 @@ PyBlueHost 不预绑定 AAC 库（licensing 顾虑 + cross-platform 分发难）
 | Plan A.1 | Codec 模块（SBC + CVSD + mSBC，纯 Python） | ~2 周 |
 | Plan A.2 | A2DP + AVDTP + SBC 集成 + virtual link extensions | ~3-4 周 |
 | Plan A.3 | AVRCP + AVCTP | ~2-3 周 |
-| Plan A.4 | HFP 协议层 + SCO file loopback（含 HCI SCO Data Packet + WAV 读写 worker） | ~4.5 周 |
-| Plan A.5 | HSP 协议层 | ~1 周 |
-| Plan A.6 | AAC ctypes 绑定 | ~1.5 周 |
-| Plan A.7 | sounddevice 集成 + CLI + 文档 + 收尾 | ~1.5 周 |
-| **合计** | | **~15.5-18.5 周（~4 个月）** |
+| Plan A.4 | HFP 协议层 + SCO file loopback（含 HCI SCO Data Packet + WAV 读写 worker，含 CVSD/mSBC encode/decode） | ~4.5 周 |
+| Plan A.5 | HSP 协议层（含 SCO loopback；HSP 用 CVSD） | ~1 周 |
+| Plan A.6 | sounddevice 集成 + CLI + 文档 + 收尾 | ~1.5 周 |
+| **合计** | | **~14-17 周（~3.5-4 个月）** |
 
-按 vertical slice 排，每个 Plan 落地都给用户可见的 milestone（A2DP 跑通约 5-6 周后；AVRCP 约 8 周；HFP 协议 + SCO loopback 约 12.5 周；HSP+AAC+CLI 约 15.5-18.5 周）。
+按 vertical slice 排，每个 Plan 落地都给用户可见的 milestone（A2DP 跑通约 5-6 周后；AVRCP 约 8 周；HFP 协议 + SCO loopback 约 12.5 周；HSP + CLI 约 14-17 周）。
 
-**v2.0 不含**实时 OS 音频接入 + USB Alt Setting/vendor 命令 quirk 适配——见 design spec §12，留 v2.1（额外 ~6-7 周）。
+**v2.0 不含**实时 OS 音频接入 + USB Alt Setting/vendor 命令 quirk 适配 + AAC codec——见 design spec §12，留 v2.1+。
 
 ---
 
@@ -325,7 +325,6 @@ PyBlueHost 不预绑定 AAC 库（licensing 顾虑 + cross-platform 分发难）
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| AAC libfdk-aac 跨平台分发难（licensing + DLL） | 用户装不上 → AAC 不可用 | 文档清晰说明系统依赖；fallback：A2DP 协商时如对端要求 AAC 但本地未装库，降级为 SBC |
 | HFP AT command 兼容性（不同厂商手机/车载有非标扩展） | SLC 建立失败或 corner case | v2.0 只覆盖 HFP 1.7 spec 强制 + 主流 OEM 通用扩展；非主流扩展看到 unknown AT 命令记日志不中断 |
 | AVDTP signaling state machine 复杂 | 状态机 bug 难复现 | 沿用 v1.0 `StateMachine[S, E]` 框架，状态转换有日志；e2e 多组合场景覆盖 |
 | 真硬件互通验收依赖手动测试 | 没法 CI 自动验证 | v2.0 收尾要求手工跑过至少 1 套：手机 + PyBlueHost；记录到 docs/hardware/audio-interop.md |
@@ -345,7 +344,7 @@ PyBlueHost 不预绑定 AAC 库（licensing 顾虑 + cross-platform 分发难）
 
 - [ ] 主线方向（Classic Audio）是否正确？
 - [ ] Profile 范围（全 4 个 dual-role）是否符合预期？
-- [ ] Codec 范围（SBC + CVSD + mSBC + AAC）是否合适？AAC 的 C 依赖是否接受？
+- [ ] Codec 范围（SBC + CVSD + mSBC，无 AAC）是否合适？
 - [ ] HFP/HSP 不含 SCO 音频路径的 scope 边界是否清晰？
 - [ ] 工作量估计（3.5-4 个月）是否合理？
 - [ ] 14-17 周里程碑节奏是否符合期望？
