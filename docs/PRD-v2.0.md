@@ -340,13 +340,14 @@ PyBlueHost 不预绑定 AAC 库（licensing 顾虑 + cross-platform 分发难）
 
 ---
 
-## 13. 评审清单
+## 13. 评审清单（已 confirmed 2026-05-27）
 
-- [ ] 主线方向（Classic Audio）是否正确？
-- [ ] Profile 范围（全 4 个 dual-role）是否符合预期？
-- [ ] Codec 范围（SBC + CVSD + mSBC，无 AAC）是否合适？
-- [ ] HFP/HSP 不含 SCO 音频路径的 scope 边界是否清晰？
-- [ ] 工作量估计（3.5-4 个月）是否合理？
-- [ ] 14-17 周里程碑节奏是否符合期望？
-- [ ] 显式 Non-Goal 是否覆盖到位？
-- [ ] 与 v1.0 公开 API 不破坏的承诺是否够明确？
+- [x] 主线方向：Classic Audio（A2DP/AVRCP/HFP/HSP）
+- [x] Profile 范围：全 4 个 dual-role
+- [x] Codec 范围：SBC + CVSD + mSBC 纯 Python；AAC 推 v2.x
+- [x] HFP/HSP 含 SCO file loopback（CVSD/mSBC encode/decode + WAV file I/O）；**不含** OS 实时音频 + USB Alt Setting/vendor quirk 适配
+- [x] 工作量估计 14-17 周（~3.5-4 个月），6 个 Plan vertical slice
+- [x] 显式 Non-Goal（含 AAC、实时音频、quirk 适配、LE Audio、macOS、PTS、analyzer）
+- [x] 与 v1.0 公开 API 不破坏
+
+详细评审记录见 design spec §11。
