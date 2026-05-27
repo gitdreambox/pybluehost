@@ -50,7 +50,7 @@ v1.0 已经把 Classic baseband（HCI / L2CAP / RFCOMM / SDP / GAP / Secure Conn
 **Profile 层（A2DP）**：
 - **Source + Sink 双角色**
 - SDP record 注册（A2DP Source UUID 0x110A / Sink UUID 0x110B）
-- Codec capability 协商（Mandatory SBC + Optional AAC）
+- Codec capability 协商（Mandatory SBC；AAC 推 v2.x）
 - 流控（基于 L2CAP credit）
 
 **支持的 codec**：
@@ -79,7 +79,7 @@ v1.0 已经把 Classic baseband（HCI / L2CAP / RFCOMM / SDP / GAP / Secure Conn
 - `pybluehost app avrcp-control --target=<addr> --cmd=play`
 - `pybluehost app avrcp-target` —— 长跑，接受 controller 控制并打印事件
 
-### 3.3 HFP（Hands-Free Profile）—— 协议层，**不含 SCO 音频**
+### 3.3 HFP（Hands-Free Profile）—— 协议层 + SCO file loopback
 
 **协议层（RFCOMM + AT command）**：
 - RFCOMM 通道（HFP server channel 由 SDP 协商）
@@ -91,25 +91,28 @@ v1.0 已经把 Classic baseband（HCI / L2CAP / RFCOMM / SDP / GAP / Secure Conn
 **Profile 层（HFP）**：
 - **AG (Audio Gateway) + HF (Hands-Free) 双角色**
 - SDP record 注册（AG UUID 0x111F / HF UUID 0x111E）
-- SCO **link setup/teardown**（HCI `Setup_Synchronous_Connection`）—— 信道建立完，**不做音频 PCM 流**
-- Codec negotiation 协议路径（CVSD / mSBC）—— **协议层完成，编解码 binary frame 接到 mock buffer**
+- SCO link setup/teardown（HCI `Setup_Synchronous_Connection`）—— 完整握手
+- Codec negotiation 协议路径（CVSD / mSBC）—— 实际编解码走 codec module
+- **HCI SCO Data Packet (type 0x03) 打包/解包**（v1.0 没做）
+- **SCO file loopback**：outbound 循环读 WAV → CVSD/mSBC encode → SCO Data Packet 发出；inbound 反向解码写 WAV
 
 **用户场景 CLI**：
-- `pybluehost app hfp-test --role=HF --target=<phone-addr>` —— 跟手机建立 SLC、模拟接电话、看 AT 交互日志、SCO 建联成功后立即关
-- `pybluehost app hfp-test --role=AG` —— 长跑，接受 HF 设备（headset）连入
+- `pybluehost app hfp-test --role=HF --target=<phone-addr> --sco-in=<input.wav> --sco-out=<received.wav>` —— 跟手机建立 SLC、模拟接电话、SCO link 建联后跑文件 loopback
+- `pybluehost app hfp-test --role=AG --sco-in=<input.wav> --sco-out=<received.wav>` —— 长跑，接受 HF 设备连入
 
-**显式 NON-Goal**：
-- 实时音频通路（麦克风采样 → CVSD/mSBC 编码 → SCO 帧；反向同理）
+**显式 NON-Goal**（推 v2.1）：
+- 实时麦克风采集/扬声器播放（CVSD/mSBC 现在能编解码，缺的是 OS 音频后端接入）
 - 跨平台音频后端集成（WASAPI / PulseAudio / CoreAudio）
-- SCO over HCI 适配器 quirk 适配（Intel/CSR/Realtek alt setting）
+- SCO over HCI 适配器 quirk 适配（Intel/CSR/Realtek alt setting + Realtek vendor 命令）
 
-→ 这些全部 defer 到 v2.1（独立子项目，预计 ~6-7 周额外工作量）
+→ v2.0 SCO loopback **保证 virtual transport 上端到端验证**；真硬件 SCO 数据流需要 v2.1 quirk 适配后才稳跑。详见 design spec §12。
 
 ### 3.4 HSP（Headset Profile）
 
 **协议层**：
-- HFP 的简化版本，复用 HFP 实现的大部分（AT command parser、RFCOMM 通道、SCO setup）
+- HFP 的简化版本，复用 HFP 实现的大部分（AT command parser、RFCOMM 通道、SCO setup + data loopback、CVSD codec）
 - 简化 AT 命令集：仅 AT+VGS / AT+VGM / RING / +CKPD
+- SCO data path 强制 CVSD（HSP spec 无 codec 协商）
 
 **Profile 层**：
 - **AG + HS 双角色**
@@ -174,8 +177,8 @@ v1.0 已经把 Classic baseband（HCI / L2CAP / RFCOMM / SDP / GAP / Secure Conn
 │   ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐│
 │   │   A2DP     │  │   AVRCP    │  │    HFP     │  │    HSP     ││
 │   │ Source+Sink│  │ Ctrl+Target│  │  AG + HF   │  │  AG + HS   ││
-│   │            │  │            │  │ (AT cmds,  │  │ (subset of ││
-│   │            │  │            │  │ no audio)  │  │  HFP)      ││
+│   │            │  │            │  │ + SCO file │  │ + SCO file ││
+│   │            │  │            │  │  loopback  │  │  (CVSD)    ││
 │   └─────┬──────┘  └──────┬─────┘  └─────┬──────┘  └─────┬──────┘│
 │         │                │              │               │       │
 ├─────────▼────────────────▼──────────────▼───────────────▼───────┤
@@ -193,23 +196,24 @@ v1.0 已经把 Classic baseband（HCI / L2CAP / RFCOMM / SDP / GAP / Secure Conn
 ├──────────────────────────────────────────────────────────────────┤
 │  Codec library (new, independent, NO Bluetooth glue)             │
 │                                                                  │
-│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐│
-│   │   SBC    │  │   CVSD   │  │   mSBC   │  │      AAC         ││
-│   │ encode/  │  │ encode/  │  │ encode/  │  │ ctypes binding   ││
-│   │ decode   │  │ decode   │  │ decode   │  │ (libfdk-aac)     ││
-│   │ (pure py)│  │ (pure py)│  │ (pure py)│  │                  ││
-│   └──────────┘  └──────────┘  └──────────┘  └──────────────────┘│
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐                     │
+│   │   SBC    │  │   CVSD   │  │   mSBC   │  (AAC 推 v2.x         │
+│   │ encode/  │  │ encode/  │  │ encode/  │   单独子项目)        │
+│   │ decode   │  │ decode   │  │ decode   │                     │
+│   │ (pure py)│  │ (pure py)│  │ (pure py)│                     │
+│   └──────────┘  └──────────┘  └──────────┘                     │
 └──────────────────────────────────────────────────────────────────┘
 
 Side-channel:  sounddevice (extras=audio) ── used only by CLI for A2DP
                                               play/record real-time
+                                              (HFP/HSP 实时通路推 v2.1)
 ```
 
 ### 关键架构决策
 
 1. **Codec 模块独立**：`pybluehost/audio/codec/` 不 import 任何蓝牙代码。能用作离线工具（ETSI vector 测试），也能让其他 Python 项目独立引用。
-2. **HFP/HSP 不写 SCO 音频路径**：SCO link 建立 + tear-down + codec negotiation 信令做完，但 PCM ↔ codec ↔ SCO 帧的实时通路不实现。v2.1 单独做。
-3. **AAC 用 ctypes 绑定 libfdk-aac**：纯 Python AAC 不现实。decoder-only 也接受（Source 端宣告支持 AAC 但发送时 fallback 到 SBC）。
+2. **HFP/HSP 含 SCO file loopback**：SCO link 建立 + HCI SCO Data Packet 收发 + CVSD/mSBC encode/decode + WAV file in/out。**不接 OS 实时音频后端 + 不做 USB Alt Setting/vendor 命令 quirk 适配**——这两件留 v2.1。
+3. **AAC 推 v2.x**：纯 Python AAC 不现实；ctypes 绑 libfdk-aac 跨平台分发头痛。v2.0 协商时不宣告 AAC 能力，让对端 fallback SBC。
 4. **sounddevice 是 optional extras**：主代码 lazy import，CI 全套不依赖。
 5. **复用 v1.0 RFCOMM**：HFP/HSP 跑在 RFCOMM 上，不重写。
 6. **Profile YAML 注册**：沿用 v1.0 `profiles/ble/` 的 YAML loader + decorator 模式，新增 `profiles/classic/` 目录。
@@ -241,10 +245,10 @@ Side-channel:  sounddevice (extras=audio) ── used only by CLI for A2DP
 | `app a2dp-sink --output=<wav>` | Sink | 长跑，注册 SDP record，接受 source 连接，写流到文件 |
 | `app avrcp-control --target=<addr> --cmd=<play\|pause\|...>` | Controller | 一次性，发命令到对端 target |
 | `app avrcp-target` | Target | 长跑，注册 SDP，接受 controller 命令并打印 |
-| `app hfp-test --role=HF --target=<addr>` | HF | 一次性，建 SLC + setup SCO link + dump AT 交互 + 拆链 |
-| `app hfp-test --role=AG` | AG | 长跑，接 HF 设备 |
-| `app hsp-test --role=HS --target=<addr>` | HS | 一次性，类似 HFP-test 但 HSP 路径 |
-| `app hsp-test --role=AG` | AG | 长跑，HSP gateway |
+| `app hfp-test --role=HF --target=<addr> --sco-in=<wav> --sco-out=<wav>` | HF | 一次性，建 SLC + setup SCO link + SCO file loopback + AT 日志 + 拆链 |
+| `app hfp-test --role=AG --sco-in=<wav> --sco-out=<wav>` | AG | 长跑，接 HF 设备 + SCO loopback |
+| `app hsp-test --role=HS --target=<addr> --sco-in=<wav> --sco-out=<wav>` | HS | 一次性，HSP 路径 + CVSD SCO loopback |
+| `app hsp-test --role=AG --sco-in=<wav> --sco-out=<wav>` | AG | 长跑，HSP gateway + SCO loopback |
 
 `--extras-audio` 装了后 a2dp-source/sink 加 `--mic` / `--play` 参数；未装时这些参数报清晰错误。
 
@@ -262,24 +266,11 @@ audio = [
     "sounddevice>=0.4",   # OS audio device, A2DP play/record
     "numpy>=1.24",        # PCM buffer manipulation
 ]
-# AAC codec: extra-extra
-aac = [
-    # libfdk-aac via ctypes; system lib required, no pip wheel
-]
 ```
 
-主代码 `import sounddevice as sd` 全部 lazy（在函数内 / try-except）。
+主代码 `import sounddevice as sd` 全部 lazy（在函数内 / try-except）。AAC 推 v2.x 单独子项目，届时再加 `aac` extras + libfdk-aac ctypes 绑定（v2.0 不引入）。
 
-### 8.2 AAC 外部依赖
-
-`libfdk-aac` 通过 ctypes 加载：
-- Linux：`apt install libfdk-aac2`
-- macOS：`brew install fdk-aac`
-- Windows：用户提供 DLL，文档说明放置路径
-
-PyBlueHost 不预绑定 AAC 库（licensing 顾虑 + cross-platform 分发难）。
-
-### 8.3 平台支持
+### 8.2 平台支持
 
 - **Linux**（主开发平台）：已支持 v1.0 全栈；v2.0 不需要额外内核组件
 - **Windows**：已支持 v1.0；v2.0 sounddevice 走 WASAPI 后端开箱即用
@@ -294,10 +285,11 @@ PyBlueHost 不预绑定 AAC 库（licensing 顾虑 + cross-platform 分发难）
 | 跟真蓝牙音箱（如 JBL、小米、AirPods）互通 A2DP 音乐流 | 把 WAV 文件推过去能听到声音 | 手动测试，hardware survey 记录 |
 | 跟真手机互通 A2DP（PyBlueHost 当 sink）| PyBlueHost 当蓝牙音箱接手机播放音乐，能听到 | 手动测试 |
 | AVRCP 控制真手机播放 | 手机播放音乐时，PyBlueHost 发 PAUSE 能暂停 | 手动测试 |
-| HFP SLC + SCO setup 跟真手机/真耳机一致 | 看到完整 AT 交互日志，SCO link Connect 成功 | 手动 + e2e |
-| 全套 e2e 在 virtual 上通过 | 5+ e2e 场景在 `--transport=virtual` 下全 PASS | CI |
+| HFP SLC + SCO link 跟真手机/真耳机一致 | 看到完整 AT 交互日志；SCO link Connect 成功（真硬件 SCO data 流推 v2.1） | 手动 + e2e |
+| HFP/HSP SCO file loopback (virtual) | virtual transport 跑通 WAV ↔ CVSD/mSBC ↔ SCO Data Packet 双向 | e2e |
+| 全套 e2e 在 virtual 上通过 | 7+ e2e 场景在 `--transport=virtual` 下全 PASS | CI |
 | SBC encoder/decoder ETSI vector 通过 | 标准测试向量编码/解码正确 | 单元测试 |
-| CVSD / mSBC 编码与 BlueZ libfreebt 互通 | 同一段 PCM 编码后用 BlueZ 解码能还原 | 单元测试 + 手动 cross-check |
+| CVSD / mSBC 编码与 BlueZ libsbc 互通 | 同一段 PCM 编码后用 BlueZ 解码能还原 | 单元测试 + 手动 cross-check |
 | Wireshark 能解码 PyBlueHost 生成的 btsnoop 中的 AVDTP / AVCTP / RFCOMM AT command | 手动用 Wireshark 打开看 | 手动 |
 | Stack.virtual() 跑完整 A2DP source→sink 流程 | 10 行 Python 完成 SBC encode + AVDTP signaling + streaming + SBC decode | API 易用性 |
 
@@ -326,8 +318,9 @@ PyBlueHost 不预绑定 AAC 库（licensing 顾虑 + cross-platform 分发难）
 | 风险 | 影响 | 缓解 |
 |---|---|---|
 | HFP AT command 兼容性（不同厂商手机/车载有非标扩展） | SLC 建立失败或 corner case | v2.0 只覆盖 HFP 1.7 spec 强制 + 主流 OEM 通用扩展；非主流扩展看到 unknown AT 命令记日志不中断 |
+| HCI SCO Data Packet (type 0x03) v1.0 没做过，packing/parsing 是新代码 | 状态机 bug 难复现 | Plan A.4 内做完整单元测试 + VirtualClassicLink 双端 round-trip 验证 |
 | AVDTP signaling state machine 复杂 | 状态机 bug 难复现 | 沿用 v1.0 `StateMachine[S, E]` 框架，状态转换有日志；e2e 多组合场景覆盖 |
-| 真硬件互通验收依赖手动测试 | 没法 CI 自动验证 | v2.0 收尾要求手工跑过至少 1 套：手机 + PyBlueHost；记录到 docs/hardware/audio-interop.md |
+| 真硬件互通验收依赖手动测试 | 没法 CI 自动验证 | v2.0 收尾要求手工跑过至少 1 套：手机 + PyBlueHost；记录到 docs/CLASSIC_AUDIO_E2E.md |
 | Sub-Plan A.2 工作量可能 > 4 周（AVDTP signaling 复杂度被低估） | 时间表后移 | 第一个 Plan 完成时复盘估算；如果超 4 周，剩余 Plan 同比缩放或 ship "A2DP only + delay everything else" |
 
 ---
