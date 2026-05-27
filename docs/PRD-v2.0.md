@@ -309,13 +309,15 @@ PyBlueHost 不预绑定 AAC 库（licensing 顾虑 + cross-platform 分发难）
 | Plan A.1 | Codec 模块（SBC + CVSD + mSBC，纯 Python） | ~2 周 |
 | Plan A.2 | A2DP + AVDTP + SBC 集成 + virtual link extensions | ~3-4 周 |
 | Plan A.3 | AVRCP + AVCTP | ~2-3 周 |
-| Plan A.4 | HFP 协议层（AT 解析 + SLC + 状态机，AG + HF） | ~3 周 |
+| Plan A.4 | HFP 协议层 + SCO file loopback（含 HCI SCO Data Packet + WAV 读写 worker） | ~4.5 周 |
 | Plan A.5 | HSP 协议层 | ~1 周 |
 | Plan A.6 | AAC ctypes 绑定 | ~1.5 周 |
 | Plan A.7 | sounddevice 集成 + CLI + 文档 + 收尾 | ~1.5 周 |
-| **合计** | | **~14-17 周（3.5-4 个月）** |
+| **合计** | | **~15.5-18.5 周（~4 个月）** |
 
-按 vertical slice 排，每个 Plan 落地都给用户可见的 milestone（A2DP 跑通约 5-6 周后；AVRCP 约 8 周；HFP 协议层约 11 周；HSP+AAC+CLI 约 14-17 周）。
+按 vertical slice 排，每个 Plan 落地都给用户可见的 milestone（A2DP 跑通约 5-6 周后；AVRCP 约 8 周；HFP 协议 + SCO loopback 约 12.5 周；HSP+AAC+CLI 约 15.5-18.5 周）。
+
+**v2.0 不含**实时 OS 音频接入 + USB Alt Setting/vendor 命令 quirk 适配——见 design spec §12，留 v2.1（额外 ~6-7 周）。
 
 ---
 
