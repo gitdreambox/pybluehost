@@ -49,6 +49,9 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 - 接收 HCI-layer 的 `TraceEvent`（filter `source_layer == 'hci'`）
 - 把 `raw_bytes` + `direction` 映射成分析仪注入格式
 - 实时流式注入——PyBlueHost 跑任意场景时 HCI 流自动出现在分析仪 UI
+- **注入包类型范围**：HCI Command / Event / **ACL** / **SCO** 四种全做（每种映射到 Ellisys packet type / WPS Drf 的对应值）
+  - ACL 是看 L2CAP/ATT/GATT 交互的关键，分析仪价值最大
+  - SCO 格式编码 + 单测在 v1.1 完成；但 v1.0 还没音频路径，**真实 SCO 流要到 v2.0 才有得跑**，v1.1 的 SCO 路径只能用构造帧验证编码正确性
 
 ### 3.2 Ellisys 后端
 
@@ -173,6 +176,7 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 | `pybluehost app ble-scan --virtual-sniffer=wps` live HCI 出现在 WPS UI | 同上，WPS frames analyzed 实时增长 | 手动 |
 | GATT/SDP/A2DP 等长场景全程 HCI 不丢帧 | 高频 HCI 流量下注入稳定，无明显丢包 | 手动 + 计数比对 |
 | ACL 数据帧也能注入（不只 Command/Event） | L2CAP/ATT 流量的 ACL HCI 包在分析仪里可见 | 手动 |
+| SCO 帧注入格式编码正确 | 构造 SCO 帧的 Ellisys/WPS 注入参数与 spec 一致（真实 SCO 流待 v2.0） | 单元测试（mock） |
 | 非 Windows 上 flag 报清晰错误 | Linux/macOS 跑 `--virtual-sniffer=ellisys` 提示 Windows-only | 单元测试 |
 | 注入格式编码正确（mock 验证） | Ellisys UDP 包 / WPS SendFrame 参数与 spec 一致 | 单元测试（mock 服务器/DLL） |
 | 不影响现有 trace sink | 同时开 `--pybluehost-trace=hci` + `--virtual-sniffer` 两者都正常 | e2e |
@@ -215,5 +219,5 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 - [x] Ellisys .NET：PowerShell subprocess（沿用 demo）
 - [x] 激活：`--virtual-sniffer=ellisys|wps` flag，任意 app 命令可加
 - [x] Windows-only
-- [ ] 工作量估计 ~5 周（4 个 Plan）是否合理？
-- [ ] 注入范围是否要含 ACL/SCO（不只 HCI Command/Event）？
+- [x] 工作量估计 ~5 周（4 个 Plan）合理，照此（确认 2026-05-29）
+- [x] 注入范围 = HCI Command + Event + ACL + SCO 四种全做（确认 2026-05-29）；SCO 格式编码可单测，真实 SCO 流待 v2.0 音频路径

@@ -85,7 +85,10 @@ status                                  # 当前连接/配对状态
 ### 4.3 PICS / IXIT
 
 - 为目标 test group 编写 PICS（Protocol Implementation Conformance Statement）——声明 PyBlueHost 支持哪些 feature，PTS 据此选适用 test case
-- IXIT（Implementation eXtra Information for Testing）——测试参数（IUT 地址、key 等）
+- **半自动生成**：从 PyBlueHost 已有的能力来源（`pybluehost tools info` HCI capability dump / `features_decode` feature 表 / profile 注册表 / 各层 `__init__` 公共 API）程序化生成 PICS 草稿，再人工校正
+  - 目的：减少手写错误 + 让 PICS 与实际栈能力同步（栈加 feature 时 PICS 可重生成）
+  - 产出一个 PICS 生成器工具（属 Plan P.3）
+- IXIT（Implementation eXtra Information for Testing）——测试参数（IUT 地址、key 等），手写
 - 放在 `docs/pts/pics/` + `docs/pts/ixit/`，PTS UI 导入或文档说明
 
 ### 4.4 目标 test group（全 host 栈）
@@ -143,6 +146,8 @@ status                                  # 当前连接/配对状态
 | PICS 准确反映 PyBlueHost 能力 | PTS 据 PICS 选出的 test case 都适用，无"声明支持但跑不了"的 |
 | 各 group 通过率记录 | 记录到 docs/pts/results/，PTS 暴露的栈 bug 归档 + 修复 |
 
+**通过率目标**：Phase 1 **不设 ≥90% 硬指标**。目标是"能用 REPL 手动跑完适用 test case + 如实记录通过率 + 归档/修复暴露的栈 bug"。手动阶段跑多少算多少，被个别难缠 case 卡住不阻塞版本完成；90% 这类硬指标留给 Phase 2 BTP 自动化后再设。
+
 ---
 
 ## 8. Phase 1 时间估计
@@ -151,7 +156,7 @@ status                                  # 当前连接/配对状态
 |---|---|---|
 | Plan P.1 | PTS mode 配置 flags（栈行为调整 + 单元测试） | ~1.5 周 |
 | Plan P.2 | 交互式 PTS IUT 控制台 REPL（命令集 + 常驻 session 状态） | ~2 周 |
-| Plan P.3 | PICS / IXIT 编写（全 host 栈 7 个 group） | ~1 周 |
+| Plan P.3 | PICS 半自动生成器（从 capability dump 出草稿）+ IXIT 手写（全 host 栈 7 个 group） | ~1 周 |
 | Plan P.4 | 手动跑 PTS 各 group + 修栈 bug + 记录（迭代，开放式） | ~3-4 周（取决于 PTS 暴露多少 bug） |
 | **Phase 1 合计** | | **~7.5-8.5 周** |
 
@@ -188,6 +193,6 @@ Plan P.4 是开放式——真正的一致性工作量取决于 PTS 暴露多少
 - [x] Phase 1 测试范围：全 host 栈（HCI / L2CAP / GAP / GATT / SMP / Classic SDP / RFCOMM）
 - [x] 手动驱动接口：交互式 PTS IUT 控制台（REPL，常驻 session）
 - [x] PTS mode flags 参考 Fluoride（DisableConnUpdates / SecurePairOnly / DisableSDPOnLEPair / SmpOptions / SmpFailure）
-- [ ] PICS/IXIT 是手写 vs 从 PyBlueHost capability 半自动生成？
-- [ ] Phase 1 时间估计 ~7.5-8.5 周（含开放式 P.4 修 bug）是否可接受？
-- [ ] 通过率目标——原 PRD 说 ≥90%，Phase 1 是否设硬指标还是"尽量跑通 + 记录"？
+- [x] PICS 从 PyBlueHost capability 半自动生成（生成器属 Plan P.3）+ IXIT 手写（确认 2026-05-29）
+- [x] Phase 1 时间估计 ~7.5-8.5 周可接受，照此；P.4 保持开放式（确认 2026-05-29）
+- [x] 通过率：Phase 1 不设 ≥90% 硬指标，以"跑通适用 case + 记录 + 修 bug"为准；硬指标留 Phase 2（确认 2026-05-29）
