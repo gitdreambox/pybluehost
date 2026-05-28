@@ -1,30 +1,18 @@
-# PyBlueHost PRD v1.1 — Virtual Sniffer + PTS IUT
+# PyBlueHost PRD v1.1 — Virtual Sniffer
 
 **版本**：v1.1
 **日期**：2026-05-28
-**状态**：草案（brainstorm 进行中——virtual sniffer 子项目已确认，PTS IUT 子项目待 brainstorm）
+**状态**：草案（brainstorm 已确认）
 **前置版本**：[PRD v1.0](PRD.md)（已完成 31 个 Plan）
+**同期版本**：[PRD v1.2 — PTS IUT](PRD-v1.2.md)（独立，无依赖）
 
 ---
 
-## 0. v1.1 范围概述
-
-v1.1 包含**两个相互独立的子项目**（各自一份 spec → plan → 实现，互不依赖）：
-
-| 子项目 | 内容 | 状态 |
-|---|---|---|
-| **A. Virtual Sniffer** | 把 PyBlueHost 的 live HCI 流通过 Remote API 注入 Ellisys / Teledyne WPS 分析仪软件实时显示 | **本 PRD 覆盖**（已 brainstorm） |
-| **B. PTS IUT 支持** | PyBlueHost 当 Implementation Under Test 跑 SIG 官方一致性测试 | 待单独 brainstorm + spec |
-
-本 PRD 主体描述**子项目 A（Virtual Sniffer）**。PTS IUT 在 §9 简述，详细 spec 后续单独写。
-
-原 PRD 路线图把 v1.1 定为 "PTS IUT + 分析仪集成"。实际演进后，"分析仪集成" 重新定义为 **virtual sniffer**——不是跟分析仪硬件做 OTA 抓包控制，而是把 PyBlueHost 自己的 HCI 流注入分析仪软件借其 UI 解码显示。
-
----
-
-## 1. 子项目 A：Virtual Sniffer 主线
+## 1. 主线
 
 让 PyBlueHost 运行时的 **live HCI 流量**实时显示在 Ellisys Bluetooth Analyzer 或 Teledyne LeCroy Wireless Protocol Suite (WPS) 的专业分析仪 UI 里——借用它们成熟的协议解码、过滤、时间线视图，而不需要空中射频抓包硬件。
+
+"virtual sniffer" 指数据源是软件注入的（PyBlueHost 把自己的 HCI 流通过 Remote API 送给分析仪软件），不是空中射频捕获。
 
 ### 与 v1.0 的关系
 
@@ -38,7 +26,7 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 - `test_live_virtual_sniffer.py`：mock 服务器单元测试
 - 分析文档：`PTS_Sniffer_Remote_Control_Analysis.md`
 
-子项目 A 的工作是**把这些 demo 产品化进 PyBlueHost**：从"发固定 HCI Reset 帧"升级为"实时流式注入所有 HCI 流量"，封装成正式 TraceSink + CLI flag。
+本版本 = **把这些 demo 产品化进 PyBlueHost**：从"发固定 HCI Reset 帧"升级为"实时流式注入所有 HCI 流量"，封装成正式 TraceSink + CLI flag。
 
 ---
 
@@ -49,11 +37,11 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 | 调试 PyBlueHost 时在 Ellisys/WPS UI 里 live 看 HCI 交互（专业解码 + 过滤 + 时间线） | 协议测试工程师、嵌入式开发 |
 | 不买空中抓包仪硬件，纯软件得到分析仪级 HCI 视图 | 一般开发者、学习者 |
 | PyBlueHost 跑 e2e/profile 场景时，同步在分析仪里观察协议流 | 测试工程师 |
-| 后续（子项目 B）PTS 测试失败时，结合分析仪抓包 debug | 认证测试工程师 |
+| PTS 测试失败时（见 [PRD v1.2](PRD-v1.2.md)），结合分析仪抓包 debug | 认证测试工程师 |
 
 ---
 
-## 3. 子项目 A 功能范围
+## 3. 功能范围
 
 ### 3.1 核心：实时 VirtualSnifferSink
 
@@ -96,7 +84,7 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 - **编程接口**：`Stack(..., trace_sinks=[EllisysVirtualSnifferSink(...)])` 或通过 trace 注册
 - flag 带可选参数覆盖默认端口/路径，例：`--virtual-sniffer=ellisys:tcp=46148,udp=24352`
 
-### 3.5 显式 NON-Goal（子项目 A）
+### 3.5 显式 NON-Goal
 
 | 项目 | 原因 / 推迟到 |
 |---|---|
@@ -177,7 +165,7 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 
 ---
 
-## 6. 成功标准（子项目 A 验收）
+## 6. 成功标准
 
 | 指标 | 目标 | 验证方式 |
 |---|---|---|
@@ -218,167 +206,7 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 
 ---
 
-## 9. 子项目 B：PTS IUT 支持
-
-### 9.1 主线
-
-让 PyBlueHost 当 **Implementation Under Test (IUT)**，跑 Bluetooth SIG 官方 PTS（Profile Tuning Suite）一致性测试。
-
-需要：PTS dongle + SIG license（用户已有）。
-
-### 9.2 两种 PTS 测试哲学（参考调研）
-
-调研了两个标杆做法：
-
-| | **Android Fluoride** ([pts_guide.md](https://android.googlesource.com/platform/system/bt/+/master/doc/pts_guide.md)) | **auto-pts** ([github](https://github.com/auto-pts/auto-pts)) |
-|---|---|---|
-| 核心机制 | `persist.bluetooth.pts` 属性 + `bt_stack.conf` 的 **"PTS mode" 开关** | **BTP tester 接口** + 完整自动化 |
-| PTS mode 干什么 | 调整栈行为让它**可测**：`PTS_SecurePairOnly` / `PTS_DisableConnUpdates` / `PTS_DisableSDPOnLEPair` / `PTS_SmpOptions` / `PTS_SmpFailureCase` / `PTS_AvrcpTest` | — |
-| 驱动 IUT | **手动**：人用正常 UI/app 操作 + 人点 PTS MMI | **自动**：auto-pts WID handlers 通过 BTP 程序化驱动；server 包 PTSControl COM 暴露 XML-RPC |
-| 工作量 | 极小（几个 config flag） | 大（BTP tester 后端，但复用 630+ test case） |
-
-**两者是分层的**，不是二选一。Fluoride 的 "PTS mode" flags 无论自动还是手动都需要——某些正常栈行为会干扰一致性测试（自动 conn param update、LE pair 后自动 SDP 等）。
-
-### 9.3 PyBlueHost 采取分阶段路线
-
-```
-Phase 1 (v1.1)  — Layer 1: PTS mode 配置 + 手动驱动
-                  让 PyBlueHost 可测 + 人工 MMI 驱动跑 PTS 一致性
-Phase 2 (后续)  — Layer 2: BTP tester 后端接入 auto-pts
-                  复用 auto-pts server (PTSControl COM 封装) + WID handlers
-                  + 630+ test case，CI 自动化
-```
-
-### 9.4 Phase 1 范围（v1.1）
-
-**(1) PTS mode 配置 flags**（Fluoride 启发）——调整栈行为让它可测：
-
-| Flag | 作用 |
-|---|---|
-| `pts_disable_conn_updates` | 抑制 LE 连接参数自动更新（干扰 GAP 测试） |
-| `pts_secure_pair_only` | 强制 Secure Connections only 配对 |
-| `pts_disable_sdp_on_le_pair` | LE pair 后不自动 SDP（避免 cross-key derivation 错误） |
-| `pts_smp_options` | 覆盖 SMP 配对选项（hex bytes，特定 test case 需要） |
-| `pts_smp_failure` | 注入 SMP 失败（测异常路径 test case） |
-| 其它按 test group 需要追加 | — |
-
-激活方式：config / CLI flag / 环境变量（沿用 v1.0 配置机制）。
-
-**(2) 交互式 PTS IUT 控制台**：`pybluehost pts-iut`
-
-- 常驻 session 的 REPL，保持连接/配对状态跨 MMI 提示
-- 操作员随 PTS MMI 提示敲命令驱动 PyBlueHost：
-
-```text
-advertise [--type=...] [--data=...]    # 开始广播
-scan [--active]                         # 开始扫描
-connect <addr>                          # 发起连接
-disconnect [handle]                     # 断开
-pair [--io-cap=...] [--mitm]            # 发起配对
-notify <handle> <value>                 # 发 GATT 通知
-indicate <handle> <value>               # 发 GATT 指示
-read <handle>                           # GATT 读
-write <handle> <value>                  # GATT 写
-sdp-browse <addr>                       # Classic SDP 浏览
-rfcomm-open <addr> <channel>            # 开 RFCOMM 通道
-l2cap-connect <addr> <psm>              # 开 L2CAP 通道
-set-io-cap <cap>                        # 设 IO capability
-status                                  # 当前连接/配对状态
-```
-
-**(3) PICS / IXIT**
-
-- 为目标 test group 编写 PICS（Protocol Implementation Conformance Statement）——声明 PyBlueHost 支持哪些 feature，PTS 据此选适用 test case
-- IXIT（Implementation eXtra Information for Testing）——测试参数（IUT 地址、key 等）
-- 放在 `docs/pts/pics/` + `docs/pts/ixit/`，PTS UI 导入或文档说明
-
-**(4) 目标 test group**（全 host 栈）：
-
-- HCI
-- L2CAP
-- GAP
-- GATT (含 ATT)
-- SMP
-- Classic SDP
-- Classic RFCOMM
-
-每个 group 手动跑通 + 记录通过率 + 修 PTS 暴露的栈 bug。
-
-### 9.5 Phase 2（后续，不在 v1.1）
-
-- BTP tester 后端：PyBlueHost 监听 serial/socket 收 BTP 命令 → 驱动栈
-- 注册成 auto-pts 的 IUT project（workspace + PICS）
-- auto-pts 自动驱动跑 630+ test case，CI 集成
-- 复用 auto-pts 已有的 server (PTSControl COM 封装) + WID/MMI handlers，**不自己写 MMI 应答**
-
-### 9.6 架构（Phase 1）
-
-```
-┌──────────────────┐       人工 MMI         ┌────────────────────────┐
-│ PTS.exe + dongle │◄─── 操作员看提示 ────►│ 操作员                 │
-│ (Lower Tester)   │       人点 OK           │ 敲 REPL 命令           │
-└────────┬─────────┘                         └──────────┬─────────────┘
-         │ OTA (空中) / HCI                              │
-         │                                    ┌──────────▼─────────────┐
-         └───────────────────────────────────►│ pybluehost pts-iut REPL│
-                          IUT 被测            │  (常驻 session)        │
-                                              │   │ 命令 → 栈动作       │
-                                              │   ▼                    │
-                                              │ Stack (PTS mode 开)    │
-                                              │  - conn updates 抑制   │
-                                              │  - secure pair only    │
-                                              │  - SMP options 覆盖    │
-                                              └────────────────────────┘
-```
-
-### 9.7 Phase 1 成功标准
-
-| 指标 | 目标 |
-|---|---|
-| 每个目标 test group 能通过 PTS 手动跑 | 操作员用 REPL 驱动，完整跑完该 group 的适用 test case |
-| PTS mode flags 行为正确 | 单元测试验证每个 flag 改变栈行为（conn update 抑制、secure-only 等） |
-| 控制台覆盖所有需要的 MMI 动作 | advertise/connect/pair/notify/write/sdp/rfcomm/l2cap 等都能按需触发 |
-| PICS 准确反映 PyBlueHost 能力 | PTS 据 PICS 选出的 test case 都适用，无"声明支持但跑不了"的 |
-| 各 group 通过率记录 | 记录到 docs/pts/results/，PTS 暴露的栈 bug 归档 + 修复 |
-
-### 9.8 Phase 1 时间估计
-
-| Plan | 内容 | 工作量 |
-|---|---|---|
-| Plan P.1 | PTS mode 配置 flags（栈行为调整 + 单元测试） | ~1.5 周 |
-| Plan P.2 | 交互式 PTS IUT 控制台 REPL（命令集 + 常驻 session 状态） | ~2 周 |
-| Plan P.3 | PICS / IXIT 编写（全 host 栈 7 个 group） | ~1 周 |
-| Plan P.4 | 手动跑 PTS 各 group + 修栈 bug + 记录（迭代，开放式） | ~3-4 周（取决于 PTS 暴露多少 bug） |
-| **Phase 1 合计** | | **~7.5-8.5 周** |
-
-Plan P.4 是开放式——真正的一致性工作量取决于 PTS 暴露多少 bug。框架部分（P.1-P.3）~4.5 周确定。
-
-### 9.9 显式 NON-Goal（Phase 1）
-
-| 项目 | 推迟到 |
-|---|---|
-| BTP tester 后端 / auto-pts 自动化 | Phase 2 |
-| MMI 自动应答 | Phase 2（auto-pts WID handlers 负责） |
-| BLE profile test groups（HRP/HOGP 等） | 后续（先做 host 栈 group） |
-| Classic 音频 profile（A2DP/AVRCP/HFP）test group | v2.0 做完音频 profile 后 |
-| Mesh test group | 不规划 |
-
----
-
-## 10. 跨版本关系
-
-- **v1.0**：已完成（31 Plans）
-- **v1.1 子项目 A**：virtual sniffer（§1-8，~5 周）
-- **v1.1 子项目 B**：PTS IUT Phase 1（§9，~7.5-8.5 周）；Phase 2 (BTP+auto-pts) 后续
-- **v2.0**：Classic Audio（已 brainstorm，[PRD-v2.0](PRD-v2.0.md)）
-- 两个 v1.1 子项目互不依赖，可任意顺序/并行；A 做完后 PTS 测试失败可结合 virtual sniffer 抓包 debug
-- v1.1 与 v2.0 无强依赖
-
----
-
-## 11. 评审清单
-
-### 子项目 A（Virtual Sniffer）
+## 9. 评审清单
 
 - [x] 主线：virtual sniffer = 实时把 PyBlueHost HCI 注入 Ellisys/WPS 软件显示
 - [x] 核心形态：实时 TraceSink（不是文件回放）
@@ -389,13 +217,3 @@ Plan P.4 是开放式——真正的一致性工作量取决于 PTS 暴露多少
 - [x] Windows-only
 - [ ] 工作量估计 ~5 周（4 个 Plan）是否合理？
 - [ ] 注入范围是否要含 ACL/SCO（不只 HCI Command/Event）？
-
-### 子项目 B（PTS IUT）
-
-- [x] 路线：分阶段——Phase 1 (Fluoride 式 PTS mode + 手动驱动) 先做，Phase 2 (auto-pts BTP tester) 后续
-- [x] Phase 1 测试范围：全 host 栈（HCI / L2CAP / GAP / GATT / SMP / Classic SDP / RFCOMM）
-- [x] 手动驱动接口：交互式 PTS IUT 控制台（REPL，常驻 session）
-- [x] PTS mode flags 参考 Fluoride（DisableConnUpdates / SecurePairOnly / DisableSDPOnLEPair / SmpOptions / SmpFailure）
-- [ ] PICS/IXIT 是手写 vs 从 PyBlueHost capability 半自动生成？
-- [ ] Phase 1 时间估计 ~7.5-8.5 周（含开放式 P.4 修 bug）是否可接受？
-- [ ] 通过率目标——原 PRD 说 ≥90%，Phase 1 是否设硬指标还是"尽量跑通 + 记录"？

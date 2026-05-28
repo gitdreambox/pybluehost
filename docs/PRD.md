@@ -274,7 +274,8 @@ Stack.build(transport=..., trace_sink=...)   # 自定义组装
 | 版本 | 内容 |
 |------|------|
 | **v1.0** | Transport（UART/USB WinUSB/TCP/UDP + Intel/Realtek 自动识别 + 固件上传 + btsnoop + Loopback）+ HCI（含 ISO 帧解析）+ L2CAP（BLE + Classic）+ BLE 栈（ATT/GATT/SMP + 9 个 Profile）+ Classic 栈（SDP/RFCOMM/SPP）+ GAP（BLE + Classic）+ 状态机框架 + Trace 系统；平台：Windows + Linux |
-| **v1.1** | PTS IUT 支持（HCI/L2CAP/GAP/ATT/GATT/SMP test group ≥90% 通过）+ 分析仪集成（Ellisys Remote API + Teledyne LeCroy WPS Automation API）|
+| **v1.1** | 分析仪集成 / Virtual Sniffer（Ellisys Remote API + Teledyne LeCroy WPS Live Import）→ [PRD-v1.1](PRD-v1.1.md) |
+| **v1.2** | PTS IUT 支持（HCI/L2CAP/GAP/ATT/GATT/SMP test group 一致性测试）→ [PRD-v1.2](PRD-v1.2.md) |
 | **v2.0** | A2DP / AVRCP / HFP / HSP + AVDTP / AVCTP + SCO 音频路径 |
 | **v3.0** | SBC / AAC 解码 + 音频播放（sounddevice / pyaudio）|
 | **v4.0** | LE Audio（BAP / CIS / BIS / LC3） |

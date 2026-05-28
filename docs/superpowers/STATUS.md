@@ -6,11 +6,14 @@
 
 ## 快速定位
 
-**当前状态**：v1.0 完结（31 Plans，Hardware E2E Readiness ✅）；**v2.0 PRD 草案就绪，待动工**
+**当前状态**：v1.0 完结（31 Plans，Hardware E2E Readiness ✅）；**v1.1 / v1.2 / v2.0 三份 PRD 草案就绪，均待动工**
 **下一步候选**：
-1. **v2.0 Classic Audio**——PRD + design spec 已就绪（[`docs/PRD-v2.0.md`](../PRD-v2.0.md) + [`docs/superpowers/specs/2026-05-27-prd-v2.0-classic-audio-design.md`](specs/2026-05-27-prd-v2.0-classic-audio-design.md)）。6 个 Plan、14-17 周、SBC+CVSD+mSBC（无 AAC）。Plan 详细文档**未编写**——动工前先做。
-2. 自托管硬件 CI runner / 真机首批 adapter survey / 断线重连闭环（v1.0 运营改进，可跨 v2.0 并行）
-**不在路线图**：SMP Sub-Plan 3c (OOB)、HFP 实时 SCO 音频（推 v2.1）、AAC（推 v2.x）、LE Audio、macOS native、PTS
+1. **v1.1 Virtual Sniffer**——PRD 草案就绪（[`docs/PRD-v1.1.md`](../PRD-v1.1.md)）。把 PyBlueHost live HCI 注入 Ellisys/WPS 分析仪软件显示。4 个 Plan、~5 周、Windows-only。design spec + Plan **未编写**。
+2. **v1.2 PTS IUT**——PRD 草案就绪（[`docs/PRD-v1.2.md`](../PRD-v1.2.md)）。PyBlueHost 当 IUT 跑 SIG PTS 一致性。Phase 1 = Fluoride 式 PTS mode + 交互式控制台手动驱动，4 个 Plan、~7.5-8.5 周；Phase 2 = auto-pts BTP 自动化（后续）。design spec + Plan **未编写**。
+3. **v2.0 Classic Audio**——PRD + design spec 已就绪（[`docs/PRD-v2.0.md`](../PRD-v2.0.md) + [`docs/superpowers/specs/2026-05-27-prd-v2.0-classic-audio-design.md`](specs/2026-05-27-prd-v2.0-classic-audio-design.md)）。6 个 Plan、14-17 周、SBC+CVSD+mSBC（无 AAC）。Plan 详细文档**未编写**——动工前先做。
+4. 自托管硬件 CI runner / 真机首批 adapter survey / 断线重连闭环（v1.0 运营改进，可并行）
+**版本互不依赖**：v1.1 / v1.2 / v2.0 可任意顺序或并行推进
+**不在路线图**：SMP Sub-Plan 3c (OOB)、HFP 实时 SCO 音频（推 v2.1）、AAC（推 v2.x）、LE Audio、macOS native
 
 > **注意（2026-04-18 深度审查后更新）**：
 > - Plan 编号已重映射（2.5→3，3→4，…，旧 plan10 删除，新 plan10→11）
