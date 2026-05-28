@@ -60,7 +60,9 @@ Phase 2 (后续)    — Layer 2: BTP tester 后端接入 auto-pts
 
 激活方式：config / CLI flag / 环境变量（沿用 v1.0 配置机制）。
 
-### 4.2 交互式 PTS IUT 控制台：`pybluehost pts-iut`
+### 4.2 IUT action layer + 交互式控制台：`pybluehost pts-iut`
+
+**先抽 action layer，REPL 是它的前端。** Phase 1 把"驱动栈"的动作抽成一个内部 action API 层（advertise/connect/pair/notify/write/sdp-browse/rfcomm-open/...），REPL 只是它的命令行前端。这样 Phase 2 的 BTP tester 能复用同一层（见 §5.3），不必重写驱动逻辑。
 
 - 常驻 session 的 REPL，保持连接/配对状态跨 MMI 提示
 - 操作员随 PTS MMI 提示敲命令驱动 PyBlueHost：
@@ -105,12 +107,66 @@ status                                  # 当前连接/配对状态
 
 ---
 
-## 5. Phase 2（后续，不在本版本）
+## 5. Phase 2 — auto-pts 自动化（后续，不在本版本）
 
-- BTP tester 后端：PyBlueHost 监听 serial/socket 收 BTP 命令 → 驱动栈
-- 注册成 auto-pts 的 IUT project（workspace + PICS）
-- auto-pts 自动驱动跑 630+ test case，CI 集成
-- 复用 auto-pts 已有的 server (PTSControl COM 封装) + WID/MMI handlers，**不自己写 MMI 应答**
+Phase 2 的目标是**去掉人工**：不再靠操作员看 MMI、敲 REPL，而是让 [auto-pts](https://github.com/auto-pts/auto-pts) 程序化驱动 PyBlueHost 跑完整 test case 集，并接入 CI。
+
+### 5.1 auto-pts 是怎么工作的
+
+auto-pts 是 **client-server** 架构，把"控制 PTS"和"驱动 IUT"分到两端：
+
+```
+┌─────────────────────────────┐         ┌──────────────────────────────────┐
+│ Windows 机器                 │         │ IUT 侧（可 Linux / 同机）          │
+│                             │         │                                  │
+│  PTS.exe + dongle           │         │  autoptsclient                   │
+│      ▲                      │         │   - 选 test case                  │
+│      │ PTSControl COM       │ XML-RPC │   - WID/MMI handlers（按 profile） │
+│  autoptsserver  ◄───────────┼─────────┤   - 把 MMI → BTP 命令              │
+│   - 封装 COM 成 XML-RPC      │         │            │ BTP over socket/serial│
+│   - RunTestCase / 回调 MMI   │         │            ▼                      │
+└─────────────────────────────┘         │  IUT 的 BTP tester               │
+                                         │   - 收 BTP 命令 → 驱动协议栈      │
+                                         │   - 回 BTP event                 │
+                                         │            │                     │
+                                         │            ▼                     │
+                                         │  被测协议栈                       │
+                                         └──────────────────────────────────┘
+```
+
+- **autoptsserver**（Windows，挨着 PTS.exe）：把 PTS 的 PTSControl COM API 封装成 XML-RPC 暴露出来；负责 `RunTestCase`、接收 PTS 弹的 MMI/WID 回调转发给 client。
+- **autoptsclient**（IUT 侧，可以不在 Windows）：通过 XML-RPC 跟 server 说话选 test case；内置**按 profile 分的 WID handler 模块**（如 `gap_wid_hdl.py` / `gatt_wid_hdl.py`），把每个 test case 的 MMI 提示（WID 号）映射成一串 BTP 命令，自动驱动 IUT——**这就是替代人工 MMI 的部分**。
+- **BTP（Bluetooth Test Protocol）**：client ↔ IUT tester 之间的二进制协议（header = Service ID + Opcode + Controller Index + Length + Data），分 Core / GAP / GATT / L2CAP / SMP 等 service。client 发 BTP 命令让 IUT "去广播 / 去连接 / 去配对 / 去写特征"，IUT 回 BTP event 报结果。
+
+### 5.2 PyBlueHost 需要做什么
+
+| 工作 | 说明 |
+|---|---|
+| **BTP tester 服务** | PyBlueHost 监听 socket/serial，解码 BTP 命令 → 调 PyBlueHost 栈 API → 编码 BTP event 回传。这是 Phase 2 的主要新代码（按 service 实现：Core/GAP/GATT/L2CAP/SMP）。 |
+| **注册成 auto-pts IUT project** | 给 autoptsclient 加一个 PyBlueHost project 模块（workspace + PICS/IXIT 路径 + tester 启动方式）。 |
+| **WID handler 复用/适配** | 优先复用 auto-pts 现成的 per-profile WID handlers（它们发的是标准 BTP 命令，与 IUT 无关）；只在 PyBlueHost 行为特殊处微调。**不自己从零写 MMI 应答逻辑。** |
+| **CI 集成** | autoptsclient 跑 test case 集打分；可对 PyBlueHost virtual controller 自测，或接真 dongle。 |
+
+### 5.3 与 Phase 1 的衔接
+
+Phase 1 的交互式 REPL 和 Phase 2 的 BTP tester 是**同一组"驱动栈"原语的两个前端**：
+
+```
+                ┌──────────────────────────────┐
+  Phase 1  ───► │ IUT action layer             │ ───► PyBlueHost Stack
+  REPL 命令      │ (advertise/connect/pair/     │      (PTS mode flags 开)
+                │  notify/write/sdp/rfcomm...) │
+  Phase 2  ───► │                              │
+  BTP 命令       └──────────────────────────────┘
+```
+
+所以 Phase 1 应把这些动作抽成一个**内部 action API 层**，REPL 是它的命令行前端；Phase 2 的 BTP tester 复用同一层，只是换成 BTP 协议前端。这样 Phase 2 不用重写驱动逻辑，PTS mode flags（§4.1）也对两条路径同时生效。
+
+### 5.4 Phase 2 NON-Goal 边界
+
+- 不 fork auto-pts，作为外部依赖使用（贡献 PyBlueHost project 模块回上游或本地维护）
+- autoptsserver 端不改动（直接用上游 + PTS.exe）
+- Phase 2 不在本 PRD 排期，框架在 Phase 1 的 action layer 抽象上自然延伸；正式启动时单独 brainstorm + 出 spec
 
 ---
 
@@ -155,7 +211,7 @@ status                                  # 当前连接/配对状态
 | Plan | 内容 | 工作量 |
 |---|---|---|
 | Plan P.1 | PTS mode 配置 flags（栈行为调整 + 单元测试） | ~1.5 周 |
-| Plan P.2 | 交互式 PTS IUT 控制台 REPL（命令集 + 常驻 session 状态） | ~2 周 |
+| Plan P.2 | IUT action layer（驱动栈原语，Phase 2 BTP 复用）+ 交互式 REPL 前端（命令集 + 常驻 session 状态） | ~2 周 |
 | Plan P.3 | PICS 半自动生成器（从 capability dump 出草稿）+ IXIT 手写（全 host 栈 7 个 group） | ~1 周 |
 | Plan P.4 | 手动跑 PTS 各 group + 修栈 bug + 记录（迭代，开放式） | ~3-4 周（取决于 PTS 暴露多少 bug） |
 | **Phase 1 合计** | | **~7.5-8.5 周** |
