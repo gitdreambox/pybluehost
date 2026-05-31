@@ -60,7 +60,7 @@ Phase 2 (后续)    — Layer 2: BTP tester 后端接入 auto-pts
 
 激活方式：config / CLI flag / 环境变量（沿用 v1.0 配置机制）。
 
-### 4.2 IUT action layer + 交互式控制台：`pybluehost pts-iut`
+### 4.2 IUT action layer + 交互式控制台：`pybluehost app pts-iut`
 
 **先抽 action layer，REPL 是它的前端。** Phase 1 把"驱动栈"的动作抽成一个内部 action API 层（advertise/connect/pair/notify/write/sdp-browse/rfcomm-open/...），REPL 只是它的命令行前端。这样 Phase 2 的 BTP tester 能复用同一层（见 §5.3），不必重写驱动逻辑。
 
@@ -180,7 +180,7 @@ Phase 1 的交互式 REPL 和 Phase 2 的 BTP tester 是**同一组"驱动栈"�
 └────────┬─────────┘                         └──────────┬─────────────┘
          │ OTA (空中) / HCI                              │
          │                                    ┌──────────▼─────────────┐
-         └───────────────────────────────────►│ pybluehost pts-iut REPL│
+         └───────────────────────────────────►│ pybluehost app pts-iut REPL│
                           IUT 被测            │  (常驻 session)        │
                                               │   │ 命令 → 栈动作       │
                                               │   ▼                    │
