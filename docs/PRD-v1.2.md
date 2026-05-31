@@ -164,6 +164,7 @@ Phase 1 的交互式 REPL 和 Phase 2 的 BTP tester 是**同一组"驱动栈"�
 
 ### 5.4 Phase 2 NON-Goal 边界
 
+- **Classic SDP / RFCOMM 不在 Phase 2 BTP 范围**：auto-pts BTP 历史上 LE-centric（Zephyr/Mynewt 主导），上游无 SDP/RFCOMM service。Phase 2 只自动化 LE 目标 group（HCI/L2CAP/GAP/GATT/SMP）；Classic SDP/RFCOMM **永久保留 Phase 1 REPL 手动模式**，直到上游或本地扩展支持
 - 不 fork auto-pts，作为外部依赖使用（贡献 PyBlueHost project 模块回上游或本地维护）
 - autoptsserver 端不改动（直接用上游 + PTS.exe）
 - Phase 2 不在本 PRD 排期，框架在 Phase 1 的 action layer 抽象上自然延伸；正式启动时单独 brainstorm + 出 spec

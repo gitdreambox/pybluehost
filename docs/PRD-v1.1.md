@@ -84,7 +84,7 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
   - 例：`pybluehost app ble-scan --transport=usb --virtual-sniffer=ellisys`
   - 例：`pybluehost app gatt-server --transport=usb --virtual-sniffer=wps`
   - 沿用现有 `--pybluehost-trace=hci` 的 trace control 机制
-- **编程接口**：`Stack(..., trace_sinks=[EllisysVirtualSnifferSink(...)])` 或通过 trace 注册
+- **编程接口**：构造 `VirtualSnifferSink(backend)`（backend = `EllisysBackend(...)` 或 `WpsBackend(...)`），append 进 `StackConfig.trace_sinks` 后再 `Stack._build(config=...)`；详见 design spec §5/§7
 - flag 带可选参数覆盖默认端口/路径，例：`--virtual-sniffer=ellisys:tcp=46148,udp=24352`
 
 ### 3.5 显式 NON-Goal
