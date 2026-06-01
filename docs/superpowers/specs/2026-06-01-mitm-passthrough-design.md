@@ -1,102 +1,85 @@
-# Design Spec — MITM 透传应用（BLE + BR/EDR，B 式 HCI-ACL 透传）
+# Design Spec — MITM 透传应用（独立应用，仅复用 HCI）
 
-**版本**：design v0.4
+**版本**：design v0.5
 **日期**：2026-06-01
-**前置版本**：PRD v1.0 已完成 31 个 Plan，BLE 全栈（HCI/L2CAP/ATT/GATT/SMP/GAP）+ Classic baseband（含 VirtualClassicLink、SSP）已就位
+**前置版本**：PRD v1.0 已完成 31 个 Plan，`transport` + `hci`（含 HCIController、VirtualController/VirtualLink/VirtualClassicLink）已就位
 **适用场景**：**授权**安全测试 / 漏洞研究 / 教学。两端设备（手机 + 目标）均在测试者掌控下。
 
 ---
 
 ## 1. 目标摘要
 
-在**目标设备**与**手机**之间插入一个中间人（MITM），**双向透传 BLE 与 BR/EDR ACL 数据**：对手机冒充目标设备（BLE 广播克隆 / BR inquiry scan 响应），对目标设备冒充手机（central/initiator 连接）。中间拿到两侧各自解密后的明文，**v1 只做透传 + 抓包（btsnoop）**。
+在**目标设备**与**手机**之间插入中间人（MITM），**双向透传 BLE 与 BR/EDR ACL 数据**：对手机冒充目标（克隆应用层身份），对目标冒充手机（central/initiator 连接）。中间拿两侧明文，**v1 只做透传 + 抓包**。
 
-- **v1 范围**：BLE **和** BR/EDR 透传（同期交付）。**改写（YAML 规则 + Python hook）= 后续阶段**，本 spec 只预留 seam，不实现。
-- **核心中继层**：**B 式 HCI-ACL 透传**——HCI ACL 层重组/重分片 + 按 L2CAP CID 分流。BLE 与 BR/EDR **共用同一套 acl_relay 核心**。
-- **硬件**：两个 USB 适配器（真双 radio）。默认模式**任意两个**即可；地址克隆为可选能力，仅 BR 重连场景需可写 BD_ADDR 的芯片（详见 §3.1）。
+**本质定位：MITM 是一个独立应用，不是协议栈的一层。** 它把 `transport` + `hci` 当成驱动跟两个 dongle 对话，HCI 之上的协议栈层（l2cap/ble/classic/gap/profiles/stack）**一律不碰、不导入**，协议栈保持纯净。MITM 自己实现它需要的那一点点上层逻辑（ACL 重组、最小 SMP、SSP 事件处理）。
+
+- **v1 范围**：BLE + BR/EDR 透传（同期）。**改写（规则 / hook）= 后续阶段**，仅预留 tap seam。
+- **核心中继层**：B 式 HCI-ACL 透传——HCI ACL 层重组/重分片 + 按 L2CAP CID 分流。BLE/BR 共用。
+- **硬件**：两个 USB 适配器。默认模式任意两个即可；地址克隆为可选能力（§3.1）。
 
 ### 1.1 需求决策表（brainstorming 结论）
 
 | 维度 | 决定 |
 |------|------|
-| 首要目标 | 授权安全研究 —— **v1 透传 + 抓包**；改写后续 |
-| 硬件拓扑 | 两个 USB 适配器（真双 radio） |
-| 加密处理 | **逐链路本地终结**（两侧各自配对，中间拿明文） |
-| 身份获取 | 自动侦查并克隆目标（BLE：扫描 address+adv+scan-rsp；BR：inquiry 抓 CoD+EIR+name） |
-| 范围 | **BLE + BR/EDR 同期透传**；改写后续 |
-| 抓包机制 | btsnoop 默认 sink（两侧明文）+ trace |
-| 中继层 | **B 式 HCI-ACL 透传**（重组/重分片 + CID 分流），BLE/BR 共用 |
-| v1 配对范围 | **Just Works + Numeric Comparison**（两边都确认的 delegate）；Passkey Entry / OOB 后续 |
+| 定位 | **独立应用**，仅复用 `transport` + `hci`，协议栈零改动 |
+| 首要目标 | 授权安全研究 —— v1 透传 + 抓包；改写后续 |
+| 硬件 | 两个 USB 适配器（真双 radio） |
+| 加密 | 逐链路本地终结（两侧各自配对，中间拿明文） |
+| 身份克隆 | 自动侦查 + 克隆**应用层身份**（adv/name/CoD/EIR）；地址克隆可选 |
+| 范围 | BLE + BR/EDR 同期透传；改写后续 |
+| 抓包 | btsnoop 默认 sink + trace |
+| 中继层 | B 式 HCI-ACL 透传（重组/CID 分流/重分片），BLE/BR 共用 |
+| 配对 | **Just Works + Numeric Comparison**（均 SC）；BLE 用 app 内最小 SMP，BR 用 HCI SSP 事件 |
 
 ---
 
-## 2. 为什么选 B 式透传（决策依据）
+## 2. 依赖边界（核心约束）
 
-A（复用 L2CAPManager 做 SDU 级中继）与 B（HCI-ACL 透传）对比，选 B：
+```
+┌───────────────────────────────────────────────────────────┐
+│  MITM 应用  (pybluehost/cli/app/mitm/)                      │
+│  relay / acl / recon / impersonate / pairing(smp,ssp) /    │
+│  capture                                                    │
+└───────────┬───────────────────────────────────┬───────────┘
+            │ 只依赖 ↓                            │ 只依赖 ↓
+   ┌────────▼────────┐                  ┌─────────▼─────────┐
+   │  hci            │                  │  crypto 库         │
+   │  HCIController  │  (两个实例,各绑   │  (P-256 ECDH +     │
+   │  packets/const  │   一个 transport) │   AES-CMAC)        │
+   └────────┬────────┘                  └───────────────────┘
+   ┌────────▼────────┐
+   │  transport      │  (USB / HCI 通道)
+   └─────────────────┘
+```
 
-- **B 不依赖** L2CAPManager 数据通道、GATT server、GATT 发现、ATT handle 复刻。ATT PDU 透明转发 → 手机直接发现目标真实 handle 布局，本栈上层 bug 无从波及克隆。
-- **动态 channel 零 CID 逻辑**：signaling（CID 0x01 BR / 0x05 LE）原样转发 → L2CAP 在手机↔目标间**端到端透明协商**，双方直接学到对方 CID，中间不需要 CID 翻译表。对 BR 的 RFCOMM/SDP（动态 channel）尤其省事——当不透明字节流过。
-- **BLE/BR 共用**：acl_relay 核心只认 HCI 分片边界 + L2CAP basic header（length+CID），与是 BLE 还是 BR **无关** → BR 透传增量极小。
-- **B 唯一新依赖**：一段 **ACL 重组 + 重分片**代码（两侧控制器 buffer 大小不同，不能盲拷贝分片）。小且极易单测。
+**允许依赖**：
+- `transport`：开 USB / HCI 通道。
+- `hci`：`HCIController`（命令/事件分发、ACL 收发、flow control、buffer 大小、连接跟踪、encryption/SSP 事件钩子）+ `packets` + `constants`。`HCIController` 本身只依赖 hci 内部，不引入上层。
+- crypto 库：SC 配对所需 P-256 ECDH + AES-CMAC（项目已有的 crypto 依赖；**不导入 `ble/` 下的 SMP 代码**）。
+- 可选工具：`core.trace.BtsnoopSink`（纯 btsnoop 文件写入器，I/O 工具非协议逻辑；亦可 app 内自带 ~40 行替代）。
 
-**共同依赖**（B 没省）：逐链路本地终结 SMP/SSP、GAP（BLE 广播/扫描 + BR inquiry/page scan）、HCI raw ACL 收发。
+**禁止依赖**：`l2cap`、`ble`、`classic`、`gap`、`profiles`、`stack.py`。MITM 自己做 L2CAP basic header（2 字节 len+CID）封装/解析——这是琐碎字节操作，不需要 L2CAPManager。
 
-**已确认本栈能力**（`pybluehost/hci/controller.py`）：
-- `set_upstream(on_acl_data=...)` 收原始 ACL；`acl_packet_length`/`le_acl_packet_length` 读 buffer 供重分片。
-- `on_encryption_change`/`on_le_ltk_request`/`on_io_capability_request`/`on_user_confirmation_request`/`on_link_key_*` 全套配对钩子，支撑逐链路 SMP（BLE）与 SSP（BR）终结。
-- BR 侧可复用 `hci/virtual_classic_link.py`（Inquiry/Connection/ACL/Auth/Encryption/Disconnect 六桥）做虚拟测试。
+> **协议栈零改动**：本应用不要求修改 `pybluehost/` 任何现有协议栈层。VirtualController/VirtualLink 等测试设施已存在，直接复用。
 
 ---
 
-## 3. 加密终结与 SC 抗 MITM（前提）
+## 3. 加密终结与配对
 
-加密由**控制器逐链路**完成，密钥逐链路独立。**SMP（0x06）/ SSP 信令绝不转发**——否则密钥在手机↔目标间协商，MITM 本侧控制器拿不到 LTK/link-key，无法对本侧链路开加密。两侧必须各自作为真实配对端点。
+加密由**控制器逐链路**完成，密钥逐链路独立。**配对信令绝不转发**（否则 MITM 本侧控制器拿不到密钥，无法对本侧开加密）。两侧各自作为真实配对端点。
 
-**SC 抗 MITM 的本质**：靠把人拉进来验证——
+- **BR/EDR SSP**：**控制器驱动**。MITM 只需响应 HCI 事件：`IO Capability Request`（回 DisplayYesNo / NoInputNoOutput）、`User Confirmation Request`（Just Works 自动 / Numeric 经 delegate 两边确认）、`Link Key Notification`（存）、`Link Key Request`（查）。+ `Authentication Requested` / `Set Connection Encryption`。**全在 HCI 边界内，零协议栈耦合**。
+- **BLE SMP**：主机层协议（L2CAP CID 0x06），控制器只做 `LE Enable Encryption` / `LE LTK Request`。MITM **自带最小 SMP**：
+  - 只实现 **LE Secure Connections**（Just Works + Numeric Comparison；Numeric 本就 SC-only）。**不做 legacy pairing**（后续）。
+  - 需要：Pairing PDU 编解码、P-256 ECDH、`f4`/`f5`/`f6`/`g2`（AES-CMAC，规范定义的纯函数）、DHKey check。
+  - SMP PDU 经 ACL relay 的 CID 分流交给本模块；本模块自己封 L2CAP 0x06 帧 + `send_acl_data`。
+  - 完成后通过 `LE Enable Encryption`/响应 `LE LTK Request` 开本侧链路加密。
 
-| 关联模型 | 抗 MITM | 两端都在测试者手上时 |
-|---|---|---|
-| Just Works | ❌ 无认证 | ✅ 协议层完全透明 |
-| Numeric Comparison（仅 SC） | ✅ | ✅ 两侧数字不同（公钥不同 → g2 不同），但测试者两端都点确认 |
-| Passkey Entry | ✅ | ✅ 测试者读出 passkey 桥接两侧（v1 不做） |
-| OOB | ✅ | ⚠️ 读不到带外数据则卡住（罕见，v1 不做） |
+### 3.1 SC 抗 MITM 与配对范围
 
-**v1 实现范围**：Just Works + Numeric Comparison（`PairingDelegate.confirm_numeric` 两侧都确认）。BLE 用 SMP，BR 用 SSP，association 模型同名同理。
+SC 的抗 MITM 靠人验证；**两端都在测试者手上**时可配合完成：Numeric Comparison 两侧都点确认（数字不同也确认）。v1 = Just Works + Numeric Comparison（BLE SC / BR SSP）。Passkey Entry / OOB / BLE legacy 为后续。
 
-**操作前提**（写入 runbook）：手机若曾与真目标绑定，需**先删旧配对记录**（避免缓存 LTK/IRK/link-key 冲突）。
-
-### 3.1 地址克隆是可选能力（默认不需要）
-
-**核心认识：手机连的是它在发现阶段看到的那个地址，不是"真目标的地址"。** 多数场景手机只按应用层内容（名字 / service UUID / CoD / EIR）选设备，不校验地址。因此**默认模式：下游 radio 用自己的地址，只克隆应用层身份**，对 BLE 和 BR/EDR 都成立：
-
-- **BLE**：手机扫描看到 MITM 广播（克隆 name/service UUID），连的就是 MITM 广播地址。无需任何特殊命令。
-- **BR/EDR**：手机 inquiry，MITM 用**自己的 BD_ADDR** + 克隆 CoD/EIR 应答，手机按名字选中后 page 的是 **MITM 自己的地址**。同样无需克隆。
-
-**只有两种场景需要克隆地址**（opt-in，`--clone-address`）：
-1. 手机有**旧 bond**，重连时按存档的真目标地址直接 page/connect（不再 inquiry/scan）；
-2. App **硬编码地址 / 按地址过滤**。
-
-> 这两种之外（尤其**首次配对**），**任意两个 dongle 即可跑 BR + BLE MITM**。缓解场景 1 的更简单办法：删手机旧配对记录 → 重走发现流程。
-
-**地址克隆模式的硬件依赖**（仅 opt-in 时相关）：
-
-| 场景 | 手段 | 芯片要求 |
-|---|---|---|
-| BLE 克隆地址 | `LE Set Random Address (0x2005)`（标准） | 全芯片支持 |
-| BR 克隆 BD_ADDR | vendor `Write_BD_ADDR` | 见下表（无 random 替代） |
-
-写 BD_ADDR 的 vendor 命令依芯片而定（仓库现有 `hci/vendor/{intel,realtek}.py` 只**读**不写）：
-
-| 芯片 | 写 BD_ADDR | 方式 / 备注 |
-|---|---|---|
-| **Broadcom/Cypress (BCM20702A0/A1)** | ✅ 推荐 | vendor `0xFC01`，**临时**(掉电还原)。Linux btusb 原生。Asus USB-BT400 / Plugable USB-BT4LE / IOGEAR GBU521 |
-| **CSR8510 (CSR 4.0)** | ✅ 备选 | PSKEY 写(`0xFC00`)，**持久**(需还原)。⚠️ 假货多 |
-| **Intel (AX200/AX210/8260…)** | ❌ | OTP 锁死只读 |
-| **Realtek (RTL8761B/BU)** | ⚠️ | 写址不稳定 |
-
-**硬件建议**：默认模式两个**任意** dongle 即可。若要 `--clone-address` 且含 BR，伪装侧选 **Broadcom BT4.0** 或正品 CSR8510；上游(连目标)不改址，任意适配器(含 Intel)均可。
-
-**实现要求**：地址克隆作为 opt-in 能力（`address.py` + 可选 vendor `Write_BD_ADDR`）。仅当用户请求 `--clone-address` 且 BR 下游芯片不可写时 **fail-fast 报错给硬件指引**；默认模式不依赖任何 vendor 写。
+**操作前提**（runbook）：手机若曾绑过真目标，先**删旧配对记录**。
 
 ---
 
@@ -105,158 +88,169 @@ A（复用 L2CAPManager 做 SDU 级中继）与 B（HCI-ACL 透传）对比，�
 ### 4.1 拓扑与角色
 
 ```
-   ┌────────┐  link 1 (加密)   ┌──────────────── MITM ────────────────┐  link 2 (加密)  ┌────────┐
-   │  手机  │◄════════════════►│ radio B (下游)         radio A (上游) │◄═══════════════►│ 目标   │
-   │ Phone  │ MITM=peripheral/ │  广播/inquiry-scan      central/init  │ MITM=central/   │ Target │
-   └────────┘  page-scan(BR)   │         │                    │        │  page-init(BR)  └────────┘
-              (本地配对终结)    │         └── ACL relay 双向 ──┘        │ (本地配对终结)
-                               │   (重组 → CID 分流 → 抓包 → 重分片)    │
-                               └───────────────────────────────────────┘
+   ┌────────┐  link 1 (加密)   ┌──────────────── MITM 应用 ─────────────┐  link 2 (加密)  ┌────────┐
+   │  手机  │◄════════════════►│ HCIController B        HCIController A  │◄═══════════════►│ 目标   │
+   │ Phone  │ 广播/page-scan   │  (下游/伪装侧)           (上游/连目标)   │ central/page    │ Target │
+   └────────┘ (本地配对终结)   │       │                       │         │ (本地配对终结)  └────────┘
+                               │       └──── ACL relay 双向 ────┘         │
+                               │  重组 → CID 分流(SMP本地/signaling透传/   │
+                               │         ATT+动态转发) → 抓包 → 重分片     │
+                               └─────────────────────────────────────────┘
 ```
 
-- **上游（TARGET 侧 / radio A）**：BLE central+initiator / BR initiator(page)，连真目标；作 SMP/SSP **initiator** 配对。
-- **下游（PHONE 侧 / radio B）**：BLE peripheral+advertiser / BR 可被 inquiry + page scan，套克隆身份等手机连入；作 SMP/SSP **responder** 配对。
-
-### 4.2 模块布局
+### 4.2 模块布局（全部在应用命名空间）
 
 ```
-pybluehost/mitm/
-  __init__.py       # 导出公共 API
-  relay.py          # MitmRelay 编排:双 controller、三阶段、断链传播；BLE/BR 共用骨架
-  clone.py          # recon + ClonedIdentity:BLE(address/adv/scan-rsp) + BR(bd_addr/CoD/EIR/name)
-  address.py        # 可选:--clone-address 时套用目标地址(BLE LE Set Random Address / BR vendor Write_BD_ADDR + 能力探测)
-  acl_relay.py      # ★ ACL 重组(PB flag) → CID 分流 → 重分片到对侧 buffer；BLE/BR 共用
-  capture.py        # 抓包 tap:btsnoop(复用 BtsnoopSink) + trace；v1 只观测不改写
-  # —— 后续阶段（v1 不实现，仅预留 seam）——
-  # interceptor.py  # InterceptionPipeline + InterceptedPdu（改写用）
-  # rules.py        # YAML 规则引擎
-  # hooks.py        # Python hook 加载
-pybluehost/cli/app/
-  mitm.py           # CLI 入口:`pybluehost app mitm`（--bredr / --le 选择或同时）
-pybluehost/hci/vendor/   # 仅 --clone-address 需要,默认模式不依赖
-  broadcom.py       # 可选:Write_BD_ADDR (0xFC01) + 能力探测
-  csr.py            # 可选:PSKEY BD_ADDR 写 + 能力探测(Broadcom 优先)
+pybluehost/cli/app/mitm/
+  __init__.py
+  cli.py            # `pybluehost app mitm` 入口(argparse);复用 cli/_lifecycle + _transport
+  relay.py          # MitmRelay 编排:两个 HCIController、三阶段、断链传播
+  acl.py            # ★ ACL 重组(PB flag) → L2CAP CID 分流 → 重分片到对侧 buffer;BLE/BR 共用
+  recon.py          # recon:BLE 扫描 / BR inquiry(裸 HCI) → ClonedIdentity
+  impersonate.py    # 广播 / inquiry-scan+page-scan 配置(裸 HCI);可选地址克隆
+  address.py        # 可选(--clone-address):BLE LE Set Random Address / BR vendor Write_BD_ADDR + 能力探测
+  capture.py        # 抓包 tap:btsnoop(复用 BtsnoopSink)+ trace;v1 只观测
+  pairing/
+    smp.py          # 最小 BLE SMP:SC Just Works + Numeric Comparison(app 自带)
+    crypto.py       # P-256 ECDH + f4/f5/f6/g2 (AES-CMAC);用项目 crypto 库,不引 ble/
+    ssp.py          # BR SSP 终结:HCI 事件处理 + link key store
+    delegate.py     # PairingDelegate:confirm_numeric(两侧)
+  # —— 后续阶段(v1 不实现,仅在 acl.py tap 点预留 seam)——
+  # intercept.py    # InterceptionPipeline(改写) / rules.py / hooks.py
 docs/
-  MITM.md           # runbook:伪装侧芯片选型(Broadcom/CSR)、双 adapter、删旧 bond、SC 操作、btsnoop 查看
+  MITM.md           # runbook:伪装侧芯片选型、双 adapter、删旧 bond、SC 操作、btsnoop 查看
 ```
 
-> 每侧构造一个轻量 `Stack`/`HCIController` 处理 SMP/SSP/signaling；数据通道 ACL 在到达本侧 L2CAPManager 前被 acl_relay 截走，仅需本地终结的 CID 回注本侧栈。
+> 入口可在 `cli/app/__init__.py` 注册 `mitm` 子命令，逻辑全在 `cli/app/mitm/` 子包内，与协议栈隔离。
 
 ---
 
-## 5. ★ ACL Relay 核心（acl_relay.py，BLE/BR 共用）
+## 5. ★ ACL Relay 核心（acl.py，BLE/BR 共用）
 
-挂在每侧 controller 的 `on_acl_data`。对每个 `HCIACLData`：
+挂在每个 `HCIController` 的 `set_upstream(on_acl_data=...)`。对每个 `HCIACLData`：
 
-1. **重组**：按 PB flag + L2CAP basic header 2 字节 length，拼成完整 L2CAP PDU（length+CID+payload）。
+1. **重组**：按 PB flag + L2CAP basic header 2 字节 length，拼成完整 L2CAP PDU（len+CID+payload）。
 2. **按 CID 分流**：
 
-   | CID | 处理 | 说明 |
-   |-----|------|------|
-   | `SMP (0x06)` | **本地终结** | 回注本侧栈；各链路独立 SMP；不转发 |
-   | `signaling (0x01 BR / 0x05 LE)` | **原样转发** | L2CAP 端到端透明 → 动态 channel(含 BR RFCOMM/SDP) 手机↔目标直接协商 |
-   | `ATT (0x04)` | **转发** | v1 观测 + 转发 |
-   | 动态 CID（≥0x0040 / LE CoC / BR PSM 通道） | **转发** | 当不透明字节流；CID 已端到端一致 |
+   | CID | 处理 |
+   |-----|------|
+   | `SMP (0x06)` | **本地终结** → 交本侧 `pairing/smp.py`；不转发（BR 无此项，SSP 走 HCI 事件） |
+   | `signaling (0x01 BR / 0x05 LE)` | **原样转发**（L2CAP 端到端透明 → 动态 channel 含 RFCOMM/SDP 由两端直接协商，零 CID 逻辑） |
+   | `ATT (0x04)` / 动态 CID | **抓包 + 转发** |
 
-3. **抓包**：被转发 PDU → `capture.py` tap（btsnoop + trace），v1 只观测。
-4. **重分片**：按**对侧** controller 的 `acl_packet_length`/`le_acl_packet_length` 重新切 HCI ACL 分片（首片 + continuation），经对侧 `send_acl_data` 发出。
+3. **抓包**：转发 PDU → `capture.py`（btsnoop + trace），v1 只读。**改写 seam**：未来此处替换为 InterceptionPipeline。
+4. **重分片**：按**对侧** controller 的 `acl_packet_length`/`le_acl_packet_length` 重切 HCI ACL 分片（首片+continuation）→ 对侧 `send_acl_data`。
 5. **断链传播**：监听 HCI Disconnection Complete，一侧断 → 拆另一侧 + 结束 relay。
 
-> **改写 seam（后续）**：第 3 步的 tap 点未来替换为 `InterceptionPipeline`，返回 PASS(可改 payload)/DROP/INJECT 后再进第 4 步。v1 tap 只读不改。
+> `pairing/smp.py` 发 SMP PDU 时同样经 acl.py 的封帧路径（封 L2CAP 0x06 + `send_acl_data`）。
 
 ### 5.1 已知限制
-
-- 透传/抓包粒度 = 重组后的 **L2CAP PDU**。LE CoC / BR L2CAP 跨多帧的完整 SDU 不重组（透传不受影响；将来深度改写时再补 SDU 重组）。
-- 地址克隆为**可选**：默认用自己的地址 + 克隆应用层身份即可；仅 BR 重连/地址锁定场景需 opt-in + 可写芯片（见 §3.1）。
+- 透传/抓包粒度 = L2CAP PDU。LE CoC / BR 跨多帧的完整 SDU 不重组（透传不受影响，深度改写时再补）。
+- 地址克隆可选：默认用自身地址 + 克隆应用层身份即可；仅 BR 重连/地址锁定需 opt-in + 可写芯片（§3.1 表见下）。
 
 ---
 
 ## 6. 三阶段编排（relay.py）
 
-`MitmRelay` 拥有上下游两套 controller（两个 `Stack.build(...)` 各绑一个 USB 适配器），骨架 BLE/BR 共用，按 transport 注入差异：
+`MitmRelay` 持有上下游两个 `HCIController`（各 `transport` 一个），骨架 BLE/BR 共用：
 
 1. **recon**：上游侦查目标 → `ClonedIdentity`。
-   - BLE：扫描抓 `address/address_type/adv_data/scan_response/name?`。
-   - BR：inquiry 抓 `bd_addr/class_of_device/eir/name`。
-2. **impersonate**：下游套 `ClonedIdentity`。
-   - BLE：设地址（random 可靠 / public best-effort）→ 写 adv+scan-rsp → 开广播。
-   - BR：写 CoD + EIR + 本地名 → 开 inquiry scan + page scan（应答手机的 inquiry/page，用自身 BD_ADDR）。
-   - **可选 `--clone-address`**：BLE 调 `LE Set Random Address`；BR 调 vendor `Write_BD_ADDR`（前置探测，不支持则 fail-fast，见 §3.1）。
+   - BLE：`LE Set Scan` + 收 adv report，抓 `address/type/adv_data/scan_rsp/name?`。
+   - BR：`Inquiry` + `Remote Name Request`，抓 `bd_addr/class_of_device/eir/name`。
+2. **impersonate**：下游套 `ClonedIdentity`（用自身地址）。
+   - BLE：写 adv data + scan rsp → `LE Set Advertise Enable`。
+   - BR：写 CoD + EIR + 本地名 → 开 inquiry scan + page scan。
+   - 可选 `--clone-address`：BLE `LE Set Random Address`；BR vendor `Write_BD_ADDR`（前置探测，不支持则 fail-fast）。
 3. **relay**：
-   - 手机连入下游 → MITM 作 responder 配对（Just Works 自动 / Numeric 经 delegate 两边确认）。
-   - 上游连目标（BLE connect / BR page）→ MITM 作 initiator 配对。
-   - 两链路加密就绪 → 武装双向 ACL relay（§5）→ 透传。
-   - 任一链路断 → 干净拆链。
+   - 手机连入下游 → 作 responder 配对（BLE app SMP / BR HCI SSP；JW 自动 / Numeric 经 delegate）。
+   - 上游连目标（BLE connect / BR page）→ 作 initiator 配对。
+   - 两链路加密就绪 → 武装双向 ACL relay（§5）→ 透传。任一链路断 → 干净拆链。
 
 ---
 
 ## 7. 抓包（capture.py）
 
 v1 **只观测不改写**。被中继的每条 L2CAP PDU 经 tap：
+- `BtsnoopInterceptor`（默认开）：复用 `core.trace.BtsnoopSink`，两侧明文写一个 btsnoop（方向标注 PHONE↔TARGET），Wireshark/Ellisys/PTS 可看。
+- `TraceInterceptor`：复用 trace 彩色输出。
 
-- `BtsnoopInterceptor`（**默认开**）：复用 `core/trace.BtsnoopSink`，两侧明文写一个 btsnoop，Wireshark/Ellisys/PTS 可看；方向标注 PHONE↔TARGET。
-- `TraceInterceptor`：复用现有 trace 彩色输出（可 `--pybluehost-trace` 控制）。
-
-**改写（YAML 规则 + Python hook）= 后续阶段**，本 spec 不实现，seam 见 §5 注。
+改写（规则 + hook）= 后续阶段，seam 见 §5 第 3 步。
 
 ---
 
-## 8. CLI（cli/app/mitm.py）
+## 8. 地址克隆芯片对照（仅 --clone-address）
+
+| 芯片 | 写 BD_ADDR | 备注 |
+|---|---|---|
+| Broadcom/Cypress (BCM20702A0/A1) | ✅ 推荐 | vendor `0xFC01`，临时(掉电还原)。Asus USB-BT400 / Plugable USB-BT4LE / IOGEAR GBU521 |
+| CSR8510 (CSR 4.0) | ✅ 备选 | PSKEY `0xFC00`，持久(需还原)。⚠️ 假货多 |
+| Intel (AX200/AX210/8260…) | ❌ | OTP 锁死只读 |
+| Realtek (RTL8761B/BU) | ⚠️ | 写址不稳定 |
+
+BLE 克隆地址用标准 `LE Set Random Address`（全芯片）。默认模式两个任意 dongle 即可；上游不改址。vendor 写址实现放在 app 内（`address.py`），**不污染** `hci/vendor/`。
+
+---
+
+## 9. CLI（cli/app/mitm/cli.py）
 
 ```
 pybluehost app mitm \
-  --upstream   usb:vendor=intel       # radio A → 连目标 \
-  --downstream usb:index=1            # radio B → 对手机冒充 \
-  --target     AA:BB:CC:DD:EE:FF      # 目标地址(或 --target-name 扫描匹配) \
+  --upstream   usb:vendor=intel       # HCIController A → 连目标 \
+  --downstream usb:index=1            # HCIController B → 对手机冒充 \
+  --target     AA:BB:CC:DD:EE:FF      # 或 --target-name 扫描匹配 \
   --transport-mode le|bredr|both      # 默认 both \
   --clone-address                     # 可选:套用目标地址(BR 需可写芯片);默认用自身地址 \
-  --btsnoop    capture.btsnoop        # 默认按时间戳自动命名 \
-  --pairing    just-works|numeric     # v1 支持
+  --btsnoop    capture.btsnoop        # 默认按时间戳命名 \
+  --pairing    just-works|numeric
 ```
 
 复用 `cli/_lifecycle.add_common_arguments` + `cli/_transport.parse_transport_arg`（上下游各一次）。
 
 ---
 
-## 9. 测试策略（TDD，符合 CLAUDE.md）
+## 10. 测试策略（TDD）
 
-**虚拟三角**：3 个 `Stack` —— `target` / `mitm`（双虚拟控制器）/ `phone`。
-- BLE：用 `hci/virtual_link.py` 对接 target↔mitm-upstream、mitm-downstream↔phone。
-- BR：用 `hci/virtual_classic_link.py`（Inquiry/Connection/ACL/Auth/Encryption/Disconnect 六桥）。
+**虚拟三角**（全 HCI 层）：`target` / `mitm`（两个 HCIController）/ `phone`。
+- BLE：两条 `hci/virtual_link.py` 桥接 target↔mitm-upstream、mitm-downstream↔phone。
+- BR：`hci/virtual_classic_link.py`。
+- **target/phone 用完整 `Stack`（含真 SMP/SSP）当测试夹具**，MITM 用 app 内最小 SMP/SSP → 顺带验证 app SMP 与协议栈 SMP 的**互操作**。
 
 - **单元测试**
-  - `acl_relay`：HCI 分片重组、PB flag、跨不同 buffer 重分片、CID 分流策略表、SMP/signaling/ATT/动态 各分支、断链传播。（BLE/BR 共用，参数化两种 transport。）
-  - `capture`：btsnoop 写入正确、方向标注、PDU 不被篡改（透传保真）。
-  - `clone`：BLE 扫描抓取 / BR inquiry 抓取 → ClonedIdentity 保真。
-- **e2e**（`tests/e2e/`，transport-agnostic）
-  - BLE 透传：phone 经 MITM 对 target 跑 scan→connect→pair(Just Works)→ATT 读写，数据原样到达 + btsnoop 落盘。
-  - BR 透传：phone 经 MITM 对 target 跑 inquiry→connect→SSP(JW)→SDP browse + RFCOMM echo，数据原样到达。
-  - Numeric Comparison：两侧 delegate 都确认，配对完成、透传贯通（BLE + BR 各一）。
+  - `acl`：HCI 分片重组、PB flag、跨不同 buffer 重分片、CID 分流策略表、断链传播（BLE/BR 参数化）。
+  - `pairing/smp`：SC JW + Numeric 配对流程、f4/f5/f6/g2 用 SIG 测试向量校验、DHKey check。
+  - `pairing/ssp`：HCI 事件序列驱动 JW + Numeric、link key store。
+  - `pairing/crypto`：f4/f5/f6/g2/ECDH 测试向量。
+  - `recon`：BLE 扫描 / BR inquiry → ClonedIdentity 保真。
+- **e2e**（`tests/e2e/`）
+  - BLE 透传：phone 经 MITM 对 target scan→connect→pair(JW)→ATT 读写，数据原样到达 + btsnoop 落盘。
+  - BR 透传：phone 经 MITM 对 target inquiry→connect→SSP(JW)→SDP browse + RFCOMM echo。
+  - Numeric Comparison：两侧 delegate 确认，配对完成 + 透传贯通（BLE/BR 各一）。
   - 断链：一侧断 → 另一侧干净拆链，无悬挂 task。
 
-**完成标准**：上述单测 + e2e 全 PASS（virtual 自动跑）；真硬件用双 `--transport=usb` 适配器手动验证（adapter 到货后）。
+**完成标准**：单测 + e2e 全 PASS（virtual 自动跑）；真硬件双 `--transport=usb` 适配器手动验证（adapter 到货后）。
 
 ---
 
-## 10. 分期与 Plan 拆分（细化留给 writing-plans）
+## 11. 分期与 Plan 拆分（细化留给 writing-plans）
 
-**v1 = BLE + BR/EDR 透传 + 抓包**，预计 4 个 Plan（顺序依赖）：
+v1 = BLE + BR/EDR 透传 + 抓包，预计 4 个 Plan：
 
-1. **MITM-1 acl_relay 核心 + capture**：重组/重分片 + CID 分流策略表 + 断链传播 + btsnoop/trace tap。BLE/BR 共用，独立单测，不依赖编排。
-2. **MITM-2 BLE 路径**：MitmRelay 三阶段骨架 + BLE clone(扫描) + BLE connect/advertise + 逐链路 SMP 终结 + 虚拟三角 e2e（Just Works）。
-3. **MITM-3 BR/EDR 路径**：BR clone(inquiry/CoD/EIR) + page/inquiry-scan 装配(默认自身地址) + 逐链路 SSP 终结 + VirtualClassicLink 三角 e2e。**可选**:vendor `Write_BD_ADDR`(Broadcom 0xFC01 / CSR PSKEY) + 能力探测，支撑 `--clone-address`。
-4. **MITM-4 CLI + Numeric + 文档**：`app mitm`（le/bredr/both）+ Numeric Comparison delegate（BLE+BR）+ `docs/MITM.md` runbook。
+1. **MITM-1 应用骨架 + ACL relay 核心 + capture**：双 HCIController 装配（裸 hci，不用 Stack）+ acl.py 重组/重分片/CID 分流/断链 + btsnoop/trace tap。独立单测。
+2. **MITM-2 BLE 路径**：recon 扫描 + impersonate 广播 + **app 内最小 SMP**(SC JW + Numeric) + 逐链路加密 + 虚拟三角 e2e。
+3. **MITM-3 BR/EDR 路径**：inquiry recon + inquiry/page-scan impersonate + **SSP 终结(HCI 事件 + link key store)** + 可选 vendor Write_BD_ADDR + VirtualClassicLink 三角 e2e。
+4. **MITM-4 CLI + Numeric delegate + 文档**：`app mitm`(le/bredr/both) + Numeric 交互 + `docs/MITM.md` runbook。
 
-**后续阶段（不在 v1 范围）**：改写能力（InterceptionPipeline + YAML 规则引擎 + Python hook）、Passkey Entry / OOB、CoC/BR 完整 SDU 重组以支持深度改写。
+**后续阶段**：改写能力（InterceptionPipeline + 规则 + hook）、Passkey Entry / OOB / BLE legacy、CoC/BR 完整 SDU 重组。
 
 ---
 
-## 11. 风险与缓解
+## 12. 风险与缓解
 
 | 风险 | 缓解 |
 |------|------|
-| 重分片实现 bug（B 唯一新依赖） | 单测覆盖跨 buffer 大小、首/续分片、边界长度；BLE/BR 参数化 |
-| 需地址克隆但下游芯片不能写 BD_ADDR | 仅 `--clone-address` 时相关：默认模式不依赖写址；opt-in 时前置探测 + fail-fast 给硬件指引（Broadcom/CSR），见 §3.1 |
-| 手机缓存旧 bond | runbook 要求先删手机侧配对记录 |
-| Numeric Comparison 需人工两侧确认 | delegate 钩子；CLI `--pairing numeric` 交互提示 |
+| app 内最小 SMP 实现 bug | f4/f5/f6/g2/ECDH 用 SIG 测试向量单测；虚拟三角与协议栈真 SMP 互操作 e2e |
+| 重分片实现 bug（B 唯一新底层依赖） | 单测覆盖跨 buffer、首/续分片、边界长度；BLE/BR 参数化 |
+| 需地址克隆但芯片不能写 BD_ADDR | 仅 `--clone-address` 相关;默认模式不依赖;opt-in 时探测 + fail-fast 给硬件指引（§8） |
+| 手机缓存旧 bond | runbook 先删配对记录 |
+| Numeric 需人工两侧确认 | delegate + CLI 交互提示 |
 | 仅限授权场景 | spec/CLI/runbook 显著标注"授权测试专用" |
