@@ -1,6 +1,6 @@
 # Design Spec — MITM 透传应用（BLE + BR/EDR，B 式 HCI-ACL 透传）
 
-**版本**：design v0.3
+**版本**：design v0.4
 **日期**：2026-06-01
 **前置版本**：PRD v1.0 已完成 31 个 Plan，BLE 全栈（HCI/L2CAP/ATT/GATT/SMP/GAP）+ Classic baseband（含 VirtualClassicLink、SSP）已就位
 **适用场景**：**授权**安全测试 / 漏洞研究 / 教学。两端设备（手机 + 目标）均在测试者掌控下。
@@ -13,7 +13,7 @@
 
 - **v1 范围**：BLE **和** BR/EDR 透传（同期交付）。**改写（YAML 规则 + Python hook）= 后续阶段**，本 spec 只预留 seam，不实现。
 - **核心中继层**：**B 式 HCI-ACL 透传**——HCI ACL 层重组/重分片 + 按 L2CAP CID 分流。BLE 与 BR/EDR **共用同一套 acl_relay 核心**。
-- **硬件**：两个 USB 适配器（真双 radio）。**伪装侧（下游）必须能写 BD_ADDR**（详见 §3.1）。
+- **硬件**：两个 USB 适配器（真双 radio）。默认模式**任意两个**即可；地址克隆为可选能力，仅 BR 重连场景需可写 BD_ADDR 的芯片（详见 §3.1）。
 
 ### 1.1 需求决策表（brainstorming 结论）
 
@@ -65,25 +65,38 @@ A（复用 L2CAPManager 做 SDU 级中继）与 B（HCI-ACL 透传）对比，�
 
 **操作前提**（写入 runbook）：手机若曾与真目标绑定，需**先删旧配对记录**（避免缓存 LTK/IRK/link-key 冲突）。
 
-### 3.1 地址克隆与硬件要求（关键约束）
+### 3.1 地址克隆是可选能力（默认不需要）
 
-冒充目标依赖把目标地址套到**下游（伪装侧）radio** 上。BLE 与 BR/EDR 难度天差地别：
+**核心认识：手机连的是它在发现阶段看到的那个地址，不是"真目标的地址"。** 多数场景手机只按应用层内容（名字 / service UUID / CoD / EIR）选设备，不校验地址。因此**默认模式：下游 radio 用自己的地址，只克隆应用层身份**，对 BLE 和 BR/EDR 都成立：
 
-- **BLE — public 克隆可选**：标准 `LE Set Random Address (0x2005)` 即可用 **random(static)** 地址广播，全芯片支持。手机按**名字/service UUID** 选设备时 random 地址够用；只有当手机有**旧 bond 绑到目标 public 身份地址**或 App 按地址过滤时才需克隆 public。**缓解**：删手机旧配对记录 → 按名字重新发现。故 **BLE public 克隆为可选/best-effort**。
-- **BR/EDR — BD_ADDR 克隆为硬需求**：BR **无 random 地址**；inquiry 后手机直接 page 目标 BD_ADDR，下游 radio 要收到该 page **必须拥有该 BD_ADDR**，无标准替代。**写不了 BD_ADDR → BR 透传无法工作**。
+- **BLE**：手机扫描看到 MITM 广播（克隆 name/service UUID），连的就是 MITM 广播地址。无需任何特殊命令。
+- **BR/EDR**：手机 inquiry，MITM 用**自己的 BD_ADDR** + 克隆 CoD/EIR 应答，手机按名字选中后 page 的是 **MITM 自己的地址**。同样无需克隆。
 
-**写 BD_ADDR 需 vendor 命令，依芯片而定**（本仓库现有 `hci/vendor/{intel,realtek}.py` 只**读**不写）：
+**只有两种场景需要克隆地址**（opt-in，`--clone-address`）：
+1. 手机有**旧 bond**，重连时按存档的真目标地址直接 page/connect（不再 inquiry/scan）；
+2. App **硬编码地址 / 按地址过滤**。
+
+> 这两种之外（尤其**首次配对**），**任意两个 dongle 即可跑 BR + BLE MITM**。缓解场景 1 的更简单办法：删手机旧配对记录 → 重走发现流程。
+
+**地址克隆模式的硬件依赖**（仅 opt-in 时相关）：
+
+| 场景 | 手段 | 芯片要求 |
+|---|---|---|
+| BLE 克隆地址 | `LE Set Random Address (0x2005)`（标准） | 全芯片支持 |
+| BR 克隆 BD_ADDR | vendor `Write_BD_ADDR` | 见下表（无 random 替代） |
+
+写 BD_ADDR 的 vendor 命令依芯片而定（仓库现有 `hci/vendor/{intel,realtek}.py` 只**读**不写）：
 
 | 芯片 | 写 BD_ADDR | 方式 / 备注 |
 |---|---|---|
-| **Broadcom/Cypress (BCM20702A0/A1)** | ✅ 推荐 | vendor `0xFC01` Write_BD_ADDR，**临时**(掉电还原)。Linux btusb 原生。型号:Asus USB-BT400 / Plugable USB-BT4LE / IOGEAR GBU521 |
-| **CSR8510 (CSR 4.0)** | ✅ 备选 | PSKEY 写(vendor `0xFC00`)，**持久**(需还原)。⚠️ 假货泛滥，正品才可靠 |
-| **Intel (AX200/AX210/8260…)** | ❌ | OTP 锁死只读 → **不能做 BR 伪装侧** |
-| **Realtek (RTL8761B/BU)** | ⚠️ | 写址不稳定，当不可用对待 |
+| **Broadcom/Cypress (BCM20702A0/A1)** | ✅ 推荐 | vendor `0xFC01`，**临时**(掉电还原)。Linux btusb 原生。Asus USB-BT400 / Plugable USB-BT4LE / IOGEAR GBU521 |
+| **CSR8510 (CSR 4.0)** | ✅ 备选 | PSKEY 写(`0xFC00`)，**持久**(需还原)。⚠️ 假货多 |
+| **Intel (AX200/AX210/8260…)** | ❌ | OTP 锁死只读 |
+| **Realtek (RTL8761B/BU)** | ⚠️ | 写址不稳定 |
 
-**硬件建议**：下游(伪装侧)用 **Broadcom BT4.0**(首选)或正品 CSR8510；上游(连目标侧)不改址，任意适配器(含 Intel)均可。**纯 BLE MITM** 两个廉价 dongle 即可(random + 删 bond)。
+**硬件建议**：默认模式两个**任意** dongle 即可。若要 `--clone-address` 且含 BR，伪装侧选 **Broadcom BT4.0** 或正品 CSR8510；上游(连目标)不改址，任意适配器(含 Intel)均可。
 
-**实现要求**：新增 vendor `Write_BD_ADDR`(Broadcom `0xFC01` + CSR PSKEY)，并在 impersonate 阶段做**能力前置探测**——下游芯片不可写 BD_ADDR 且 transport-mode 含 bredr 时 **fail-fast 报错并给硬件指引**；纯 le 模式回退 random 地址。
+**实现要求**：地址克隆作为 opt-in 能力（`address.py` + 可选 vendor `Write_BD_ADDR`）。仅当用户请求 `--clone-address` 且 BR 下游芯片不可写时 **fail-fast 报错给硬件指引**；默认模式不依赖任何 vendor 写。
 
 ---
 
@@ -111,7 +124,7 @@ pybluehost/mitm/
   __init__.py       # 导出公共 API
   relay.py          # MitmRelay 编排:双 controller、三阶段、断链传播；BLE/BR 共用骨架
   clone.py          # recon + ClonedIdentity:BLE(address/adv/scan-rsp) + BR(bd_addr/CoD/EIR/name)
-  address.py        # 套用克隆地址:BLE LE Set Random Address / BR 调 vendor Write_BD_ADDR + 能力探测
+  address.py        # 可选:--clone-address 时套用目标地址(BLE LE Set Random Address / BR vendor Write_BD_ADDR + 能力探测)
   acl_relay.py      # ★ ACL 重组(PB flag) → CID 分流 → 重分片到对侧 buffer；BLE/BR 共用
   capture.py        # 抓包 tap:btsnoop(复用 BtsnoopSink) + trace；v1 只观测不改写
   # —— 后续阶段（v1 不实现，仅预留 seam）——
@@ -120,9 +133,9 @@ pybluehost/mitm/
   # hooks.py        # Python hook 加载
 pybluehost/cli/app/
   mitm.py           # CLI 入口:`pybluehost app mitm`（--bredr / --le 选择或同时）
-pybluehost/hci/vendor/
-  broadcom.py       # 新增:Write_BD_ADDR (0xFC01) + 能力探测
-  csr.py            # 新增:PSKEY BD_ADDR 写 + 能力探测(可选,Broadcom 优先)
+pybluehost/hci/vendor/   # 仅 --clone-address 需要,默认模式不依赖
+  broadcom.py       # 可选:Write_BD_ADDR (0xFC01) + 能力探测
+  csr.py            # 可选:PSKEY BD_ADDR 写 + 能力探测(Broadcom 优先)
 docs/
   MITM.md           # runbook:伪装侧芯片选型(Broadcom/CSR)、双 adapter、删旧 bond、SC 操作、btsnoop 查看
 ```
@@ -154,7 +167,7 @@ docs/
 ### 5.1 已知限制
 
 - 透传/抓包粒度 = 重组后的 **L2CAP PDU**。LE CoC / BR L2CAP 跨多帧的完整 SDU 不重组（透传不受影响；将来深度改写时再补 SDU 重组）。
-- 地址克隆：BLE random 可靠、public 可选；**BR BD_ADDR 为硬需求且依赖可写芯片**（见 §3.1）。
+- 地址克隆为**可选**：默认用自己的地址 + 克隆应用层身份即可；仅 BR 重连/地址锁定场景需 opt-in + 可写芯片（见 §3.1）。
 
 ---
 
@@ -167,7 +180,8 @@ docs/
    - BR：inquiry 抓 `bd_addr/class_of_device/eir/name`。
 2. **impersonate**：下游套 `ClonedIdentity`。
    - BLE：设地址（random 可靠 / public best-effort）→ 写 adv+scan-rsp → 开广播。
-   - BR：**vendor 写 BD_ADDR（前置探测，不支持则 fail-fast，见 §3.1）** → 写 CoD + EIR + 本地名 → 开 inquiry scan + page scan（应答手机的 inquiry/page）。
+   - BR：写 CoD + EIR + 本地名 → 开 inquiry scan + page scan（应答手机的 inquiry/page，用自身 BD_ADDR）。
+   - **可选 `--clone-address`**：BLE 调 `LE Set Random Address`；BR 调 vendor `Write_BD_ADDR`（前置探测，不支持则 fail-fast，见 §3.1）。
 3. **relay**：
    - 手机连入下游 → MITM 作 responder 配对（Just Works 自动 / Numeric 经 delegate 两边确认）。
    - 上游连目标（BLE connect / BR page）→ MITM 作 initiator 配对。
@@ -195,6 +209,7 @@ pybluehost app mitm \
   --downstream usb:index=1            # radio B → 对手机冒充 \
   --target     AA:BB:CC:DD:EE:FF      # 目标地址(或 --target-name 扫描匹配) \
   --transport-mode le|bredr|both      # 默认 both \
+  --clone-address                     # 可选:套用目标地址(BR 需可写芯片);默认用自身地址 \
   --btsnoop    capture.btsnoop        # 默认按时间戳自动命名 \
   --pairing    just-works|numeric     # v1 支持
 ```
@@ -229,7 +244,7 @@ pybluehost app mitm \
 
 1. **MITM-1 acl_relay 核心 + capture**：重组/重分片 + CID 分流策略表 + 断链传播 + btsnoop/trace tap。BLE/BR 共用，独立单测，不依赖编排。
 2. **MITM-2 BLE 路径**：MitmRelay 三阶段骨架 + BLE clone(扫描) + BLE connect/advertise + 逐链路 SMP 终结 + 虚拟三角 e2e（Just Works）。
-3. **MITM-3 BR/EDR 路径**：vendor `Write_BD_ADDR`(Broadcom 0xFC01 / CSR PSKEY) + 能力探测 + BR clone(inquiry/CoD/EIR) + page/inquiry-scan 装配 + 逐链路 SSP 终结 + VirtualClassicLink 三角 e2e。
+3. **MITM-3 BR/EDR 路径**：BR clone(inquiry/CoD/EIR) + page/inquiry-scan 装配(默认自身地址) + 逐链路 SSP 终结 + VirtualClassicLink 三角 e2e。**可选**:vendor `Write_BD_ADDR`(Broadcom 0xFC01 / CSR PSKEY) + 能力探测，支撑 `--clone-address`。
 4. **MITM-4 CLI + Numeric + 文档**：`app mitm`（le/bredr/both）+ Numeric Comparison delegate（BLE+BR）+ `docs/MITM.md` runbook。
 
 **后续阶段（不在 v1 范围）**：改写能力（InterceptionPipeline + YAML 规则引擎 + Python hook）、Passkey Entry / OOB、CoC/BR 完整 SDU 重组以支持深度改写。
@@ -241,7 +256,7 @@ pybluehost app mitm \
 | 风险 | 缓解 |
 |------|------|
 | 重分片实现 bug（B 唯一新依赖） | 单测覆盖跨 buffer 大小、首/续分片、边界长度；BLE/BR 参数化 |
-| 下游芯片不能写 BD_ADDR（BR 硬依赖） | 前置能力探测 + fail-fast 报错给硬件指引；推荐 Broadcom/CSR 伪装侧；纯 le 回退 random（见 §3.1） |
+| 需地址克隆但下游芯片不能写 BD_ADDR | 仅 `--clone-address` 时相关：默认模式不依赖写址；opt-in 时前置探测 + fail-fast 给硬件指引（Broadcom/CSR），见 §3.1 |
 | 手机缓存旧 bond | runbook 要求先删手机侧配对记录 |
 | Numeric Comparison 需人工两侧确认 | delegate 钩子；CLI `--pairing numeric` 交互提示 |
 | 仅限授权场景 | spec/CLI/runbook 显著标注"授权测试专用" |
