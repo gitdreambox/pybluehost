@@ -10,6 +10,7 @@ PyBlueHost 用纯 Python 实现完整的 Bluetooth Host 协议栈：HCI、L2CAP�
 - **多种 Transport** —— UART、USB（PyUSB）、TCP、UDP、btsnoop replay、Linux HCI user-channel
 - **YAML-driven service definitions** —— 声明式定义自定义服务，无需手写 handler 样板
 - **结构化 Trace** —— HCI 包按命令/事件名展开（带 SIG 查表），可彩色实时输出，也可录制为 btsnoop / JSON Lines
+- **MITM 透传**（⚠ 授权测试）—— 双 radio 在目标与手机间透传 BLE/BR ACL 并抓 btsnoop，见 [`docs/MITM.md`](docs/MITM.md)
 
 ---
 
@@ -124,7 +125,26 @@ pybluehost app bridge --transport uart:/dev/ttyUSB0@921600 --protocol udp --port
 
 UART 使用统一 transport 规则 `uart:<port>[@baud]`；Windows 串口可写作 `uart:COM5@921600`。
 
-## 1.6 离线工具（不需要硬件）
+## 1.6 中间人（MITM）透传（⚠ 授权测试专用）
+
+在**目标设备**与**手机**之间插入中间人，双向透传 BLE 与 BR/EDR ACL，并把两侧明文抓成 btsnoop。
+需要**两个 USB 适配器**（上游连目标、下游对手机伪装）。仅用于授权安全研究/教学。
+
+```bash
+# 默认:自身地址 + 克隆应用层身份, Just Works, both(LE+BR)
+pybluehost app mitm --upstream usb:8087:0036 --downstream usb:0a12:0001 --target AA:BB:CC:DD:EE:FF
+
+# 只做 BLE + Numeric Comparison(两侧终端确认)
+pybluehost app mitm --upstream usb --downstream usb:0a12:0001 --target-name "Watch" --transport-mode le --pairing numeric
+
+# 地址锁定的重连场景:克隆目标 BD_ADDR(下游需 Broadcom dongle)
+pybluehost app mitm --upstream usb --downstream usb:0a12:0001 --target AA:BB:CC:DD:EE:FF --clone-address
+```
+
+默认输出 `mitm-<时间戳>.btsnoop`，用 Wireshark/Ellisys 打开。完整说明（硬件选型、删旧 bond、
+Numeric 操作、限制、真机验证事项）见 **[docs/MITM.md](docs/MITM.md)**。
+
+## 1.7 离线工具（不需要硬件）
 
 ```bash
 # HCI 包十六进制 → 解码后的命令/事件
@@ -140,7 +160,7 @@ pybluehost tools fw list
 pybluehost tools fw download <chip>
 ```
 
-## 1.7 出问题怎么调试（trace）
+## 1.8 出问题怎么调试（trace）
 
 最常用的三个命令：
 
@@ -170,7 +190,7 @@ ls trace.log          # 你刚才重定向的 trace
 
 需要更细的控制（按层独立级别、ACL payload 不截断、把默认抑制的事件加回来）见 [§3.4](#34-trace-系统深度定制) 「Trace 系统深度定制」。
 
-## 1.8 安装 / 硬件常见问题
+## 1.9 安装 / 硬件常见问题
 
 **Windows：必须装 WinUSB 驱动**
 
