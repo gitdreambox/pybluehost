@@ -98,6 +98,19 @@ pybluehost app mitm --upstream usb --downstream usb:index=1 \
 - recon / impersonate / 连接建立 / 逐链路加密的 HCI 时序为**结构性实现**，需在真硬件（双适配器）
   上验证；虚拟控制器不支持真实广播 / inquiry scan。
 
+## 转发延迟
+
+MITM 把空口路径变成 phone↔MITM↔target 两段，转发 RTT ≈ 链路1 + 主机处理 + 链路2。若目标设备
+或 App 的响应超时只有几十毫秒，插入 MITM 有可能把本就接近超时的往返压过线——这是**协议物理特性**。
+主机侧为降低开销已做：
+
+- **抓包不挡转发**：`AclRelay` 先转发（`send_acl`）、后抓包；btsnoop 写盘（含 flush）在后台 drain
+  任务里完成，磁盘 I/O 不计入转发关键路径。
+- **数据通道无队列中转**：ATT/RFCOMM/动态 channel 在 `_handle` 内直接转发，仅 SMP 配对期走队列。
+- **flow control 背压**：按对侧控制器 buffer 发送。
+- **待真机优化**：连接建立时主动协商**小 connection interval**（当前未控制），减小每跳"等下一个
+  连接事件"的延迟；并加转发延迟 instrumentation。
+
 ## 测试
 
 ```bash
