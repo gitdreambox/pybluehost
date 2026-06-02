@@ -30,6 +30,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ADV_DATA_MAX = 31
+# 广播间隔(单位 0.625ms);0x00A0 = 160 → 100ms。
+_ADV_INTERVAL_DEFAULT = 0x00A0
 
 
 def _addr_str_to_le_bytes(addr: str) -> bytes:
@@ -80,7 +82,7 @@ async def start_impersonation(
     # adv_interval_min(2 LE) adv_interval_max(2 LE) adv_type(1) own_addr_type(1)
     # peer_addr_type(1) peer_addr(6) adv_channel_map(1) adv_filter_policy(1)
     adv_params = (
-        struct.pack("<HH", 0x00A0, 0x00A0)  # interval min, max
+        struct.pack("<HH", _ADV_INTERVAL_DEFAULT, _ADV_INTERVAL_DEFAULT)  # interval min, max
         + bytes([0x00])                      # adv_type: ADV_IND
         + bytes([own_addr_type])             # own_addr_type
         + bytes([0x00])                      # peer_addr_type: public
