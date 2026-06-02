@@ -70,3 +70,26 @@ class L2capReassembler:
             out.append((cid, self._buf[4:total]))
             self._buf = self._buf[total:]
         return out
+
+
+def fragment(
+    *, handle: int, l2cap_pdu: bytes, max_payload: int,
+    first_pb: int = PB_FIRST_NON_FLUSH,
+) -> list[HCIACLData]:
+    """把完整 L2CAP PDU 按 max_payload 切成 HCI ACL 分片。
+
+    首片用 first_pb,其余用 PB_CONTINUATION。max_payload 取对侧控制器的
+    acl_packet_length / le_acl_packet_length。
+    """
+    if max_payload <= 0:
+        raise ValueError("max_payload 必须 > 0")
+    frags = [
+        HCIACLData(handle=handle, pb_flag=first_pb, data=l2cap_pdu[:max_payload])
+    ]
+    rest = l2cap_pdu[max_payload:]
+    while rest:
+        frags.append(
+            HCIACLData(handle=handle, pb_flag=PB_CONTINUATION, data=rest[:max_payload])
+        )
+        rest = rest[max_payload:]
+    return frags
