@@ -40,7 +40,16 @@
 - Create: `pybluehost/cli/app/mitm/pairing/__init__.py`、`pybluehost/cli/app/mitm/pairing/crypto.py`
 - Test: `tests/unit/mitm/pairing/test_crypto.py`
 
-- [ ] **Step 1: 写失败测试（KAT，向量来自 Core spec App D）**
+> **⚠ 执行修正（落地时以此为准，覆盖下方旧代码）：** 本仓库已有**经验证**的 SC 密码学实现，直接**移植**它(不 import ble,只复制实现到 app 内,符合"app 自带")，避免重写引入字节序/常量 bug：
+> - 参考实现：`pybluehost/ble/smp.py` 的 `_aes_cmac`(行 333)与 `SMPCrypto.f4/f5/f6/g2`(行 384-437)。**照搬其语义**到 `pairing/crypto.py`：
+>   - `f5` 的 SALT = `bytes.fromhex("6c888391aab6e7ca8cbbc3c0d2db3473")`(**不是**下方旧代码里的值)；keyID=`b"btle"`；length=`b"\x01\x00"`。
+>   - `g2(U,V,X,Y)` 返回**完整 uint32** = `struct.unpack(">I", aes_cmac(X, U+V+Y)[12:16])[0]`(mod 10^6 留给 ScPairing 展示时做)。
+>   - `f4(U,V,X,Z)` 的 `Z` 是 **int**：`aes_cmac(X, U+V+bytes([Z]))`。
+> - ECDH：参考 `pybluehost/ble/_smp_sc_crypto.py` 的 `generate_p256_keypair`/`compute_dhkey`(**小端 wire 格式**，边界处 `[::-1]` 转换)。MITM 自带一份等价实现。
+> - KAT：**复用** `tests/unit/ble/test_smp_sc_crypto.py`(ECDH 向量)与 `tests/unit/ble/test_smp.py`(f4/f5/f6/g2 KAT)里的已验证向量数值，拷进 `tests/unit/mitm/pairing/test_crypto.py`。
+> - **字节序一致性**：e2e 三角里 MITM 要和真实栈 SMP 互操作，SMP PDU wire 是小端。落地 Task 4 状态机时务必对照 `pybluehost/ble/smp.py` 的 SC 收发流程确认公钥/confirm/random/DHKey-check 的字节序。
+
+- [ ] **Step 1: 写失败测试（KAT；优先用仓库已验证向量，见上方修正）**
 
 Create `pybluehost/cli/app/mitm/pairing/__init__.py`（空文件，仅包标记）。
 
