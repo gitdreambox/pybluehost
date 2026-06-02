@@ -148,11 +148,13 @@ async def inquiry_for_target(
         count = data[0]
         offset = 1
         for _ in range(count):
-            if offset + 13 > len(data):
+            # 每条 14 字节(Core Vol4 E §7.7.2)。注:classic/gap.py 历史上只跳 2 字节
+            # (skip-2/guard-13),与规范不符;此处按规范跳 3(PSRM 1 + Reserved 2)。
+            if offset + 14 > len(data):
                 return
             addr_raw = data[offset: offset + 6]
             offset += 6
-            offset += 2  # page_scan_rep_mode(1) + reserved(1) — note: 2 bytes per spec
+            offset += 3  # page_scan_rep_mode(1) + reserved(2)
             cod = int.from_bytes(data[offset: offset + 3], "little")
             offset += 3
             offset += 2  # clock_offset
