@@ -36,6 +36,16 @@ class TestAesCmac:
         msg = b"\x00" * 16
         assert aes_cmac(key, msg) == aes_cmac(key, msg)
 
+    def test_rfc4493_vectors(self) -> None:
+        """RFC 4493 AES-CMAC known-answer vectors (empty + 16-byte message)."""
+        key = bytes.fromhex("2b7e151628aed2a6abf7158809cf4f3c")
+        assert aes_cmac(key, b"") == bytes.fromhex(
+            "bb1d6929e95937287fa37d129b756746"
+        )
+        assert aes_cmac(key, bytes.fromhex("6bc1bee22e409f96e93d7e117393172a")) == (
+            bytes.fromhex("070a16b46b4d4144f79bdd9dd04a287c")
+        )
+
 
 # ---------------------------------------------------------------------------
 # f4 — BT Spec v5.4 KAT (from tests/unit/ble/test_smp.py)

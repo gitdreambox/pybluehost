@@ -7,7 +7,11 @@ Self-contained port of the verified implementations in:
 No imports from pybluehost.ble.* — the MITM must stay self-contained.
 Only stdlib (struct) and ``cryptography`` are used.
 
-BT Core 5.4 Vol 3 Part H §2.3.5.6 — all wire formats are little-endian.
+Sync note: this is a deliberate port. If pybluehost/ble/smp.py (SMPCrypto) or
+_smp_sc_crypto.py change, mirror the change here.
+
+ECDH wire format is little-endian (BT Core 5.4 Vol 3 Part H §2.3.5.6.1);
+byte-order is reversed at the cryptography-library boundary.
 """
 from __future__ import annotations
 
@@ -16,6 +20,9 @@ import struct
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import algorithms
 from cryptography.hazmat.primitives.cmac import CMAC
+
+# f5 SALT (BT Spec Vol 3 Part H §2.2.7).
+_F5_SALT = bytes.fromhex("6c888391aab6e7ca8cbbc3c0d2db3473")
 
 
 # ---------------------------------------------------------------------------
@@ -43,9 +50,9 @@ def f4(u: bytes, v: bytes, x: bytes, z: int) -> bytes:
     f4(U, V, X, Z) = AES-CMAC_X(U || V || Z)
 
     Args:
-        u: 32-byte public key X coordinate.
-        v: 32-byte public key X coordinate.
-        x: 16-byte key.
+        u: 32-byte X coordinate of the initiator public key (PKa_x).
+        v: 32-byte X coordinate of the responder public key (PKb_x).
+        x: 16-byte key (a nonce).
         z: 1-byte integer.
     """
     return _cmac(x, u + v + bytes([z]))
@@ -63,10 +70,9 @@ def f5(
     Returns:
         (MacKey, LTK) each 16 bytes.
     """
-    SALT = bytes.fromhex("6c888391aab6e7ca8cbbc3c0d2db3473")
-    T = _cmac(SALT, w)
-    key_id = b"btle"
-    length = b"\x01\x00"
+    T = _cmac(_F5_SALT, w)
+    key_id = b"btle"            # keyID = "btle" in ASCII
+    length = b"\x01\x00"        # Length = 256, 2-byte big-endian
 
     # MacKey = AES-CMAC_T(0x00 || keyID || N1 || N2 || A1 || A2 || Length)
     mac_key = _cmac(T, bytes([0x00]) + key_id + n1 + n2 + a1 + a2 + length)
