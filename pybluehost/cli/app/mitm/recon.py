@@ -34,13 +34,14 @@ if TYPE_CHECKING:
 
 @dataclass
 class ClonedIdentity:
-    """Captured application-layer identity of a scanned BLE device."""
+    """Captured application-layer identity of a scanned BLE or BR/EDR device."""
 
-    address: str           # "AA:BB:CC:DD:EE:FF" (upper-case)
-    address_type: int      # 0=public, 1=random
-    adv_data: bytes        # payload from ADV_IND / ADV_SCAN_IND report
-    scan_response: bytes   # payload from SCAN_RSP report (may be empty)
-    name: str | None       # decoded local name from adv/scan-rsp, or None
+    address: str                  # "AA:BB:CC:DD:EE:FF" (upper-case)
+    address_type: int             # 0=public, 1=random
+    adv_data: bytes               # BLE: ADV_IND payload; BR/EDR: EIR data
+    scan_response: bytes          # BLE: SCAN_RSP payload; BR/EDR: empty
+    name: str | None              # decoded local name, or None
+    class_of_device: int | None = None  # BR/EDR Class of Device; None for BLE
 
 
 # ---------------------------------------------------------------------------

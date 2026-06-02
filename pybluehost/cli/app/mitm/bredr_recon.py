@@ -284,4 +284,5 @@ async def inquiry_for_target(
         adv_data=final_eir,
         scan_response=b"",
         name=final_name,
+        class_of_device=cod_map.get(addr),
     )
