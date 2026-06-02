@@ -32,5 +32,15 @@ def register_mitm_command(subparsers: argparse._SubParsersAction) -> None:
 
 
 async def _mitm_main(args: argparse.Namespace) -> None:
-    # MITM-1 仅骨架:真正的 recon/impersonate/relay 在 MITM-2/3。
-    raise NotImplementedError("MITM relay 编排在 MITM-2/3 实现")
+    from pybluehost.cli.app.mitm.controllers import open_controller_pair
+
+    pair = await open_controller_pair(args.upstream, args.downstream)
+    try:
+        logger.info(
+            "MITM controllers ready (upstream + downstream). "
+            "recon/impersonate/relay 在 MITM-2/3 接入。"
+        )
+        # MITM-2/3 在此装配 recon → impersonate → AclRelay。
+        raise NotImplementedError("MITM relay 编排在 MITM-2/3 实现")
+    finally:
+        await pair.close()
