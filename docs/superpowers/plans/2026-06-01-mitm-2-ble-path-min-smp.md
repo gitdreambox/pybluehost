@@ -1,5 +1,7 @@
 # MITM-2: BLE 路径 + App 内最小 SMP 实现计划
 
+> **✅ 已完成（2026-06-02，范围 C）。** 交付:`pairing/{crypto,smp_pdu,delegate,smp}.py`(SC 密码学移植已验证实现 + KAT;SC Just Works/Numeric 状态机,LTK 延后、畸形 PDU 优雅失败、IOcap 从对端解析)、`recon.py`、`impersonate.py`、`orchestrator.py`(MitmRelay 三阶段 + SMP↔ScPairing↔ACL 保序桥接)、CLI 接线。**Task 7 取范围 C**:编排代码 + fake 单测齐全;**虚拟三角 e2e 延后真机**(VirtualController 不支持真实广播/扫描;run_relay 的连接/加密 HCI 接线为结构性实现,真机时须填真实 A1/A2 本地地址)。协议栈 + hci 层零改动。全部 mitm 单测通过。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 MITM 在 BLE 上跑通完整透传:recon 扫描克隆目标应用层身份 → 下游广播伪装 → 与手机/目标各自用 **app 自带最小 SMP（LE Secure Connections，Just Works）** 配对终结加密 → 双向 ACL 透传。
