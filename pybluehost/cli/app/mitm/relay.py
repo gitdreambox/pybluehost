@@ -33,6 +33,9 @@ TeardownHook = Callable[[], Awaitable[None] | None]
 
 @dataclass
 class RelaySide:
+    # 一个 RelaySide 对应一条连接(一个 connection handle):reassembler 按该
+    # handle 的 ACL 流累积。多连接需为每个 handle 各建一个 RelaySide,否则
+    # 不同 handle 的分片会在同一缓冲里串扰。
     name: str
     handle: int
     acl_max_payload: int
