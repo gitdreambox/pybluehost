@@ -17,6 +17,19 @@ def test_parse_short_name():
     assert parse_adv_name(adv) == "ABC"
 
 
+def test_parse_zero_length_record_stops():
+    assert parse_adv_name(bytes([0x00, 0x09, ord("X")])) is None
+
+
+def test_parse_truncated_record_safe():
+    # claims length 5 but only 2 value bytes follow → bail out, no IndexError
+    assert parse_adv_name(bytes([0x05, 0x09, ord("A"), ord("B")])) is None
+
+
+def test_parse_empty():
+    assert parse_adv_name(b"") is None
+
+
 def test_cloned_identity_holds_fields():
     cid = ClonedIdentity(address="AA:BB:CC:DD:EE:FF", address_type=0,
                          adv_data=b"\x02\x01\x06", scan_response=b"", name="Watch")

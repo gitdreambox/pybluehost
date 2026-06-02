@@ -17,7 +17,12 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_SCAN_PARAMS,
     LEMetaSubEvent,
 )
-from pybluehost.hci.packets import HCICommand, HCIEvent, parse_le_advertising_reports
+from pybluehost.hci.packets import (
+    HCI_LE_Meta_Event,
+    HCICommand,
+    HCIEvent,
+    parse_le_advertising_reports,
+)
 
 if TYPE_CHECKING:
     from pybluehost.hci.controller import HCIController
@@ -108,8 +113,12 @@ async def scan_for_target(
     matched_event = asyncio.Event()
     matched_addr: list[str] = []  # populated when a match is found
 
-    # Save previous upstream handler so we can restore it on exit
+    # Save previous upstream callbacks so we can restore ALL of them on exit
+    # (set_upstream overwrites on_hci_event/on_acl_data/on_sco_data together —
+    # restoring only on_hci_event would silently clear the other two).
     prev_on_hci_event = controller._on_hci_event  # type: ignore[attr-defined]
+    prev_on_acl_data = controller._on_acl_data  # type: ignore[attr-defined]
+    prev_on_sco_data = controller._on_sco_data  # type: ignore[attr-defined]
 
     def on_hci_event(event: HCIEvent) -> None:
         if event.event_code != EventCode.LE_META:
@@ -121,7 +130,6 @@ async def scan_for_target(
             return
 
         # Decode the LE Meta event to access subevent fields
-        from pybluehost.hci.packets import HCI_LE_Meta_Event
         if isinstance(event, HCI_LE_Meta_Event):
             subevent_code = event.subevent_code
             subevent_params = event.subevent_parameters
@@ -154,9 +162,11 @@ async def scan_for_target(
 
             # Check if this address already matched (accumulating scan_rsp)
             if matched_addr and addr_str == matched_addr[0] and not matched_event.is_set():
-                # Got scan response for already-matched address — signal
+                # Got scan response for already-matched address — signal.
+                # continue (not return): sibling reports in the same LE Meta
+                # packet must still be processed.
                 matched_event.set()
-                return
+                continue
 
             # Skip match check for pure SCAN_RSP (no adv_data yet)
             if is_scan_rsp and addr_str not in adv_data_map:
@@ -209,8 +219,12 @@ async def scan_for_target(
             )
         except Exception:
             pass
-        # Restore previous upstream handler
-        controller.set_upstream(on_hci_event=prev_on_hci_event)
+        # Restore ALL previous upstream callbacks (not just on_hci_event)
+        controller.set_upstream(
+            on_hci_event=prev_on_hci_event,
+            on_acl_data=prev_on_acl_data,
+            on_sco_data=prev_on_sco_data,
+        )
 
     # Build ClonedIdentity from accumulated data
     addr = matched_addr[0]
