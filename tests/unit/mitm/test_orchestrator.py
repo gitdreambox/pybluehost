@@ -24,13 +24,13 @@ from pybluehost.cli.app.mitm.relay import RelaySide
 from pybluehost.hci.packets import HCIACLData
 
 
-def _fake_side(name, handle):
+def _fake_side(name, handle, acl_max_payload=27):
     sent = []
 
     async def send_acl(h, pb, data):
         sent.append((h, pb, data))
 
-    return RelaySide(name=name, handle=handle, acl_max_payload=27, send_acl=send_acl), sent
+    return RelaySide(name=name, handle=handle, acl_max_payload=acl_max_payload, send_acl=send_acl), sent
 
 
 def _bare_relay():
@@ -40,6 +40,8 @@ def _bare_relay():
     relay._capture = NullTap()
     relay._pairings = {}
     relay._sides = {}
+    relay._smp_queues = {}
+    relay._drain_tasks = []
     return relay
 
 
@@ -58,16 +60,21 @@ async def test_smp_request_routed_to_downstream_pairing_and_response_emitted():
     await acl_relay.on_phone_acl(
         HCIACLData(handle=0x40, pb_flag=PB_FIRST_FLUSH, data=req)
     )
-    # 让 ensure_future 的 SMP emit 跑起来:
-    await asyncio.sleep(0)
-
-    # downstream(responder)pairing 应在 phone 侧回出一个 PAIRING_RESPONSE 的 ACL:
+    # C1: drain task 需要多次 yield 才能跑完;轮询等待输出
+    for _ in range(50):
+        if phone_sent:
+            break
+        await asyncio.sleep(0)
     assert phone_sent, "no SMP response emitted on phone side"
     _, _, data = phone_sent[0]
     assert data[2:4] == bytes([0x06, 0x00])  # CID 0x06
     assert data[4] == P.PAIRING_RESPONSE
     # SMP PDU 本地终结,不应透传到 target 侧:
     assert not target_sent, "SMP PDU 不应被转发到 target 侧"
+
+    # 清理 drain tasks 避免 "Task was destroyed but it is pending" 警告
+    for t in relay._drain_tasks:
+        t.cancel()
 
 
 async def test_non_smp_att_pdu_relayed_to_target_side():
@@ -94,6 +101,9 @@ async def test_non_smp_att_pdu_relayed_to_target_side():
     # ATT 不进 SMP,不应在 phone 侧产生任何 SMP 输出:
     assert not phone_sent
 
+    for t in relay._drain_tasks:
+        t.cancel()
+
 
 async def test_build_relay_creates_pairings_with_correct_roles():
     relay = _bare_relay()
@@ -107,3 +117,71 @@ async def test_build_relay_creates_pairings_with_correct_roles():
     assert relay._pairings["target"].role == "initiator"
     assert relay._sides["phone"] is phone_side
     assert relay._sides["target"] is target_side
+
+    for t in relay._drain_tasks:
+        t.cancel()
+
+
+async def test_smp_emitter_preserves_pdu_order_across_fragments():
+    """C1 回归:两个 PDU 按入队顺序发出,第一个 PDU 的所有分片先于第二个 PDU 的分片。
+
+    使用 acl_max_payload=16 强制分片,确保跨分片边界的顺序不被 ensure_future 打乱。
+    """
+    relay = _bare_relay()
+
+    # acl_max_payload=16:强制 64 字节 payload 的 PDU 被拆成多个分片
+    phone_side, phone_sent = _fake_side("phone", 0x40, acl_max_payload=16)
+    target_side, _ = _fake_side("target", 0x11)
+    addr = bytes([0x00]) + bytes.fromhex("aabbccddeeff")
+    addr2 = bytes([0x00]) + bytes.fromhex("112233445566")
+    relay._build_relay(phone_side, target_side, addr, addr2, addr2, addr)
+
+    emit = relay._make_smp_emitter("phone")
+
+    # PDU1: PAIRING_PUBLIC_KEY —— opcode(1) + 64 bytes body = 65 bytes SMP PDU
+    pk_body = bytes(range(64))
+    pk = P.encode(P.PAIRING_PUBLIC_KEY, pk_body)  # 65 bytes
+    # PDU2: PAIRING_CONFIRM —— opcode(1) + 16 bytes body = 17 bytes SMP PDU
+    cf_body = bytes(range(16))
+    cf = P.encode(P.PAIRING_CONFIRM, cf_body)  # 17 bytes
+
+    # 同步入队两个 PDU(保序语义)
+    emit(pk)
+    emit(cf)
+
+    # L2CAP frame size: 4 byte header + SMP PDU
+    # PDU1 L2CAP = 4 + 65 = 69 bytes; PDU2 L2CAP = 4 + 17 = 21 bytes; total = 90
+    total_bytes = (4 + len(pk)) + (4 + len(cf))
+
+    for _ in range(200):
+        joined = b"".join(d for _, _, d in phone_sent)
+        if len(joined) >= total_bytes:
+            break
+        await asyncio.sleep(0)
+
+    for t in relay._drain_tasks:
+        t.cancel()
+
+    joined = b"".join(d for _, _, d in phone_sent)
+    assert len(joined) >= total_bytes, (
+        f"Expected at least {total_bytes} bytes, got {len(joined)}"
+    )
+
+    # 第一个 L2CAP 帧: length=65(LE), cid=6, opcode=PAIRING_PUBLIC_KEY
+    l2cap_len_0 = int.from_bytes(joined[0:2], "little")
+    l2cap_cid_0 = int.from_bytes(joined[2:4], "little")
+    assert l2cap_len_0 == len(pk), f"First L2CAP frame length wrong: {l2cap_len_0}"
+    assert l2cap_cid_0 == CID_SMP, f"First L2CAP frame CID wrong: {l2cap_cid_0}"
+    assert joined[4] == P.PAIRING_PUBLIC_KEY, (
+        f"First frame opcode wrong: 0x{joined[4]:02x}"
+    )
+
+    # 第二个 L2CAP 帧紧随其后: offset = 4 + len(pk)
+    offset = 4 + len(pk)
+    l2cap_len_1 = int.from_bytes(joined[offset : offset + 2], "little")
+    l2cap_cid_1 = int.from_bytes(joined[offset + 2 : offset + 4], "little")
+    assert l2cap_len_1 == len(cf), f"Second L2CAP frame length wrong: {l2cap_len_1}"
+    assert l2cap_cid_1 == CID_SMP, f"Second L2CAP frame CID wrong: {l2cap_cid_1}"
+    assert joined[offset + 4] == P.PAIRING_CONFIRM, (
+        f"Second frame opcode wrong: 0x{joined[offset + 4]:02x}"
+    )

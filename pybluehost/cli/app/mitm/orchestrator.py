@@ -62,19 +62,23 @@ class MitmRelay:
         clone_address: bool = False,
         delegate: Optional[PairingDelegate] = None,
         mode: str = "le",
+        connect_timeout: float = 30.0,
     ) -> None:
         self._pair = pair
         self._target_addr = target_addr
         self._target_name = target_name
         self._clone_address = clone_address
         self._delegate: PairingDelegate = delegate or AutoConfirmDelegate()
-        self._mode = mode
+        self._mode = mode  # 'le'|'bredr' — BR 分支在 MITM-3 接入
         self._capture = BtsnoopCaptureTap(btsnoop) if btsnoop else NullTap()
+        self._connect_timeout = connect_timeout
 
         self._identity: Optional["ClonedIdentity"] = None
         self._relay: Optional[AclRelay] = None
         self._pairings: dict[str, ScPairing] = {}
         self._sides: dict[str, RelaySide] = {}
+        self._smp_queues: dict[str, asyncio.Queue] = {}
+        self._drain_tasks: list[asyncio.Task] = []
 
     # ------------------------------------------------------------------ recon
     async def run_recon(self) -> None:
@@ -133,6 +137,12 @@ class MitmRelay:
         }
         self._sides = {"phone": phone_side, "target": target_side}
 
+        # C1: 每侧一个队列 + drain task,保证同侧多 PDU 的发送顺序
+        self._smp_queues = {name: asyncio.Queue() for name in ("phone", "target")}
+        self._drain_tasks = [
+            asyncio.ensure_future(self._drain_smp(name)) for name in ("phone", "target")
+        ]
+
         for name in self._pairings:
             self._pairings[name].set_output(self._make_smp_emitter(name))
 
@@ -153,12 +163,24 @@ class MitmRelay:
         return self._relay
 
     def _make_smp_emitter(self, name: str) -> Callable[[bytes], None]:
-        """返回一个 SYNC 回调:把 ScPairing 发出的 SMP PDU 异步编成 ACL 发到本侧。"""
+        """返回一个 SYNC 回调:把 SMP PDU 入队(保序),由 _drain_smp 串行发出。"""
 
         def emit(pdu: bytes) -> None:
-            asyncio.ensure_future(self._send_smp(name, pdu))
+            self._smp_queues[name].put_nowait(pdu)
 
         return emit
+
+    async def _drain_smp(self, name: str) -> None:
+        """串行消费 SMP 队列,保证同侧多个 PDU 按入队顺序发出。"""
+        queue = self._smp_queues[name]
+        while True:
+            pdu = await queue.get()
+            try:
+                await self._send_smp(name, pdu)
+            except Exception:
+                logger.exception("MITM: 发送 %s 侧 SMP PDU 失败", name)
+            finally:
+                queue.task_done()
 
     async def _send_smp(self, name: str, pdu: bytes) -> None:
         side = self._sides[name]
@@ -181,11 +203,14 @@ class MitmRelay:
         downstream = self._pair.downstream
 
         # --- 1. 等两侧连接完成,取 handle ---------------------------------
+        # C3: 并发等待,避免串行时错过先到的连接完成事件。
         # downstream 面向手机(手机连上我们的伪装广播);
         # upstream 由本机作为 initiator 连真实目标(发起连接的 HCI 命令属于
         #   连接建立流程,硬件验证;此处只等连接完成事件)。
-        target_handle = await self._await_le_connection(upstream)
-        phone_handle = await self._await_le_connection(downstream)
+        target_handle, phone_handle = await asyncio.gather(
+            self._await_le_connection(upstream),
+            self._await_le_connection(downstream),
+        )
 
         # --- 2. 取每侧的 ACL 最大负载 ------------------------------------
         # 优先 LE buffer 大小,回退到经典 ACL buffer 大小。
@@ -282,10 +307,17 @@ class MitmRelay:
 
         best-effort:在没有真实硬件时没有事件会到来。复用 controller 的
         on_hci_event 链(暂存并恢复前序回调,避免吞掉其它事件)。
+
+        C2: 保存并恢复全部三个上游回调(on_hci_event/on_acl_data/on_sco_data)。
+        I1: 带超时,TimeoutError 仍会触发 finally 恢复回调。
+        I4: 使用 get_running_loop() 代替 get_event_loop()。
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()  # I4
         fut: asyncio.Future[int] = loop.create_future()
-        prev = controller._on_hci_event  # type: ignore[attr-defined]
+        # C2: 保存全部三个回调
+        prev_hci = controller._on_hci_event   # type: ignore[attr-defined]
+        prev_acl = controller._on_acl_data    # type: ignore[attr-defined]
+        prev_sco = controller._on_sco_data    # type: ignore[attr-defined]
 
         def on_event(event: HCIEvent) -> None:
             if isinstance(event, HCI_LE_Meta_Event) and event.subevent_code in (
@@ -297,19 +329,38 @@ class MitmRelay:
                 if len(params) >= 3 and params[0] == 0x00 and not fut.done():
                     handle = int.from_bytes(params[1:3], "little")
                     fut.set_result(handle)
-            if prev is not None:
-                result = prev(event)
+            if prev_hci is not None:
+                result = prev_hci(event)
                 if asyncio.iscoroutine(result):
                     asyncio.ensure_future(result)
 
         controller.set_upstream(on_hci_event=on_event)
         try:
-            return await fut
+            return await asyncio.wait_for(fut, timeout=self._connect_timeout)  # I1
         finally:
-            controller.set_upstream(on_hci_event=prev)
+            # C2: 恢复全部三个回调
+            controller.set_upstream(
+                on_hci_event=prev_hci,
+                on_acl_data=prev_acl,
+                on_sco_data=prev_sco,
+            )
 
     # --------------------------------------------------------------- teardown
     async def teardown(self) -> None:
+        # I2: 先取消 drain tasks,再拆 relay,再关 capture 和 pair
+        for t in self._drain_tasks:
+            t.cancel()
         if self._relay is not None:
-            await self._relay.teardown()
-        await self._pair.close()
+            try:
+                await self._relay.teardown()
+            except Exception:
+                logger.exception("MITM: relay teardown 失败")
+        # I2: 无论 relay 是否存在都关闭 capture(双关安全)
+        try:
+            await self._capture.close()
+        except Exception:
+            logger.exception("MITM: capture close 失败")
+        try:
+            await self._pair.close()
+        except Exception:
+            logger.exception("MITM: pair close 失败")
