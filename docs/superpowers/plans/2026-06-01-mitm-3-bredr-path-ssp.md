@@ -1,5 +1,7 @@
 # MITM-3: BR/EDR 路径 + SSP 终结 + 可选改址 实现计划
 
+> **✅ 已完成（2026-06-02,范围 C）。** 交付:`pairing/ssp.py`(SSP HCI 事件终结 + link key store;Link_Key_Request_Reply 用专用 command 类对齐 classic/gap 的小端 bd_addr)、`address.py`(可选 vendor Write_BD_ADDR Broadcom 0xFC01 + 能力探测,Intel/未知 fail-fast)、`bredr_recon.py`(inquiry + EIR 名字解析)、`bredr_impersonate.py`(CoD/EIR/name + inquiry/page scan)、`orchestrator.py` BR 分支(mode 分派 + `_build_relay_bredr`:AclRelay smp_handler=None + 双侧 SspTermination)。`ClonedIdentity` 加 `class_of_device` 字段。**Task 5 取范围 C**:SSP/编排 + fake 单测齐全;**VirtualClassicLink 三角 e2e 留真机**(虚拟链路假设两端完整栈跑 SSP;run_relay BR 连接/加密为结构性实现)。协议栈+hci 层零改动。全部 mitm 单测通过。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 MITM 在 BR/EDR 上跑通透传：inquiry recon 克隆目标（BD_ADDR/CoD/EIR/name）→ 下游开 inquiry/page scan 伪装 → 与手机/目标各自经 **HCI SSP 事件**终结配对/加密 → 复用 MITM-1 的 `AclRelay` 透传 ACL。可选 `--clone-address`（vendor `Write_BD_ADDR`）。
