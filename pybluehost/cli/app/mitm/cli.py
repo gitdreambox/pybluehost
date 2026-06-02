@@ -4,8 +4,36 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from dataclasses import dataclass
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RelaySpec:
+    mode: str  # "le" | "bredr"
+
+
+def default_btsnoop_name() -> str:
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"mitm-{ts}.btsnoop"
+
+
+def _select_delegate(pairing: str):
+    from pybluehost.cli.app.mitm.pairing.delegate import (
+        AutoConfirmDelegate,
+        InteractiveNumericDelegate,
+    )
+    if pairing == "numeric":
+        return InteractiveNumericDelegate()
+    return AutoConfirmDelegate()
+
+
+def build_relays_from_args(args) -> list[RelaySpec]:
+    if args.transport_mode == "both":
+        return [RelaySpec("le"), RelaySpec("bredr")]
+    return [RelaySpec(args.transport_mode)]
 
 
 def register_mitm_command(subparsers: argparse._SubParsersAction) -> None:
@@ -32,20 +60,41 @@ def register_mitm_command(subparsers: argparse._SubParsersAction) -> None:
 
 
 async def _mitm_main(args: argparse.Namespace) -> None:
+    import asyncio as _asyncio
     from pybluehost.cli.app.mitm.controllers import open_controller_pair
     from pybluehost.cli.app.mitm.orchestrator import MitmRelay
 
+    logger.warning("⚠ MITM 仅限授权测试:确保你对目标设备与手机均有合法授权。")
+    btsnoop = args.btsnoop or default_btsnoop_name()
+    pairing = args.pairing
+    numeric = (pairing == "numeric")
+    specs = build_relays_from_args(args)
+
     pair = await open_controller_pair(args.upstream, args.downstream)
-    relay = MitmRelay(
-        pair,
-        target_addr=args.target,
-        target_name=args.target_name,
-        btsnoop=args.btsnoop,
-        clone_address=args.clone_address,
-    )
+    relays = [
+        MitmRelay(
+            pair,
+            target_addr=args.target,
+            target_name=args.target_name,
+            btsnoop=(btsnoop if len(specs) == 1 else f"{s.mode}-{btsnoop}"),
+            clone_address=args.clone_address,
+            delegate=_select_delegate(pairing),
+            mode=s.mode,
+            numeric=numeric,
+        )
+        for s in specs
+    ]
+    # NOTE (double-close): In "both" mode, two MitmRelay instances share the same
+    # ControllerPair.  Each relay's teardown() calls pair.close(), which calls
+    # _close_transport() for each transport.  _close_transport() wraps the close()
+    # call in a try/except and swallows any exception, so repeated calls are safe.
+    # We therefore rely on that guard and let each relay call teardown() normally,
+    # avoiding the complexity of skipping pair.close() in one of them.
     try:
-        await relay.run_recon()
-        await relay.run_impersonate()
-        await relay.run_relay()
+        for r in relays:
+            await r.run_recon()
+            await r.run_impersonate()
+        await _asyncio.gather(*(r.run_relay() for r in relays))
     finally:
-        await relay.teardown()
+        for r in relays:
+            await r.teardown()
