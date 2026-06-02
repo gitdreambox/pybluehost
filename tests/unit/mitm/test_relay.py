@@ -74,3 +74,37 @@ async def test_disconnect_hook_invoked():
                      on_teardown=lambda: closed.append(True))
     await relay.teardown()
     assert closed == [True]
+
+
+async def test_teardown_without_hook_is_safe():
+    phone, _ = _make_side("phone", 0x40, 27)
+    target, _ = _make_side("target", 0x11, 27)
+    relay = AclRelay(phone_side=phone, target_side=target)  # on_teardown 默认 None
+    await relay.teardown()  # 不抛异常即可(capture 默认 NullTap 也会被 close)
+
+
+async def test_async_teardown_hook_is_awaited():
+    phone, _ = _make_side("phone", 0x40, 27)
+    target, _ = _make_side("target", 0x11, 27)
+    closed = []
+
+    async def on_teardown():
+        closed.append("async")
+
+    relay = AclRelay(phone_side=phone, target_side=target, on_teardown=on_teardown)
+    await relay.teardown()
+    assert closed == ["async"]
+
+
+async def test_smp_dropped_without_handler_warns(caplog):
+    phone, phone_sent = _make_side("phone", 0x40, 27)
+    target, target_sent = _make_side("target", 0x11, 27)
+    relay = AclRelay(phone_side=phone, target_side=target)  # 无 smp_handler
+
+    smp = bytes([0x01, 0x00, 0x06, 0x00, 0x01])
+    import logging
+    with caplog.at_level(logging.WARNING):
+        await relay.on_phone_acl(HCIACLData(handle=0x40, pb_flag=PB_FIRST_FLUSH, data=smp))
+
+    assert target_sent == []  # 仍不转发
+    assert any("smp_handler" in r.message for r in caplog.records)
