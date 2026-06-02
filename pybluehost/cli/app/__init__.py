@@ -29,3 +29,5 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_spp_echo_command(app_subs)
     from pybluehost.cli.app.bridge import register_bridge_command
     register_bridge_command(app_subs)
+    from pybluehost.cli.app.mitm.cli import register_mitm_command
+    register_mitm_command(app_subs)
