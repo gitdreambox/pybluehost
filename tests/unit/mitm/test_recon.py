@@ -35,3 +35,21 @@ def test_cloned_identity_holds_fields():
                          adv_data=b"\x02\x01\x06", scan_response=b"", name="Watch")
     assert cid.name == "Watch"
     assert cid.adv_data == b"\x02\x01\x06"
+
+
+from pybluehost.cli.app.mitm.bredr_recon import parse_eir_name  # noqa: E402
+
+
+def test_parse_eir_complete_name():
+    eir = bytes([0x05, 0x09, ord("P"), ord("h"), ord("o"), ord("n")])
+    assert parse_eir_name(eir) == "Phon"
+
+
+def test_parse_eir_name_absent():
+    assert parse_eir_name(bytes([0x02, 0x01, 0x06])) is None
+
+
+def test_parse_eir_malformed_safe():
+    assert parse_eir_name(bytes([0x05, 0x09, ord("A")])) is None  # truncated
+    assert parse_eir_name(b"") is None
+    assert parse_eir_name(bytes([0x00, 0x09])) is None  # zero-length record
