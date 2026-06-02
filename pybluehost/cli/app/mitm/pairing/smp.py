@@ -44,18 +44,14 @@ _IO_CAP = IOCAP_NO_INPUT_NO_OUTPUT  # 0x03
 
 # PAIRING_FAILED reason codes
 _REASON_CONFIRM_FAILED = 0x04
-_REASON_NUMERIC_FAILED = 0x0C
+_REASON_UNSPECIFIED = 0x0A
 _REASON_DHKEY_CHECK_FAILED = 0x0B
+_REASON_NUMERIC_FAILED = 0x0C
 
 
 def _pairing_body() -> bytes:
     # [io_cap, oob=0x00, auth_req, max_key=16, init_key_dist=0, resp_key_dist=0]
     return bytes([_IO_CAP, 0x00, _AUTH_REQ, 16, 0x00, 0x00])
-
-
-def _iocap() -> bytes:
-    # IOcap = auth_req || oob_flag(0) || io_cap
-    return bytes([_AUTH_REQ, 0x00, _IO_CAP])
 
 
 class ScPairing:
@@ -95,6 +91,11 @@ class ScPairing:
         self._nb: Optional[bytes] = None
         self._peer_confirm: Optional[bytes] = None  # 仅 initiator 用(responder 的 Cb)
         self._mac_key: Optional[bytes] = None
+        self._ltk_candidate: Optional[bytes] = None  # 仅 DHKey 校验通过后才提升为 self.ltk
+
+        # Pairing Request/Response body(用于从对端实际能力派生 IOcapA/IOcapB)
+        self._req_body: Optional[bytes] = None  # initiator 的 Pairing Request body
+        self._rsp_body: Optional[bytes] = None  # responder 的 Pairing Response body
 
         self.ltk: Optional[bytes] = None
         self._complete = False
@@ -111,7 +112,8 @@ class ScPairing:
 
     async def start(self) -> None:
         if self.role == "initiator":
-            self._send(PAIRING_REQUEST, _pairing_body())
+            self._req_body = _pairing_body()
+            self._send(PAIRING_REQUEST, self._req_body)
         # responder: no-op
 
     async def feed(self, pdu: bytes) -> None:
@@ -139,6 +141,25 @@ class ScPairing:
         except RuntimeError:
             pass
 
+    def _require_len(self, body: bytes, n: int) -> bool:
+        """长度不足则发 PAIRING_FAILED 并返回 False(避免畸形 PDU 抛异常)。"""
+        if len(body) < n:
+            self._fail(_REASON_UNSPECIFIED)
+            return False
+        return True
+
+    def _iocap_a(self) -> bytes:
+        # initiator 的 IOcap = auth_req || oob || io_cap,取自 Pairing Request body
+        b = self._req_body
+        assert b is not None
+        return bytes([b[2], b[1], b[0]])
+
+    def _iocap_b(self) -> bytes:
+        # responder 的 IOcap,取自 Pairing Response body
+        b = self._rsp_body
+        assert b is not None
+        return bytes([b[2], b[1], b[0]])
+
     @property
     def _own_pkx(self) -> bytes:
         return self._pub[:32]
@@ -162,23 +183,32 @@ class ScPairing:
         assert self._dhkey is not None and self._na is not None and self._nb is not None
         mac_key, ltk = f5(self._dhkey, self._na, self._nb, self.a1, self.a2)
         self._mac_key = mac_key
-        self.ltk = ltk
+        self._ltk_candidate = ltk  # 提升到 self.ltk 推迟到 DHKey 校验通过
 
     # ---------------------------------------------------- initiator handlers
     async def _i_on_response(self, body: bytes) -> None:
-        # store peer pairing params (not needed for JW), send own public key
+        if not self._require_len(body, 6):
+            return
+        # 记录 responder 的能力(用于 IOcapB),再发自己的公钥
+        self._rsp_body = body[:6]
         self._send(PAIRING_PUBLIC_KEY, self._pub)
 
     async def _i_on_public_key(self, body: bytes) -> None:
+        if not self._require_len(body, 64):
+            return
         self._peer_pub = body[:64]
         self._dhkey = compute_dhkey(self._priv, self._peer_pub)
 
     async def _i_on_confirm(self, body: bytes) -> None:
+        if not self._require_len(body, 16):
+            return
         self._peer_confirm = body[:16]
         self._na = os.urandom(16)
         self._send(PAIRING_RANDOM, self._na)
 
     async def _i_on_random(self, body: bytes) -> None:
+        if not self._require_len(body, 16):
+            return
         self._nb = body[:16]
         # verify Cb = f4(PKb_x, PKa_x, Nb, 0); PKb_x = peer/responder X, PKa_x = own/initiator X
         expected = f4(self._peer_pkx, self._own_pkx, self._nb, 0)
@@ -191,24 +221,34 @@ class ScPairing:
             return
         # send Ea = f6(MacKey, Na, Nb, 0, IOcapA, A1, A2)
         assert self._mac_key is not None
-        ea = f6(self._mac_key, self._na, self._nb, b"\x00" * 16, _iocap(), self.a1, self.a2)
+        ea = f6(self._mac_key, self._na, self._nb, b"\x00" * 16, self._iocap_a(), self.a1, self.a2)
         self._send(PAIRING_DHKEY_CHECK, ea)
 
     async def _i_on_dhkey_check(self, body: bytes) -> None:
+        if not self._require_len(body, 16):
+            return
         eb = body[:16]
         # verify Eb = f6(MacKey, Nb, Na, 0, IOcapB, A2, A1)
         assert self._mac_key is not None and self._na is not None and self._nb is not None
-        expected = f6(self._mac_key, self._nb, self._na, b"\x00" * 16, _iocap(), self.a2, self.a1)
+        expected = f6(self._mac_key, self._nb, self._na, b"\x00" * 16, self._iocap_b(), self.a2, self.a1)
         if expected != eb:
             self._fail(_REASON_DHKEY_CHECK_FAILED)
             return
+        self.ltk = self._ltk_candidate
         self._complete = True
 
     # ---------------------------------------------------- responder handlers
     async def _r_on_request(self, body: bytes) -> None:
-        self._send(PAIRING_RESPONSE, _pairing_body())
+        if not self._require_len(body, 6):
+            return
+        # 记录 initiator 的能力(用于 IOcapA),再发自己的响应
+        self._req_body = body[:6]
+        self._rsp_body = _pairing_body()
+        self._send(PAIRING_RESPONSE, self._rsp_body)
 
     async def _r_on_public_key(self, body: bytes) -> None:
+        if not self._require_len(body, 64):
+            return
         self._peer_pub = body[:64]
         self._dhkey = compute_dhkey(self._priv, self._peer_pub)
         # send own public key
@@ -219,6 +259,8 @@ class ScPairing:
         self._send(PAIRING_CONFIRM, cb)
 
     async def _r_on_random(self, body: bytes) -> None:
+        if not self._require_len(body, 16):
+            return
         self._na = body[:16]
         # send own Nb
         assert self._nb is not None
@@ -230,16 +272,19 @@ class ScPairing:
             return
 
     async def _r_on_dhkey_check(self, body: bytes) -> None:
+        if not self._require_len(body, 16):
+            return
         ea = body[:16]
         assert self._mac_key is not None and self._na is not None and self._nb is not None
         # verify Ea = f6(MacKey, Na, Nb, 0, IOcapA, A1, A2)
-        expected_ea = f6(self._mac_key, self._na, self._nb, b"\x00" * 16, _iocap(), self.a1, self.a2)
+        expected_ea = f6(self._mac_key, self._na, self._nb, b"\x00" * 16, self._iocap_a(), self.a1, self.a2)
         if expected_ea != ea:
             self._fail(_REASON_DHKEY_CHECK_FAILED)
             return
         # send Eb = f6(MacKey, Nb, Na, 0, IOcapB, A2, A1)
-        eb = f6(self._mac_key, self._nb, self._na, b"\x00" * 16, _iocap(), self.a2, self.a1)
+        eb = f6(self._mac_key, self._nb, self._na, b"\x00" * 16, self._iocap_b(), self.a2, self.a1)
         self._send(PAIRING_DHKEY_CHECK, eb)
+        self.ltk = self._ltk_candidate
         self._complete = True
 
     # ----------------------------------------------------------- dispatch
