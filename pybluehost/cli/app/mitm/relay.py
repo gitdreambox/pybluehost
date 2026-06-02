@@ -81,11 +81,13 @@ class AclRelay:
                     )
                 continue
             pdu = encode_l2cap_basic(cid, payload)
-            await self._capture.on_pdu(direction, dst.handle, pdu)
+            # 先转发,再抓包:抓包是旁路观测,不应挡在转发关键路径前;capture.on_pdu
+            # 仅入队(后台写盘),磁盘 I/O 不计入 phone↔target 的转发延迟。
             for frag in fragment(
                 handle=dst.handle, l2cap_pdu=pdu, max_payload=dst.acl_max_payload
             ):
                 await dst.send_acl(frag.handle, frag.pb_flag, frag.data)
+            await self._capture.on_pdu(direction, dst.handle, pdu)
 
     async def teardown(self) -> None:
         """开始拆链:先触发 on_teardown 钩子(同步或异步均可),再关闭抓包。"""

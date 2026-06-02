@@ -108,3 +108,28 @@ async def test_smp_dropped_without_handler_warns(caplog):
 
     assert target_sent == []  # 仍不转发
     assert any("smp_handler" in r.message for r in caplog.records)
+
+
+async def test_forward_happens_before_capture():
+    """转发(send_acl)必须先于抓包(capture.on_pdu),抓包不挡转发关键路径。"""
+    events: list[str] = []
+
+    async def send_acl(h, pb, d):
+        events.append("send")
+
+    class _OrderTap:
+        async def on_pdu(self, direction, handle, pdu):
+            events.append("capture")
+        async def close(self):
+            pass
+
+    phone = RelaySide(name="phone", handle=0x40, acl_max_payload=27, send_acl=send_acl)
+    target = RelaySide(name="target", handle=0x11, acl_max_payload=27, send_acl=send_acl)
+
+    relay = AclRelay(phone_side=phone, target_side=target, capture=_OrderTap())
+    pdu = bytes([0x03, 0x00, 0x04, 0x00, 0x0A, 0x03, 0x00])
+    await relay.on_phone_acl(HCIACLData(handle=0x40, pb_flag=PB_FIRST_FLUSH, data=pdu))
+
+    # 至少一次 send,且 capture 在最后(所有 send 之后)
+    assert "send" in events and events[-1] == "capture"
+    assert events.index("capture") > events.index("send")
