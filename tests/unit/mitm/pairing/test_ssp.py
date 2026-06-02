@@ -185,7 +185,8 @@ async def test_link_key_store_and_reply_known_addr():
     assert len(ctrl.sent) == 1
     opcode, params = ctrl.sent[0]
     assert opcode == HCI_LINK_KEY_REQUEST_REPLY
-    assert params[:6] == _ADDR_BYTES
+    # Link_Key_Request_Reply 用专用 command 类,bd_addr 反转为小端 wire(同 classic/gap.py)
+    assert params[:6] == _ADDR.address[::-1]
     assert params[6:22] == _LINK_KEY
 
 

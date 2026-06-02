@@ -13,10 +13,9 @@ from pybluehost.hci.constants import (
     HCI_IO_CAPABILITY_REQUEST_REPLY,
     HCI_USER_CONFIRMATION_REQUEST_REPLY,
     HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
-    HCI_LINK_KEY_REQUEST_REPLY,
     HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY,
 )
-from pybluehost.hci.packets import HCICommand
+from pybluehost.hci.packets import HCICommand, HCI_Link_Key_Request_Reply_Command
 
 from .delegate import PairingDelegate
 
@@ -116,9 +115,9 @@ class SspTermination:
         """Reply to Link_Key_Request with stored key or a negative reply."""
         key = self._link_keys.get(str(addr))
         if key is not None:
-            params = addr.address + key
+            # 用专用 command 类(bd_addr 反转成小端 wire),与 classic/gap.py 一致。
             await self._controller.send_command(
-                HCICommand(opcode=HCI_LINK_KEY_REQUEST_REPLY, parameters=params)
+                HCI_Link_Key_Request_Reply_Command(bd_addr=addr, link_key=key)
             )
         else:
             await self._controller.send_command(
