@@ -1,6 +1,6 @@
 # MITM-1: 应用骨架 + ACL Relay 核心 + Capture 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 搭出 MITM 透传应用的骨架（独立于协议栈，仅复用 `transport` + `hci`），并实现 B 式 HCI-ACL 透传的纯逻辑核心：L2CAP PDU 重组、按 CID 分流、跨 buffer 重分片、btsnoop 抓包 tap。
 
@@ -36,7 +36,7 @@
 - Modify: `pybluehost/cli/app/__init__.py`
 - Test: `tests/unit/mitm/test_cli_skeleton.py`
 
-- [ ] **Step 1: 写失败测试 —— 子命令已注册**
+- [x] **Step 1: 写失败测试 —— 子命令已注册**
 
 Create `tests/unit/mitm/test_cli_skeleton.py`:
 
@@ -59,12 +59,12 @@ def test_register_mitm_command_adds_subparser():
     assert args.transport_mode == "both"  # 默认值
 ```
 
-- [ ] **Step 2: 运行测试，确认失败**
+- [x] **Step 2: 运行测试，确认失败**
 
 Run: `uv run pytest tests/unit/mitm/test_cli_skeleton.py -v`
 Expected: FAIL — `ModuleNotFoundError: pybluehost.cli.app.mitm`
 
-- [ ] **Step 3: 写 `__init__.py` 与 `cli.py` 骨架**
+- [x] **Step 3: 写 `__init__.py` 与 `cli.py` 骨架**
 
 Create `pybluehost/cli/app/mitm/__init__.py`:
 
@@ -113,12 +113,12 @@ async def _mitm_main(args: argparse.Namespace) -> None:
     raise NotImplementedError("MITM relay 编排在 MITM-2/3 实现")
 ```
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [x] **Step 4: 运行测试，确认通过**
 
 Run: `uv run pytest tests/unit/mitm/test_cli_skeleton.py -v`
 Expected: PASS
 
-- [ ] **Step 5: 注册到 app 命令组**
+- [x] **Step 5: 注册到 app 命令组**
 
 Modify `pybluehost/cli/app/__init__.py` —— 在其它 `register_*` 调用之后追加：
 
@@ -127,12 +127,12 @@ Modify `pybluehost/cli/app/__init__.py` —— 在其它 `register_*` 调用之�
     register_mitm_command(app_subs)
 ```
 
-- [ ] **Step 6: 验证 CLI 可见**
+- [x] **Step 6: 验证 CLI 可见**
 
 Run: `uv run pybluehost app mitm --help`
 Expected: 打印 mitm 帮助，含 `--upstream` / `--downstream` / `--transport-mode`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add pybluehost/cli/app/mitm/ pybluehost/cli/app/__init__.py tests/unit/mitm/test_cli_skeleton.py
@@ -147,7 +147,7 @@ git commit -m "feat(mitm): app 包骨架 + mitm 子命令注册"
 - Create: `pybluehost/cli/app/mitm/acl.py`
 - Test: `tests/unit/mitm/test_acl.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 Create `tests/unit/mitm/test_acl.py`:
 
@@ -181,12 +181,12 @@ def test_classify_signaling_is_relay():
     assert classify(0x0005) is CidAction.RELAY  # LE signaling
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `uv run pytest tests/unit/mitm/test_acl.py -v`
 Expected: FAIL — `ModuleNotFoundError` / `ImportError`
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 Create `pybluehost/cli/app/mitm/acl.py`:
 
@@ -237,12 +237,12 @@ def encode_l2cap_basic(cid: int, payload: bytes) -> bytes:
     return struct.pack("<HH", len(payload), cid) + payload
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 Run: `uv run pytest tests/unit/mitm/test_acl.py -v`
 Expected: PASS（4 个测试）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/app/mitm/acl.py tests/unit/mitm/test_acl.py
@@ -257,7 +257,7 @@ git commit -m "feat(mitm): ACL 常量 + L2CAP basic 编码 + CID 分流"
 - Modify: `pybluehost/cli/app/mitm/acl.py`
 - Test: `tests/unit/mitm/test_acl.py`
 
-- [ ] **Step 1: 追加失败测试**
+- [x] **Step 1: 追加失败测试**
 
 Append to `tests/unit/mitm/test_acl.py`:
 
@@ -299,12 +299,12 @@ def test_reassembler_two_pdus_in_one_fragment():
     assert r.feed(acl) == [(0x0004, bytes([0xAA])), (0x0006, bytes([0xBB, 0xCC]))]
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `uv run pytest tests/unit/mitm/test_acl.py -k reassembler -v`
 Expected: FAIL — `ImportError: cannot import name 'L2capReassembler'`
 
-- [ ] **Step 3: 写实现 —— 追加到 `acl.py`**
+- [x] **Step 3: 写实现 —— 追加到 `acl.py`**
 
 ```python
 class L2capReassembler:
@@ -335,12 +335,12 @@ class L2capReassembler:
         return out
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 Run: `uv run pytest tests/unit/mitm/test_acl.py -k reassembler -v`
 Expected: PASS（3 个）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/app/mitm/acl.py tests/unit/mitm/test_acl.py
@@ -355,7 +355,7 @@ git commit -m "feat(mitm): L2capReassembler —— HCI 分片重组为完整 PDU
 - Modify: `pybluehost/cli/app/mitm/acl.py`
 - Test: `tests/unit/mitm/test_acl.py`
 
-- [ ] **Step 1: 追加失败测试**
+- [x] **Step 1: 追加失败测试**
 
 Append to `tests/unit/mitm/test_acl.py`:
 
@@ -391,12 +391,12 @@ def test_fragment_rejects_zero_buffer():
         fragment(handle=0x1, l2cap_pdu=b"\x00", max_payload=0)
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `uv run pytest tests/unit/mitm/test_acl.py -k fragment -v`
 Expected: FAIL — `ImportError: cannot import name 'fragment'`
 
-- [ ] **Step 3: 写实现 —— 追加到 `acl.py`**
+- [x] **Step 3: 写实现 —— 追加到 `acl.py`**
 
 ```python
 def fragment(
@@ -422,12 +422,12 @@ def fragment(
     return frags
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 Run: `uv run pytest tests/unit/mitm/test_acl.py -v`
 Expected: PASS（全部 acl 测试）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/app/mitm/acl.py tests/unit/mitm/test_acl.py
@@ -442,7 +442,7 @@ git commit -m "feat(mitm): fragment —— PDU 重分片适配对侧 buffer"
 - Create: `pybluehost/cli/app/mitm/capture.py`
 - Test: `tests/unit/mitm/test_capture.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 Create `tests/unit/mitm/test_capture.py`:
 
@@ -472,12 +472,12 @@ async def test_btsnoop_tap_writes_records(tmp_path: Path):
     assert bytes([0x0A, 0x03, 0x00]) in raw       # ATT payload 落盘
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `uv run pytest tests/unit/mitm/test_capture.py -v`
 Expected: FAIL — `ModuleNotFoundError`
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 Create `pybluehost/cli/app/mitm/capture.py`:
 
@@ -544,12 +544,12 @@ class BtsnoopCaptureTap:
         await self._sink.close()
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 Run: `uv run pytest tests/unit/mitm/test_capture.py -v`
 Expected: PASS（2 个）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/app/mitm/capture.py tests/unit/mitm/test_capture.py
@@ -564,7 +564,7 @@ git commit -m "feat(mitm): BtsnoopCaptureTap —— 中继 PDU 写入 btsnoop"
 - Create: `pybluehost/cli/app/mitm/relay.py`
 - Test: `tests/unit/mitm/test_relay.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 Create `tests/unit/mitm/test_relay.py`:
 
@@ -652,12 +652,12 @@ async def test_disconnect_hook_invoked():
     assert closed == [True]
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `uv run pytest tests/unit/mitm/test_relay.py -v`
 Expected: FAIL — `ModuleNotFoundError`
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 Create `pybluehost/cli/app/mitm/relay.py`:
 
@@ -741,12 +741,12 @@ class AclRelay:
         await self._capture.close()
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 Run: `uv run pytest tests/unit/mitm/test_relay.py -v`
 Expected: PASS（4 个）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add pybluehost/cli/app/mitm/relay.py tests/unit/mitm/test_relay.py
@@ -762,7 +762,7 @@ git commit -m "feat(mitm): AclRelay —— 双向重组/分流/抓包/重分片 
 - Create: `pybluehost/cli/app/mitm/controllers.py`
 - Test: `tests/unit/mitm/test_cli_skeleton.py`
 
-- [ ] **Step 1: 追加失败测试 —— 从两个 transport 构造并初始化两个 controller**
+- [x] **Step 1: 追加失败测试 —— 从两个 transport 构造并初始化两个 controller**
 
 Append to `tests/unit/mitm/test_cli_skeleton.py`:
 
@@ -785,12 +785,12 @@ async def test_open_controller_pair_virtual():
         await pair.close()
 ```
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `uv run pytest tests/unit/mitm/test_cli_skeleton.py -k controller_pair -v`
 Expected: FAIL — `ModuleNotFoundError: ...mitm.controllers`
 
-- [ ] **Step 3: 写实现 —— `controllers.py`**
+- [x] **Step 3: 写实现 —— `controllers.py`**
 
 Create `pybluehost/cli/app/mitm/controllers.py`:
 
@@ -831,12 +831,12 @@ async def open_controller_pair(upstream: str, downstream: str) -> ControllerPair
     return ControllerPair(upstream=up, downstream=down, _transports=(up_t, down_t))
 ```
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 Run: `uv run pytest tests/unit/mitm/test_cli_skeleton.py -k controller_pair -v`
 Expected: PASS
 
-- [ ] **Step 5: 把 `_mitm_main` 接到 controller pair(骨架仍停在 recon 前)**
+- [x] **Step 5: 把 `_mitm_main` 接到 controller pair(骨架仍停在 recon 前)**
 
 Replace `_mitm_main` in `pybluehost/cli/app/mitm/cli.py`:
 
@@ -856,12 +856,12 @@ async def _mitm_main(args: argparse.Namespace) -> None:
         await pair.close()
 ```
 
-- [ ] **Step 6: 运行全套 mitm 单测**
+- [x] **Step 6: 运行全套 mitm 单测**
 
 Run: `uv run pytest tests/unit/mitm/ -v`
 Expected: PASS（全部）
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add pybluehost/cli/app/mitm/controllers.py pybluehost/cli/app/mitm/cli.py tests/unit/mitm/test_cli_skeleton.py
@@ -876,17 +876,17 @@ git commit -m "feat(mitm): open_controller_pair —— 双 HCIController 构造 
 - Modify: `docs/superpowers/STATUS.md`
 - Modify: 本 Plan 文档（勾选 checkbox）
 
-- [ ] **Step 1: 跑全套测试，确认无回归**
+- [x] **Step 1: 跑全套测试，确认无回归**
 
 Run: `uv run pytest tests/ -q`
 Expected: 全部 PASS（mitm 新增测试在内；协议栈测试不受影响——本 Plan 未改任何协议栈文件）
 
-- [ ] **Step 2: 确认未碰协议栈层**
+- [x] **Step 2: 确认未碰协议栈层**
 
 Run: `git diff --name-only $(git merge-base HEAD master)..HEAD | grep -E "pybluehost/(l2cap|ble|classic|gap\.py|profiles|stack\.py)" || echo "OK: 协议栈零改动"`
 Expected: 打印 `OK: 协议栈零改动`
 
-- [ ] **Step 3: 登记 STATUS.md**
+- [x] **Step 3: 登记 STATUS.md**
 
 在 `docs/superpowers/STATUS.md` 的 Plan 总览表追加一行：
 
@@ -894,7 +894,7 @@ Expected: 打印 `OK: 协议栈零改动`
 | MITM-1 | MITM 应用骨架 + ACL relay 核心 + capture | ✅ 完成 | [mitm-1](plans/2026-06-01-mitm-1-acl-relay-core.md) | `pybluehost/cli/app/mitm/{acl,relay,capture,controllers,cli}.py` |
 ```
 
-- [ ] **Step 4: 勾选本 Plan 全部 checkbox 并 Commit**
+- [x] **Step 4: 勾选本 Plan 全部 checkbox 并 Commit**
 
 ```bash
 git add docs/superpowers/STATUS.md docs/superpowers/plans/2026-06-01-mitm-1-acl-relay-core.md
