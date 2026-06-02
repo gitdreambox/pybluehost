@@ -6,6 +6,10 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pybluehost.cli.app.mitm.pairing.delegate import PairingDelegate
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +24,7 @@ def default_btsnoop_name() -> str:
     return f"mitm-{ts}.btsnoop"
 
 
-def _select_delegate(pairing: str):
+def _select_delegate(pairing: str) -> "PairingDelegate":
     from pybluehost.cli.app.mitm.pairing.delegate import (
         AutoConfirmDelegate,
         InteractiveNumericDelegate,
@@ -30,7 +34,7 @@ def _select_delegate(pairing: str):
     return AutoConfirmDelegate()
 
 
-def build_relays_from_args(args) -> list[RelaySpec]:
+def build_relays_from_args(args: argparse.Namespace) -> list[RelaySpec]:
     if args.transport_mode == "both":
         return [RelaySpec("le"), RelaySpec("bredr")]
     return [RelaySpec(args.transport_mode)]
@@ -60,7 +64,6 @@ def register_mitm_command(subparsers: argparse._SubParsersAction) -> None:
 
 
 async def _mitm_main(args: argparse.Namespace) -> None:
-    import asyncio as _asyncio
     from pybluehost.cli.app.mitm.controllers import open_controller_pair
     from pybluehost.cli.app.mitm.orchestrator import MitmRelay
 
@@ -84,6 +87,10 @@ async def _mitm_main(args: argparse.Namespace) -> None:
         )
         for s in specs
     ]
+    # NOTE (both-mode 限制,真机验证待办): "both" 模式下两个 relay 在 gather 里
+    # 并发跑 run_relay,共用同一对 controller;两者都会 set_upstream(on_acl_data=...),
+    # 后者会覆盖前者的 ACL 回调。v1 结构性实现,真机验证时需改为单 relay 同时处理
+    # LE+BR(或分立 radio)。LE/BR 单模式不受影响。
     # NOTE (double-close): In "both" mode, two MitmRelay instances share the same
     # ControllerPair.  Each relay's teardown() calls pair.close(), which calls
     # _close_transport() for each transport.  _close_transport() wraps the close()
@@ -94,7 +101,7 @@ async def _mitm_main(args: argparse.Namespace) -> None:
         for r in relays:
             await r.run_recon()
             await r.run_impersonate()
-        await _asyncio.gather(*(r.run_relay() for r in relays))
+        await asyncio.gather(*(r.run_relay() for r in relays))
     finally:
         for r in relays:
             await r.teardown()
