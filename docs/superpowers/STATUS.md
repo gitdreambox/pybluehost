@@ -64,9 +64,9 @@
 | MITM-1 | MITM 应用骨架 + ACL relay 核心（重组/CID 分流/重分片）+ btsnoop capture | ✅ 完成（21 单测；协议栈零改动） | [mitm-1](plans/2026-06-01-mitm-1-acl-relay-core.md) | `pybluehost/cli/app/mitm/{acl,relay,capture,controllers,cli}.py` |
 | MITM-2 | BLE 路径 + app 内最小 SMP（SC Just Works/Numeric） | ✅ 完成（范围 C：编排+fake 单测；虚拟三角 e2e 留真机） | [mitm-2](plans/2026-06-01-mitm-2-ble-path-min-smp.md) | `pybluehost/cli/app/mitm/{pairing/,recon,impersonate,orchestrator}.py` |
 | MITM-3 | BR/EDR 路径 + SSP 终结（HCI 事件）+ 可选改址 | ✅ 完成（范围 C：SSP/编排+fake 单测；VirtualClassicLink e2e 留真机） | [mitm-3](plans/2026-06-01-mitm-3-bredr-path-ssp.md) | `pybluehost/cli/app/mitm/{pairing/ssp,bredr_recon,bredr_impersonate,address,orchestrator}.py` |
-| MITM-4 | CLI（le/bredr/both）+ Numeric Comparison 交互 + runbook | ⬜ 文档就绪 待执行 | [mitm-4](plans/2026-06-01-mitm-4-cli-numeric-docs.md) | `pybluehost/cli/app/mitm/cli.py`, `docs/MITM.md` |
+| MITM-4 | CLI（le/bredr/both）+ Numeric Comparison 交互 + runbook | ✅ 完成 | [mitm-4](plans/2026-06-01-mitm-4-cli-numeric-docs.md) | `pybluehost/cli/app/mitm/cli.py`, `pybluehost/cli/app/mitm/pairing/delegate.py`, `docs/MITM.md` |
 
-> **MITM 透传应用（独立应用，4 Plan，待执行）**：授权安全测试用中间人，双 radio、B 式 HCI-ACL 透传，仅复用 `transport`+`hci`，**协议栈零改动**。spec：[`specs/2026-06-01-mitm-passthrough-design.md`](specs/2026-06-01-mitm-passthrough-design.md)。v1 = BLE+BR 透传+抓包（btsnoop）；改写为后续。
+> **MITM 透传应用（独立应用，4 Plan）✅ 全部完成（2026-06-02）**：授权安全测试用中间人，双 radio、B 式 HCI-ACL 透传，仅复用 `transport`+`hci`，**协议栈+hci 层零改动**，89 个 mitm 单元测试全 PASS。spec：[`specs/2026-06-01-mitm-passthrough-design.md`](specs/2026-06-01-mitm-passthrough-design.md)。v1 = BLE+BR 透传+抓包（btsnoop）；**改写（规则/hook）为后续**。**待真机验证**：recon/impersonate/连接/逐链路加密的 HCI 时序、虚拟三角 e2e（虚拟控制器不支持真实广播/SSP 桥接，故 Task 7/MITM-3 Task 5 取范围 C：编排+fake 单测）、`--clone-address`、both 模式并发接线。
 
 **总计：31 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle + VirtualClassicLink + Classic Workflow E2E + Hardware E2E Readiness）**
 

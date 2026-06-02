@@ -1,5 +1,7 @@
 # MITM-4: CLI 完善 + Numeric Comparison 交互 + 文档 实现计划
 
+> **✅ 已完成（2026-06-02）。** 交付:`pairing/delegate.py` 增 `InteractiveNumericDelegate`(终端 y/n 两侧确认)、`cli.py` 完善(`build_relays_from_args` both→le+bredr、`default_btsnoop_name`、`_select_delegate`、授权告警,`_mitm_main` 把 `--transport-mode`/`--pairing` 真正接到 MitmRelay 的 mode/numeric/delegate)、`docs/MITM.md` runbook。协议栈+hci 层零改动,89 个 mitm 单测全 PASS。**MITM 透传应用(MITM-1~4)全部完成。**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 完善 `pybluehost app mitm` CLI（le/bredr/both、默认 btsnoop 命名、授权告警），实现 **Numeric Comparison 交互 delegate**（测试者在两侧确认），补全 `--clone-address` 在 LE/BR 的接线，并写 `docs/MITM.md` runbook（硬件选型、删旧 bond、SC 操作、btsnoop 查看）。
