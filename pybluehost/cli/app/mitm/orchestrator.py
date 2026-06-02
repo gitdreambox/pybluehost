@@ -403,7 +403,7 @@ class MitmRelay:
             self._await_bredr_connection(downstream),
         )
 
-        # --- 2. 取每侧的 ACL 最大负载(经典 ACL buffer) -----------------
+        # --- 2. 取每侧的 ACL 最大负载(经典 ACL buffer;27 = BT 1.0 最小负载兜底) ---
         target_max = upstream.acl_packet_length or 27
         phone_max = downstream.acl_packet_length or 27
 
@@ -436,7 +436,7 @@ class MitmRelay:
 
         best-effort:无真实硬件时事件不会到来。复用 controller 的 on_hci_event
         链(暂存并恢复全部三个上游回调)。Connection_Complete 布局:
-        status(1) handle(2 LE) bd_addr(6) link_type(1) encryption_mode(1)。
+        status(1) handle(2,小端) bd_addr(6) link_type(1) encryption_mode(1)。
         """
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[int] = loop.create_future()
@@ -447,11 +447,11 @@ class MitmRelay:
         def on_event(event: HCIEvent) -> None:
             if event.event_code == EventCode.CONNECTION_COMPLETE:
                 params = getattr(event, "parameters", b"") or b""
-                # status(1) handle(2) ...
+                # status(1) handle(2,小端) ...
                 if len(params) >= 3 and params[0] == 0x00 and not fut.done():
                     handle = int.from_bytes(params[1:3], "little")
                     fut.set_result(handle)
-                    return
+            # 始终转发给上游链(与 _await_le_connection 一致,避免吞事件)。
             if prev_hci is not None:
                 result = prev_hci(event)
                 if asyncio.iscoroutine(result):
