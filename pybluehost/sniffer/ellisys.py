@@ -154,12 +154,43 @@ class EllisysBackend(SnifferBackend):
         self._open_socket()
 
     async def _launch_analyzer(self) -> None:
-        """Windows-only. Filled in Task 7."""
-        raise NotImplementedError("_launch_analyzer is implemented in Task 7")
+        """Spawn Ellisys.BluetoothAnalyzer.exe if not already running, wait until ready."""
+        import sys
+        from pathlib import Path
+
+        from pybluehost.sniffer._ellisys_setup import wait_for_tcp_port
+
+        if sys.platform != "win32":
+            raise SnifferUnavailableError(
+                "EllisysBackend requires Windows (analyzer is Windows-only)"
+            )
+        if self.ellisys_path is None:
+            raise SnifferError(
+                "EllisysBackend: analyzer path not set. "
+                "Pass ellisys_path=... or use --virtual-sniffer=ellisys:ellisys-path=..."
+            )
+        analyzer_exe = Path(self.ellisys_path) / "Ellisys.BluetoothAnalyzer.exe"
+        if not analyzer_exe.exists():
+            raise SnifferError(f"Ellisys analyzer exe not found: {analyzer_exe}")
+        subprocess.Popen(
+            [
+                str(analyzer_exe),
+                f"/remote_control_port={self.tcp_port}",
+                f"/injection_api_port={self.udp_port}",
+                "/suffix=PTS",
+            ],
+            close_fds=True,
+        )
+        wait_for_tcp_port(self.host, self.tcp_port, timeout_s=60.0)
 
     async def _run_ice_setup(self) -> None:
-        """Windows-only. Filled in Task 7."""
-        raise NotImplementedError("_run_ice_setup is implemented in Task 7")
+        from pathlib import Path
+
+        from pybluehost.sniffer._ellisys_setup import run_ice_setup
+
+        if self.ellisys_path is None:
+            raise SnifferError("EllisysBackend: analyzer path not set")
+        await run_ice_setup(self.tcp_port, Path(self.ellisys_path))
 
     def _open_socket(self) -> None:
         sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
