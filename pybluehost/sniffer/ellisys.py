@@ -95,3 +95,101 @@ def encode_ellisys_injection_packet(
         struct.pack("<B", _OBJ_PACKET_DATA),
         hci_payload,
     ])
+
+
+import asyncio  # noqa: E402
+import logging  # noqa: E402
+import socket as _socket  # noqa: E402
+import subprocess  # noqa: E402
+
+from pybluehost.core.errors import SnifferError, SnifferUnavailableError  # noqa: E402
+from pybluehost.sniffer.backend import SnifferBackend  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
+
+# Default ports (sync with the working demo)
+DEFAULT_ELLISYS_TCP_PORT = 46148
+DEFAULT_ELLISYS_UDP_PORT = 24352
+
+
+class EllisysBackend(SnifferBackend):
+    """Ellisys analyzer integration via UDP HCI injection + PowerShell Ice setup.
+
+    Design spec §6.1. `start()` is split into three helpers:
+      - _launch_analyzer()  → Windows-only, spawns Ellisys.BluetoothAnalyzer.exe
+      - _run_ice_setup()    → Windows-only, PowerShell + Ice.dll
+      - _open_socket()      → cross-platform, UDP socket
+
+    Tests use `skip_launch=True` to skip the Windows-only helpers and verify
+    encoding + UDP transport against a local mock UDP server.
+    """
+
+    def __init__(
+        self,
+        *,
+        host: str = "127.0.0.1",
+        udp_port: int = DEFAULT_ELLISYS_UDP_PORT,
+        tcp_port: int = DEFAULT_ELLISYS_TCP_PORT,
+        controller_index: int = 0,
+        bit_rate: float = ELLISYS_HCI_USB_FULL_SPEED_BITRATE,
+        ellisys_path: str | None = None,
+        skip_launch: bool = False,
+    ) -> None:
+        self.host = host
+        self.udp_port = udp_port
+        self.tcp_port = tcp_port
+        self.controller_index = controller_index
+        self.bit_rate = bit_rate
+        self.ellisys_path = ellisys_path
+        self.skip_launch = skip_launch
+        self._sock: _socket.socket | None = None
+
+    # ----------------------------------------------------------------- start
+
+    async def start(self) -> None:
+        if not self.skip_launch:
+            await self._launch_analyzer()
+            await self._run_ice_setup()
+        self._open_socket()
+
+    async def _launch_analyzer(self) -> None:
+        """Windows-only. Filled in Task 7."""
+        raise NotImplementedError("_launch_analyzer is implemented in Task 7")
+
+    async def _run_ice_setup(self) -> None:
+        """Windows-only. Filled in Task 7."""
+        raise NotImplementedError("_run_ice_setup is implemented in Task 7")
+
+    def _open_socket(self) -> None:
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        sock.setblocking(False)
+        self._sock = sock
+
+    # ---------------------------------------------------------------- inject
+
+    async def inject(self, h4_type, direction, payload, wall_clock):
+        if self._sock is None:
+            raise RuntimeError("EllisysBackend not started: call start() first")
+        packet_type = ellisys_packet_type(h4_type, direction)
+        pkt = encode_ellisys_injection_packet(
+            wall_clock=wall_clock,
+            bit_rate=self.bit_rate,
+            packet_type=packet_type,
+            hci_payload=payload,
+            controller_index=self.controller_index,
+        )
+        try:
+            self._sock.sendto(pkt, (self.host, self.udp_port))
+        except OSError:
+            logger.warning("EllisysBackend.inject: UDP sendto failed", exc_info=True)
+
+    # ------------------------------------------------------------------ stop
+
+    async def stop(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
