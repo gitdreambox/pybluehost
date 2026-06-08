@@ -24,6 +24,7 @@ def test_bitwriter_multiple_widths_round_trip():
     w.write(0x7, 3)            # total = 1 + 12 + 3 = 16 bits = 2 bytes
     data = bytes(w.finish())
     assert len(data) == 2
+    assert data == b"\xD5\xE7"
 
     r = BitReader(data)
     assert r.read(1) == 0b1
@@ -50,3 +51,19 @@ def test_bitwriter_rejects_value_too_large():
     w = BitWriter()
     with pytest.raises(ValueError, match="exceeds"):
         w.write(0x100, 8)      # 256 doesn't fit in 8 bits
+
+
+def test_bitreader_remaining_bits():
+    r = BitReader(b"\xAB\xCD")
+    assert r.remaining_bits() == 16
+    r.read(8)
+    assert r.remaining_bits() == 8
+    r.read(8)
+    assert r.remaining_bits() == 0
+
+
+def test_bitwriter_width_greater_than_byte():
+    """16-bit write produces 2 bytes MSB-first."""
+    w = BitWriter()
+    w.write(0xABCD, 16)
+    assert bytes(w.finish()) == b"\xAB\xCD"

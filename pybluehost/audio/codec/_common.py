@@ -1,4 +1,4 @@
-"""Codec-shared primitives: bit-aligned I/O + CRC-8 for SBC headers."""
+"""Codec-shared primitives: bit-aligned I/O for SBC and other audio codecs."""
 from __future__ import annotations
 
 
@@ -24,12 +24,12 @@ class BitWriter:
             self._buf.append((self._acc >> self._bits) & 0xFF)
             self._acc &= (1 << self._bits) - 1
 
-    def finish(self) -> bytearray:
+    def finish(self) -> bytes:
         if self._bits > 0:
             self._buf.append((self._acc << (8 - self._bits)) & 0xFF)
             self._acc = 0
             self._bits = 0
-        return self._buf
+        return bytes(self._buf)
 
 
 class BitReader:
