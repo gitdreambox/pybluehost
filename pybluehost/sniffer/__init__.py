@@ -1,7 +1,7 @@
 """Virtual sniffer — inject PyBlueHost HCI into Ellisys/WPS analyzer UI."""
 from pybluehost.core.errors import SnifferError, SnifferUnavailableError
 from pybluehost.sniffer.backend import KNOWN_H4_TYPES, SnifferBackend
-from pybluehost.sniffer.sink import VirtualSnifferSink
+from pybluehost.sniffer.sink import VirtualSnifferSink, build_virtual_sniffer_sink
 
 __all__ = [
     "SnifferError",
@@ -9,4 +9,5 @@ __all__ = [
     "SnifferBackend",
     "VirtualSnifferSink",
     "KNOWN_H4_TYPES",
+    "build_virtual_sniffer_sink",
 ]

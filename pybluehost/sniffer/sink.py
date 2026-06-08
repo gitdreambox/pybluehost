@@ -47,3 +47,49 @@ class VirtualSnifferSink:
 
     async def close(self) -> None:
         await self._backend.stop()
+
+
+import sys  # noqa: E402
+
+from pybluehost.cli._sniffer_arg import SnifferSpec  # noqa: E402
+from pybluehost.core.errors import SnifferUnavailableError  # noqa: E402
+
+
+async def build_virtual_sniffer_sink(spec: SnifferSpec) -> "VirtualSnifferSink":
+    """Construct backend + start it + wrap in a VirtualSnifferSink.
+
+    Must be called BEFORE Stack._build so HCI init traffic is captured.
+    Non-Windows → SnifferUnavailableError (clear message).
+    """
+    if sys.platform != "win32":
+        raise SnifferUnavailableError(
+            "virtual sniffer requires Windows + Ellisys/WPS analyzer software"
+        )
+
+    if spec.backend == "ellisys":
+        from pybluehost.sniffer.ellisys import (
+            DEFAULT_ELLISYS_TCP_PORT,
+            DEFAULT_ELLISYS_UDP_PORT,
+            EllisysBackend,
+        )
+        backend: SnifferBackend = EllisysBackend(
+            host=spec.options.get("host", "127.0.0.1"),
+            tcp_port=int(spec.options.get("tcp", DEFAULT_ELLISYS_TCP_PORT)),
+            udp_port=int(spec.options.get("udp", DEFAULT_ELLISYS_UDP_PORT)),
+            ellisys_path=spec.options.get("ellisys-path"),
+        )
+    elif spec.backend == "wps":
+        from pybluehost.sniffer.wps import LiveImportLibrary, WpsBackend
+        wps_path = spec.options.get("wps-path")
+        if wps_path is None:
+            raise SnifferUnavailableError(
+                "WpsBackend requires --virtual-sniffer=wps:wps-path=<install dir>"
+            )
+        backend = WpsBackend(
+            library=LiveImportLibrary.load_default(wps_path), wps_path=wps_path
+        )
+    else:   # parser already enforces but be defensive
+        raise SnifferUnavailableError(f"unknown sniffer backend: {spec.backend}")
+
+    await backend.start()
+    return VirtualSnifferSink(backend)
