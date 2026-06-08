@@ -99,3 +99,12 @@ class IntelFirmwareStateError(TransportError):
             "  3. 重新开机\n"
             "  4. 重新运行程序"
         )
+
+
+class SnifferError(PyBlueHostError):
+    """Base class for virtual sniffer errors (analyzer integration)."""
+
+
+class SnifferUnavailableError(SnifferError):
+    """Raised when the virtual sniffer cannot be used on this platform
+    (e.g. non-Windows, or the analyzer software is not installed)."""
