@@ -292,3 +292,51 @@ class WpsBackend(SnifferBackend):
     async def stop(self) -> None:
         # The LiveImport API has no explicit shutdown; releasing references is enough.
         pass
+
+
+# Common WPS install locations (root dir contains Executables\Core + the
+# Live Import Developers Kit).
+_WPS_SEARCH_DIRS = [
+    r"C:\Program Files (x86)\Teledyne LeCroy Wireless\Wireless Protocol Suite 4.60",
+    r"C:\Program Files (x86)\Teledyne LeCroy Wireless\Wireless Protocol Suite 4.50",
+    r"C:\Program Files\Teledyne LeCroy Wireless\Wireless Protocol Suite 4.60",
+]
+
+
+def find_wps_install() -> str | None:
+    """Return the first WPS root dir that has the live-import DLL, else None."""
+    from pathlib import Path
+
+    for base in _WPS_SEARCH_DIRS:
+        p = Path(base)
+        core = p / "Executables" / "Core"
+        if (core / "LiveImportAPI_x64.dll").exists() or (core / "LiveImportAPI.dll").exists():
+            return str(p)
+    return None
+
+
+def validate_wps_install(path: str) -> None:
+    """Raise SnifferError with an actionable message if the WPS install at
+    `path` is missing Fts.exe, the LiveImport DLL, or the Developer Kit."""
+    from pathlib import Path
+
+    p = Path(path)
+    core = p / "Executables" / "Core"
+    if not (core / "Fts.exe").exists():
+        raise SnifferError(
+            f"未找到 Teledyne LeCroy WPS (Fts.exe) 于: {core}\n"
+            "  如何解决: 安装 Wireless Protocol Suite 4.60+，或用 "
+            "--virtual-sniffer=wps:wps-path=<安装根目录> 指定。"
+        )
+    if not (core / "LiveImportAPI_x64.dll").exists() and not (core / "LiveImportAPI.dll").exists():
+        raise SnifferError(
+            f"WPS Live Import DLL (LiveImportAPI_x64.dll) 缺失于: {core}\n"
+            "  如何解决: WPS 安装不完整或版本过旧；重装并确保包含 Live Import 组件 (4.60+)。"
+        )
+    if not (p / "Live Import Developers Kit" / "liveimport.ini").exists():
+        raise SnifferError(
+            f"WPS Live Import 开发包 (Developer Kit) 未安装（缺 "
+            f"{p / 'Live Import Developers Kit' / 'liveimport.ini'}）。\n"
+            "  如何解决: 安装 WPS 时勾选 'Live Import Developer Kit'；其 "
+            "[Configuration] 是注入帧能显示的实测必需项。"
+        )

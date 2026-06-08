@@ -165,13 +165,16 @@ class EllisysBackend(SnifferBackend):
                 "EllisysBackend requires Windows (analyzer is Windows-only)"
             )
         if self.ellisys_path is None:
+            self.ellisys_path = find_ellisys_install()
+        if self.ellisys_path is None:
             raise SnifferError(
-                "EllisysBackend: analyzer path not set. "
-                "Pass ellisys_path=... or use --virtual-sniffer=ellisys:ellisys-path=..."
+                "未检测到 Ellisys Bluetooth Analyzer 安装。\n"
+                "  如何解决: 安装 Ellisys，或用 "
+                "--virtual-sniffer=ellisys:ellisys-path=<安装目录> 指定（该目录须含 "
+                "Ellisys.BluetoothAnalyzer.exe 与 RemoteControl\\ 子目录）。"
             )
+        validate_ellisys_install(self.ellisys_path)
         analyzer_exe = Path(self.ellisys_path) / "Ellisys.BluetoothAnalyzer.exe"
-        if not analyzer_exe.exists():
-            raise SnifferError(f"Ellisys analyzer exe not found: {analyzer_exe}")
         subprocess.Popen(
             [
                 str(analyzer_exe),
@@ -224,3 +227,52 @@ class EllisysBackend(SnifferBackend):
             except OSError:
                 pass
             self._sock = None
+
+
+# Common Ellisys install locations (the dir must contain both the exe and the
+# RemoteControl\ plugin DLLs — on many machines that is the auto-updated copy
+# under ProgramData\...\Updates\current, not Program Files).
+_ELLISYS_SEARCH_DIRS = [
+    r"C:\ProgramData\Ellisys\Ellisys Bluetooth Analyzer\Updates\current",
+    r"C:\Program Files (x86)\Ellisys\Ellisys Bluetooth Analyzer",
+    r"C:\Program Files\Ellisys\Ellisys Bluetooth Analyzer",
+]
+
+_ELLISYS_EXE = "Ellisys.BluetoothAnalyzer.exe"
+_ELLISYS_PLUGIN_DLL = "EllisysAnalyzerBluetoothRemoteControlPlugin.dll"
+
+
+def find_ellisys_install() -> str | None:
+    """Return the first Ellisys install dir that has BOTH the analyzer exe and
+    the RemoteControl plugin DLLs, or None if none is found."""
+    from pathlib import Path
+
+    for base in _ELLISYS_SEARCH_DIRS:
+        p = Path(base)
+        if (p / _ELLISYS_EXE).exists() and (p / "RemoteControl" / "Ice.dll").exists():
+            return str(p)
+    return None
+
+
+def validate_ellisys_install(path: str) -> None:
+    """Raise SnifferError with an actionable message if the Ellisys install at
+    `path` is missing the analyzer exe or the Remote Control plugin."""
+    from pathlib import Path
+
+    p = Path(path)
+    if not (p / _ELLISYS_EXE).exists():
+        raise SnifferError(
+            f"未找到 Ellisys Bluetooth Analyzer ({_ELLISYS_EXE}) 于: {p}\n"
+            "  如何解决: 安装 Ellisys Bluetooth Analyzer，或用 "
+            "--virtual-sniffer=ellisys:ellisys-path=<安装目录> 指定。\n"
+            "  注意该目录须同时含 exe 与 RemoteControl\ 子目录（常在 "
+            r"C:\ProgramData\Ellisys\Ellisys Bluetooth Analyzer\Updates\current）。"
+        )
+    rc = p / "RemoteControl"
+    missing = [n for n in ("Ice.dll", _ELLISYS_PLUGIN_DLL) if not (rc / n).exists()]
+    if missing:
+        raise SnifferError(
+            f"Ellisys Remote Control 插件未安装（缺 {', '.join(missing)} 于 {rc}\）。\n"
+            "  如何解决: 解压 bta_remote_api.zip 到分析仪目录的 RemoteControl\ 子目录；\n"
+            "  并确认 Ellisys 版本较新、支持 Remote Control Plugin（版本过旧不带该插件）。"
+        )

@@ -79,12 +79,20 @@ async def build_virtual_sniffer_sink(spec: SnifferSpec) -> "VirtualSnifferSink":
             ellisys_path=spec.options.get("ellisys-path"),
         )
     elif spec.backend == "wps":
-        from pybluehost.sniffer.wps import LiveImportLibrary, WpsBackend
-        wps_path = spec.options.get("wps-path")
+        from pybluehost.sniffer.wps import (
+            LiveImportLibrary,
+            WpsBackend,
+            find_wps_install,
+            validate_wps_install,
+        )
+        wps_path = spec.options.get("wps-path") or find_wps_install()
         if wps_path is None:
             raise SnifferUnavailableError(
-                "WpsBackend requires --virtual-sniffer=wps:wps-path=<install dir>"
+                "未检测到 Teledyne WPS 安装。\n"
+                "  如何解决: 安装 Wireless Protocol Suite 4.60+，或用 "
+                "--virtual-sniffer=wps:wps-path=<安装根目录> 指定。"
             )
+        validate_wps_install(wps_path)   # raises SnifferError with how-to-fix
         backend = WpsBackend(
             library=LiveImportLibrary.load_default(wps_path), wps_path=wps_path
         )
