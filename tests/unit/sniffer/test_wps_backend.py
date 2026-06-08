@@ -22,10 +22,11 @@ class _FakeLib:
         success_ptr._obj.value = True
         return self._initialize_hresult
 
-    def SendFrame3(self, length1, length2, buf, drf, stream, ts):
-        payload = bytes(buf[:length1])
+    def SendFrame3(self, datastream_id, orig_len, incl_len, buf, drf, stream, ts):
+        payload = bytes(buf[:incl_len])
         self.send_frame_calls.append({
-            "len": length1, "drf": drf, "stream": stream, "ts": ts, "payload": payload,
+            "datastream": datastream_id, "len": incl_len, "drf": drf,
+            "stream": stream, "ts": ts, "payload": payload,
         })
         return self._send_frame_hresult
 
@@ -69,6 +70,7 @@ async def test_wps_backend_inject_command_uses_drf_1_stream_0():
     )
     assert len(fake.send_frame_calls) == 1
     call = fake.send_frame_calls[0]
+    assert call["datastream"] == 0     # iDatastreamId (single Generic stack)
     assert call["drf"] == 1            # DRF_COMMAND
     assert call["stream"] == 0         # STREAM_HOST
     assert call["payload"] == bytes.fromhex("03 0C 00")

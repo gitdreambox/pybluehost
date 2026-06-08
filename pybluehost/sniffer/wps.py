@@ -132,7 +132,7 @@ class LiveImportLibrary:
         ]
         self._lib.InitializeLiveImportEx.restype = ctypes.c_long
         self._lib.SendFrame3.argtypes = [
-            ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_ubyte),
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_ubyte),
             ctypes.c_int, ctypes.c_int, ctypes.c_ulonglong,
         ]
         self._lib.SendFrame3.restype = ctypes.c_long
@@ -202,8 +202,12 @@ class LiveImportLibrary:
 
     def send_frame(self, payload: bytes, drf: int, stream: int, timestamp_ns: int) -> None:
         buf = (ctypes.c_ubyte * len(payload)).from_buffer_copy(payload)
+        # SendFrame3(iDatastreamId, iOriginalLength, iIncludedLength, pbytFrame,
+        #            iDrf, iSide, uint64 i64Timestamp1ns)  — datastream id 0 for
+        #            the single-stack Generic personality (per LiveImportAPI.h +
+        #            the dev-kit C sample / validated demo).
         hresult = self._lib.SendFrame3(
-            len(payload), len(payload), buf, drf, stream, timestamp_ns,
+            0, len(payload), len(payload), buf, drf, stream, timestamp_ns,
         )
         if ctypes.c_long(hresult).value < 0:
             raise SnifferError(
