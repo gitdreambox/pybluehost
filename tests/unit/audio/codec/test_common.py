@@ -1,6 +1,6 @@
 import pytest
 
-from pybluehost.audio.codec._common import BitReader, BitWriter
+from pybluehost.audio.codec._common import BitReader, BitWriter, sbc_crc8
 
 
 def test_bitwriter_byte_boundary_round_trip():
@@ -69,17 +69,14 @@ def test_bitwriter_width_greater_than_byte():
     assert bytes(w.finish()) == b"\xAB\xCD"
 
 
-from pybluehost.audio.codec._common import sbc_crc8  # noqa: E402
-
-
 def test_sbc_crc8_known_value():
-    """A2DP v1.4 §B.4: CRC poly 0x1D, init 0x0F.
-    Reference value computed by running our own implementation on the fixed
-    16-bit input 0xABCD. Once pinned, this test catches drift in the algorithm.
+    """Discriminating input — flush vs no-flush produces different values here.
+
+    0x1234 / 16 bits: with flush=0x94, without flush=0x60. A missing flush loop
+    would cause this test to fail, confirming the flush is exercised.
     """
-    crc = sbc_crc8(b"\xAB\xCD", num_bits=16)
-    # Pin the value our implementation produces (self-pinned, no BlueZ available).
-    assert crc == 0x00
+    # 0x1234/16: flush=0x94, no-flush=0x60. Verifies the 8-bit flush is present.
+    assert sbc_crc8(b"\x12\x34", num_bits=16) == 0x94
 
 
 def test_sbc_crc8_zero_input():
@@ -94,3 +91,9 @@ def test_sbc_crc8_partial_byte():
     """When num_bits is not a multiple of 8, only the leading `num_bits` bits matter."""
     crc = sbc_crc8(b"\xFF\xF8", num_bits=13)
     assert crc == 0x0A
+
+
+def test_sbc_crc8_zero_num_bits_flushes_init():
+    """num_bits=0 still runs the 8-bit flush on the init value (0x0F)."""
+    assert sbc_crc8(b"", 0) == 0xBB
+    assert sbc_crc8(b"\xFF\xFF", 0) == 0xBB    # data ignored when num_bits=0

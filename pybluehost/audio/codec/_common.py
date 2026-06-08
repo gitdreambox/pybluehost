@@ -1,4 +1,4 @@
-"""Codec-shared primitives: bit-aligned I/O + CRC-8 for SBC headers."""
+"""Codec-shared primitives: bit-aligned I/O + SBC CRC-8."""
 from __future__ import annotations
 
 
@@ -62,6 +62,11 @@ def sbc_crc8(data: bytes, num_bits: int) -> int:
     """Compute the SBC frame-header CRC-8 over `num_bits` MSB-first bits of `data`.
 
     Polynomial 0x1D (x^8 + x^4 + x^3 + x^2 + 1), initial value 0x0F. Spec: A2DP v1.4 §B.4.
+
+    Note: per the spec, the 8-bit flush phase runs unconditionally, so
+    ``sbc_crc8(data, 0) == 0xBB`` regardless of ``data`` (init value flushed through
+    the polynomial 8 times). In practice the SBC header builder always passes
+    num_bits > 0.
     """
     if num_bits < 0 or num_bits > len(data) * 8:
         raise ValueError("num_bits out of range for input data")
