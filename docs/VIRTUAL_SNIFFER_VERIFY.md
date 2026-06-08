@@ -33,7 +33,7 @@ runtime from the install path you pass.
 
 ```
 pybluehost app ble-scan -t usb ^
-    --virtual-sniffer=ellisys:ellisys-path="C:\Program Files\Ellisys\Ellisys Bluetooth Analyzer"
+    --virtual-sniffer=ellisys:ellisys-path="C:\ProgramData\Ellisys\Ellisys Bluetooth Analyzer\Updates\current"
 ```
 
 Optional: override the default ports (`tcp=46148`, `udp=24352`):
@@ -55,10 +55,12 @@ pybluehost app ble-scan -t usb ^
     --virtual-sniffer=wps:wps-path="C:\Program Files (x86)\Teledyne LeCroy Wireless\Wireless Protocol Suite 4.60"
 ```
 
-**Expected:** `Fts.exe` Live Import initializes (using the recovered connection
-string + `[Configuration]` block) and "frames analyzed" grows live as the scan
-runs. **Note:** ISO frames are skipped on WPS (the default personality Drf has
-no ISO) — a one-time warning is logged; this is expected.
+**Expected:** the backend launches `Fts.exe` in Generic Live-Import mode, loads
+`Executables\Core\LiveImportAPI_x64.dll`, reads the connection string from the
+product `liveimport.ini [General]` + config from the dev-kit `[Configuration]`,
+waits for `IsAppReady`, then starts capture. "frames analyzed" grows live as the
+scan runs. **Note:** ISO frames are skipped on WPS (the default personality Drf
+has no ISO) — a one-time warning is logged; this is expected.
 
 ---
 
@@ -96,4 +98,9 @@ Command/Event, and high-frequency traffic injects without obvious frame loss.
 
 | Date | Adapter | Backend | Analyzer version | Result |
 |------|---------|---------|------------------|--------|
-| _TBD_ | | ellisys / wps | | |
+| 2026-06-09 | CSR8510 (0A12:0001) | ellisys | Ellisys Bluetooth Analyzer (ProgramData\Updates\current) | ✅ analyzer launched, Ice setup OK (SelectDataSource('injection') + StartRecording), full HCI init + LE scan + advertising reports injected over UDP, no errors |
+| 2026-06-09 | CSR8510 (0A12:0001) | wps | Wireless Protocol Suite 4.60 | ✅ Fts.exe launched, LiveImport init + IsAppReady + start capture, scan ran, frames injected via SendFrame3, no errors |
+
+> The above runs validate the full pipeline up to and including injection with no
+> errors. The final **visual** confirmation (frames rendered in the analyzer UI)
+> is done by an operator watching the analyzer window during the run.
