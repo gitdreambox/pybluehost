@@ -499,6 +499,10 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 | 2026-05-13 | SMP Sub-Plan 1 | E2E loopback：VirtualLELink 只桥接 ACL，未模拟 LE 加密握手（LE_LTK_Request + ENCRYPTION_CHANGE）导致双端进入 KEY_DISTRIBUTION 时序错乱 | VirtualController 新增 `_encryption_start_hook` / `_ltk_reply_hook`；VirtualLELink.connect() 注册这两个 hook 并用 asyncio.gather 并发发送双端 ENCRYPTION_CHANGE | ✅ 已解决 |
 | 2026-05-13 | SMP Sub-Plan 1 | E2E reconnect：Peripheral 存的 bond 是 Central 发来的 LTK，而非自己生成的 LTK，导致 LE_LTK_Request 无法匹配 | `_start_phase3` 保存 ctx.local_ltk/ediv/rand；`_persist_bond` Responder 路径改用本端 LTK | ✅ 已解决 |
 | 2026-05-13 | SMP Sub-Plan 1 | coverage 从 86% 降至 76%（旧 usb.py 2562 行仍在 worktree，未被 usb/ package 替换） | pyproject.toml coverage.run.omit 追加 `pybluehost/transport/usb.py` | ✅ 已解决 |
+| 2026-06-09 | v1.1 Virtual Sniffer | WPS API 全成功但 UI 0 帧（真机实测发现） | `SendFrame3` 漏首参 `iDatastreamId`，6→7 参修正（对照 `LiveImportAPI.h`），commit f2b9c84 | ✅ 已解决 |
+| 2026-06-09 | v1.1 Virtual Sniffer | WPS LiveImport 永不 ready / Fts 不启动（真机实测发现） | WpsBackend 增 Fts.exe 启动 + 运行时读 ini config（缺 SdeName 等）+ IsAppReady 等待，commit d33924a | ✅ 已解决 |
+| 2026-06-09 | v1.1 Virtual Sniffer | plan Task 4/9 引用的 demo 模块已删除（仅剩 .pyc） | 从 .pyc 字节码恢复关键常量/序列内联进 sniffer/；交叉校验测试改自包含 | ✅ 已解决 |
+| 2026-06-09 | v1.1 Virtual Sniffer | bridge 共享 trace_kwargs_from_args 收到不支持的 virtual_sniffer | HCITransportBridge 显式拒绝 `--virtual-sniffer` + 报清晰错误，commit d6d628d | ✅ 已解决 |
 
 ---
 
