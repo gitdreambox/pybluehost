@@ -116,3 +116,33 @@ async def test_wps_send_frame_failure_is_logged_not_raised(caplog):
         payload=b"\x00", wall_clock=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
     assert any("SendFrame3" in r.getMessage() for r in caplog.records)
+
+
+def test_read_liveimport_settings_reads_inis(tmp_path):
+    """Connection ← product [General]; config ← devkit [Configuration]."""
+    from pybluehost.sniffer.wps import read_liveimport_settings
+
+    (tmp_path / "liveimport.ini").write_text(
+        '[General]\nConnectionString="My Conn String."\n', encoding="utf-8"
+    )
+    devkit = tmp_path / "Live Import Developers Kit"
+    devkit.mkdir()
+    (devkit / "liveimport.ini").write_text(
+        "[Configuration]\nVersion=6\nStack=0x7f008039\nSdeName=Octets\n", encoding="utf-8"
+    )
+
+    conn, cfg = read_liveimport_settings(str(tmp_path))
+    assert conn == "My Conn String."          # quotes stripped
+    assert "Version=6" in cfg
+    assert "SdeName=Octets" in cfg            # taken from the real devkit ini
+
+
+def test_read_liveimport_settings_falls_back_when_missing(tmp_path):
+    """No ini files → recovered inlined constants."""
+    from pybluehost.sniffer.wps import (
+        LIVEIMPORT_CONNECTION_STRING, build_liveimport_config, read_liveimport_settings,
+    )
+
+    conn, cfg = read_liveimport_settings(str(tmp_path))
+    assert conn == LIVEIMPORT_CONNECTION_STRING
+    assert cfg == build_liveimport_config()

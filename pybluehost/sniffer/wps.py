@@ -72,8 +72,42 @@ _LIVEIMPORT_CONFIG_LINES = (
 
 
 def build_liveimport_config() -> str:
-    """Return the WPS Live Import [Configuration] string (recovered from demo)."""
+    """Return the WPS Live Import [Configuration] string (recovered fallback)."""
     return "\n".join(_LIVEIMPORT_CONFIG_LINES)
+
+
+def read_liveimport_settings(wps_path: str) -> tuple[str, str]:
+    """Read (connection_string, config_string) from the WPS ini files.
+
+    Connection string ← product-root ``liveimport.ini`` ``[General]``;
+    config ← developer-kit ``liveimport.ini`` ``[Configuration]`` (this exact
+    combination is what makes WPS display injected frames — PRD §3.3). Falls
+    back to the recovered inlined constants when an ini is missing.
+    """
+    import configparser
+    from pathlib import Path
+
+    wps = Path(wps_path)
+    product_ini = wps / "liveimport.ini"
+    devkit_ini = wps / "Live Import Developers Kit" / "liveimport.ini"
+
+    connection = LIVEIMPORT_CONNECTION_STRING
+    if product_ini.exists():
+        cp = configparser.ConfigParser()
+        cp.optionxform = str  # preserve key case
+        cp.read(product_ini, encoding="utf-8")
+        if cp.has_section("General") and cp.has_option("General", "ConnectionString"):
+            connection = cp.get("General", "ConnectionString").strip().strip('"')
+
+    config = build_liveimport_config()
+    if devkit_ini.exists():
+        cp = configparser.ConfigParser()
+        cp.optionxform = str
+        cp.read(devkit_ini, encoding="utf-8")
+        if cp.has_section("Configuration"):
+            config = "\n".join(f"{k}={v}" for k, v in cp.items("Configuration"))
+
+    return connection, config
 
 
 class LiveImportLibrary:
@@ -117,8 +151,11 @@ class LiveImportLibrary:
                 "WpsBackend requires Windows (Teledyne WPS is Windows-only)"
             )
         wps = Path(wps_path)
-        # WPS ships the live-import DLL under the install dir; try common names.
+        # WPS ships the live-import DLL under Executables\Core (recovered from
+        # the validated demo: <wps_path>/Executables/Core/LiveImportAPI_x64.dll).
         candidates = [
+            wps / "Executables" / "Core" / "LiveImportAPI_x64.dll",
+            wps / "Executables" / "Core" / "LiveImportAPI.dll",
             wps / "Automation" / "LiveImportAPI.dll",
             wps / "LiveImportAPI_x64.dll",
             wps / "LiveImportAPI.dll",
@@ -126,12 +163,13 @@ class LiveImportLibrary:
         dll = next((c for c in candidates if c.exists()), None)
         if dll is None:
             raise SnifferError(
-                f"LiveImportAPI.dll not found under: {wps} (looked in Automation/ and root)"
+                f"LiveImportAPI.dll not found under: {wps} (looked in Executables/Core/)"
             )
+        connection_string, config_string = read_liveimport_settings(wps_path)
         return cls(
             ctypes.CDLL(str(dll)),
-            connection_string=LIVEIMPORT_CONNECTION_STRING,
-            config_string=build_liveimport_config(),
+            connection_string=connection_string,
+            config_string=config_string,
         )
 
     # ----- thin call helpers (used by WpsBackend; test-mock-friendly) -----
@@ -157,6 +195,11 @@ class LiveImportLibrary:
                 f"HRESULT=0x{ctypes.c_uint32(hresult).value:08X}"
             )
 
+    def is_app_ready(self) -> bool:
+        ready = ctypes.c_bool(False)
+        self._lib.IsAppReady(ctypes.byref(ready))
+        return bool(ready.value)
+
     def send_frame(self, payload: bytes, drf: int, stream: int, timestamp_ns: int) -> None:
         buf = (ctypes.c_ubyte * len(payload)).from_buffer_copy(payload)
         hresult = self._lib.SendFrame3(
@@ -179,10 +222,47 @@ class WpsBackend(SnifferBackend):
         self._lib = library
         self._wps_path = wps_path
         self._warned_iso = False
+        self._fts_proc = None
+
+    def _launch_fts(self) -> None:
+        """Windows-only: launch Fts.exe in Generic Live-Import mode.
+
+        <wps_path>/Executables/Core/Fts.exe /ComProbe Protocol Analysis
+        System=Generic /oemkey=Virtual  — recovered from the validated demo.
+        """
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        if sys.platform != "win32":
+            raise SnifferUnavailableError(
+                "WpsBackend requires Windows (Teledyne WPS is Windows-only)"
+            )
+        exe = Path(self._wps_path) / "Executables" / "Core" / "Fts.exe"
+        if not exe.exists():
+            raise SnifferError(f"WPS Fts.exe not found: {exe}")
+        self._fts_proc = subprocess.Popen(
+            [str(exe), "/ComProbe Protocol Analysis System=Generic", "/oemkey=Virtual"],
+            close_fds=True,
+        )
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
+        # Launch the WPS Live-Import host first (real use only; tests pass no wps_path).
+        if self._wps_path is not None:
+            await loop.run_in_executor(None, self._launch_fts)
         await loop.run_in_executor(None, self._lib.initialize)
+        # Wait for Live Import to become ready before starting capture (real use).
+        if self._wps_path is not None:
+            deadline = 60.0
+            waited = 0.0
+            while not await loop.run_in_executor(None, self._lib.is_app_ready):
+                if waited >= deadline:
+                    raise SnifferError(
+                        f"WPS LiveImport did not become ready within {deadline:.0f}s"
+                    )
+                await asyncio.sleep(0.5)
+                waited += 0.5
         await loop.run_in_executor(None, self._lib.start_capture)
 
     async def inject(self, h4_type, direction, payload, wall_clock: datetime) -> None:
