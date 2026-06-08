@@ -29,6 +29,11 @@ async def _print_hci_trace(event: TraceEvent) -> None:
 def add_trace_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--hci-log", action="store_true", help="Print HCI TX/RX packets to stderr")
     parser.add_argument("--btsnoop", type=Path, help="Write HCI btsnoop log to a .cfa file")
+    parser.add_argument(
+        "--virtual-sniffer", metavar="BACKEND[:opts]", default=None,
+        help="Inject live HCI into an analyzer UI: "
+             "ellisys[:tcp=,udp=,ellisys-path=] | wps[:wps-path=]",
+    )
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -40,6 +45,7 @@ def trace_kwargs_from_args(args: Any) -> dict[str, Any]:
     return {
         "hci_log": getattr(args, "hci_log", False),
         "btsnoop": getattr(args, "btsnoop", None),
+        "virtual_sniffer": getattr(args, "virtual_sniffer", None),
     }
 
 
@@ -57,6 +63,7 @@ async def run_app_command(
     hci_log: bool = False,
     btsnoop: str | Path | None = None,
     trace_spec: Any = None,
+    virtual_sniffer: str | None = None,
 ) -> int:
     """Run a long-running app command with SIGINT/SIGTERM handling.
 
@@ -88,6 +95,11 @@ async def run_app_command(
             config.trace_sinks.append(CallbackSink(_print_hci_trace))
         if btsnoop is not None:
             config.trace_sinks.append(BtsnoopSink(btsnoop))
+        if virtual_sniffer is not None:
+            from pybluehost.cli._sniffer_arg import parse_sniffer_arg
+            from pybluehost.sniffer.sink import build_virtual_sniffer_sink
+            spec = parse_sniffer_arg(virtual_sniffer)
+            config.trace_sinks.append(await build_virtual_sniffer_sink(spec))
         stack = await Stack._build(transport=transport, config=config)
         if trace_spec is not None and not trace_spec.is_empty():
             from pybluehost.core.trace_control import attach_console_sink

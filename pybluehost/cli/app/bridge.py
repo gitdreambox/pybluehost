@@ -60,11 +60,18 @@ class HCITransportBridge:
         port: int,
         btsnoop: str | Path | None = None,
         hci_log: bool = False,
+        virtual_sniffer: str | None = None,
     ) -> None:
         if protocol not in ("tcp", "udp"):
             raise ValueError(f"Unsupported bridge protocol: {protocol!r}")
         if port < 0 or port > 65535:
             raise ValueError(f"Invalid bridge port: {port!r}")
+        if virtual_sniffer is not None:
+            raise ValueError(
+                "--virtual-sniffer is not supported in bridge mode; "
+                "point the analyzer at the bridge's TCP/UDP port directly, or "
+                "use --virtual-sniffer on a 'pybluehost app' command instead"
+            )
 
         self._backend = backend
         self._protocol = protocol

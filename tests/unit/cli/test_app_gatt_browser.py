@@ -74,7 +74,7 @@ async def test_gatt_browser_real_transport_discovers_services(monkeypatch, capsy
 
     async def run_app(transport_arg, main_coro, **kwargs):
         assert transport_arg == "usb:vendor=csr"
-        assert kwargs == {"hci_log": False, "btsnoop": None, "trace_spec": None}
+        assert kwargs == {"hci_log": False, "btsnoop": None, "trace_spec": None, "virtual_sniffer": None}
         await main_coro(FakeStack(), asyncio.Event())
         return 0
 
