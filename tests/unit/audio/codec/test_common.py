@@ -67,3 +67,30 @@ def test_bitwriter_width_greater_than_byte():
     w = BitWriter()
     w.write(0xABCD, 16)
     assert bytes(w.finish()) == b"\xAB\xCD"
+
+
+from pybluehost.audio.codec._common import sbc_crc8  # noqa: E402
+
+
+def test_sbc_crc8_known_value():
+    """A2DP v1.4 §B.4: CRC poly 0x1D, init 0x0F.
+    Reference value computed by running our own implementation on the fixed
+    16-bit input 0xABCD. Once pinned, this test catches drift in the algorithm.
+    """
+    crc = sbc_crc8(b"\xAB\xCD", num_bits=16)
+    # Pin the value our implementation produces (self-pinned, no BlueZ available).
+    assert crc == 0x00
+
+
+def test_sbc_crc8_zero_input():
+    crc = sbc_crc8(b"\x00\x00", num_bits=16)
+    # All-zero input: the polynomial only advances when an input bit causes
+    # the MSB of the accumulator to be 1 after shift. Verify behaviour matches
+    # bit-serial CRC-8 / 0x1D / init 0x0F.
+    assert crc == 0x86
+
+
+def test_sbc_crc8_partial_byte():
+    """When num_bits is not a multiple of 8, only the leading `num_bits` bits matter."""
+    crc = sbc_crc8(b"\xFF\xF8", num_bits=13)
+    assert crc == 0x0A

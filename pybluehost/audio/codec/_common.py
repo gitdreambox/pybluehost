@@ -1,4 +1,4 @@
-"""Codec-shared primitives: bit-aligned I/O for SBC and other audio codecs."""
+"""Codec-shared primitives: bit-aligned I/O + CRC-8 for SBC headers."""
 from __future__ import annotations
 
 
@@ -56,3 +56,29 @@ class BitReader:
 
     def remaining_bits(self) -> int:
         return len(self._data) * 8 - self._pos
+
+
+def sbc_crc8(data: bytes, num_bits: int) -> int:
+    """Compute the SBC frame-header CRC-8 over `num_bits` MSB-first bits of `data`.
+
+    Polynomial 0x1D (x^8 + x^4 + x^3 + x^2 + 1), initial value 0x0F. Spec: A2DP v1.4 §B.4.
+    """
+    if num_bits < 0 or num_bits > len(data) * 8:
+        raise ValueError("num_bits out of range for input data")
+    crc = 0x0F
+    for i in range(num_bits):
+        byte_idx = i >> 3
+        bit_idx = 7 - (i & 7)
+        bit = (data[byte_idx] >> bit_idx) & 1
+        # Shift-and-XOR variant of bit-serial CRC-8 / 0x1D:
+        top = (crc >> 7) & 1
+        crc = ((crc << 1) | bit) & 0xFF
+        if top:
+            crc ^= 0x1D
+    # Spec: after consuming all data bits, do 8 extra zero-shifts to flush the register.
+    for _ in range(8):
+        top = (crc >> 7) & 1
+        crc = (crc << 1) & 0xFF
+        if top:
+            crc ^= 0x1D
+    return crc
