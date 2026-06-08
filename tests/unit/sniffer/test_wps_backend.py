@@ -88,3 +88,31 @@ async def test_wps_backend_skips_iso_and_warns_once(caplog):
     assert fake.send_frame_calls == []   # ISO skipped
     iso_warnings = [r for r in caplog.records if "ISO" in r.getMessage()]
     assert len(iso_warnings) == 1
+
+
+from pybluehost.core.errors import SnifferError
+
+
+async def test_wps_initialize_fail_raises_sniffer_error():
+    fake = _FakeLib()
+    fake._initialize_hresult = -1   # E_FAIL
+    lib = LiveImportLibrary(fake, connection_string="cs", config_string="cfg")
+    backend = WpsBackend(library=lib)
+    with pytest.raises(SnifferError, match="InitializeLiveImportEx failed"):
+        await backend.start()
+
+
+async def test_wps_send_frame_failure_is_logged_not_raised(caplog):
+    import logging
+    caplog.set_level(logging.WARNING, logger="pybluehost.sniffer.wps")
+    fake = _FakeLib()
+    fake._send_frame_hresult = -1
+    lib = LiveImportLibrary(fake, connection_string="cs", config_string="cfg")
+    backend = WpsBackend(library=lib)
+    await backend.start()
+    # inject must NOT raise — sniffer is side-channel; can't kill the stack
+    await backend.inject(
+        h4_type=0x01, direction=Direction.DOWN,
+        payload=b"\x00", wall_clock=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    assert any("SendFrame3" in r.getMessage() for r in caplog.records)
