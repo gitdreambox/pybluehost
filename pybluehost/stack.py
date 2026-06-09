@@ -11,6 +11,7 @@ from pybluehost.ble.security import SecurityConfig
 from pybluehost.ble.smp import BondStorage
 from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.types import IOCapability
+from pybluehost.pts.config import PTSModeConfig  # noqa: F401  (used by StackConfig type hint)
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +49,9 @@ class StackConfig:
     # SMP bonding behaviour
     bondable: bool = True
     auto_encrypt_on_bonded_reconnect: bool = True
+
+    # PTS mode (v1.2) — opt-in PTS conformance-testing tweaks. None = off.
+    pts: PTSModeConfig | None = None
 
 
 @dataclass(frozen=True)
