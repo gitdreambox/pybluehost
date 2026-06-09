@@ -10,8 +10,12 @@ from pybluehost.audio.codec._common import BitReader, BitWriter, sbc_crc8
 
 _SAMPLE_RATES = {16000: 0b00, 32000: 0b01, 44100: 0b10, 48000: 0b11}
 _SAMPLE_RATES_INV = {v: k for k, v in _SAMPLE_RATES.items()}
-_BLOCKS = {4: 0b00, 8: 0b01, 12: 0b10, 16: 0b11}
-_BLOCKS_INV = {v: k for k, v in _BLOCKS.items()}
+_BLOCKS = {4: 0b00, 8: 0b01, 12: 0b10, 16: 0b11, 15: 0b11}
+# Decode-side mapping. 0b11 is overloaded: standard SBC uses it for 16 blocks,
+# mSBC (HFP wide-band, syncword 0xAD) uses the same code for 15 blocks. The
+# decoder distinguishes by syncword, so SBCHeader.from_bytes must be told which
+# wire-format it's reading.
+_BLOCKS_INV = {0b00: 4, 0b01: 8, 0b10: 12, 0b11: 16}
 _CHANNEL_MODES = {
     "mono": 0b00, "dual": 0b01, "stereo": 0b10, "joint_stereo": 0b11,
 }
@@ -22,6 +26,7 @@ _SUBBANDS = {4: 0b0, 8: 0b1}
 _SUBBANDS_INV = {v: k for k, v in _SUBBANDS.items()}
 
 _SYNCWORD = 0x9C
+_MSBC_SYNCWORD = 0xAD
 
 
 @dataclass(frozen=True)
@@ -68,9 +73,10 @@ class SBCHeader:
         data_bytes = math.ceil(data_bits / 8)
         return 4 + scale_factor_bytes + data_bytes
 
-    def to_bytes(self, *, payload_for_crc: bytes = b"") -> bytes:
+    def to_bytes(self, *, payload_for_crc: bytes = b"", syncword: int = _SYNCWORD) -> bytes:
         """Encode the 4-byte header. `payload_for_crc` is the CRC-covered region after
-        bytes 1-2 (scale factors + join bits) when available."""
+        bytes 1-2 (scale factors + join bits) when available. `syncword` defaults
+        to 0x9C (SBC); mSBC callers pass 0xAD."""
         b1 = (
             (_SAMPLE_RATES[self.sample_rate] << 6)
             | (_BLOCKS[self.blocks] << 4)
@@ -81,18 +87,23 @@ class SBCHeader:
         b2 = self.bitpool & 0xFF
         crc_data = bytes([b1, b2]) + payload_for_crc
         crc = sbc_crc8(crc_data, num_bits=len(crc_data) * 8)
-        return bytes([_SYNCWORD, b1, b2, crc])
+        return bytes([syncword, b1, b2, crc])
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "SBCHeader":
         if len(data) < 4:
             raise ValueError("data too short for SBC header (need ≥ 4 bytes)")
-        if data[0] != _SYNCWORD:
-            raise ValueError(f"bad syncword 0x{data[0]:02X}, expected 0x9C")
+        if data[0] not in (_SYNCWORD, _MSBC_SYNCWORD):
+            raise ValueError(
+                f"bad syncword 0x{data[0]:02X}, expected 0x9C (SBC) or 0xAD (mSBC)"
+            )
         b1 = data[1]
         bitpool = data[2]
         sr = _SAMPLE_RATES_INV[(b1 >> 6) & 0b11]
         blocks = _BLOCKS_INV[(b1 >> 4) & 0b11]
+        # mSBC overloads code 0b11 to mean 15 blocks (vs SBC's 16). Detect from syncword.
+        if data[0] == _MSBC_SYNCWORD and blocks == 16:
+            blocks = 15
         chmode = _CHANNEL_MODES_INV[(b1 >> 2) & 0b11]
         alloc = _ALLOCATIONS_INV[(b1 >> 1) & 0b1]
         sb = _SUBBANDS_INV[b1 & 0b1]
@@ -330,6 +341,7 @@ class SBCEncoder:
         subbands: int,
         allocation: str,
         bitpool: int,
+        syncword: int = _SYNCWORD,
     ) -> None:
         # Channel-mode/channel-count consistency.
         expected_ch = 1 if channel_mode == "mono" else 2
@@ -343,6 +355,7 @@ class SBCEncoder:
             sample_rate=sample_rate, blocks=blocks, channel_mode=channel_mode,
             allocation=allocation, subbands=subbands, bitpool=bitpool,
         )
+        self._syncword = syncword
         self.sample_rate = sample_rate
         self.channels = channels
         self.channel_mode = channel_mode
@@ -467,7 +480,9 @@ class SBCEncoder:
         scale_factor_bytes = math.ceil(nb / 2)
         crc_payload_bytes = scale_factor_bytes + math.ceil(join_bits / 8)
         crc_payload = post_header[:crc_payload_bytes]
-        header = self._hdr_template.to_bytes(payload_for_crc=crc_payload)
+        header = self._hdr_template.to_bytes(
+            payload_for_crc=crc_payload, syncword=self._syncword
+        )
         return header + post_header
 
 
@@ -551,12 +566,14 @@ class SBCDecoder:
             (pcm_le16, consumed_bytes) — interleaved int16 LE PCM (all decoded
             frames concatenated) and the total bytes consumed.
         """
-        if len(data) < 4 or data[0] != _SYNCWORD:
-            raise ValueError(f"SBC syncword 0x9C not found at byte 0 (got {data[:1].hex()})")
+        if len(data) < 4 or data[0] not in (_SYNCWORD, _MSBC_SYNCWORD):
+            raise ValueError(
+                f"SBC syncword 0x9C / 0xAD not found at byte 0 (got {data[:1].hex()})"
+            )
 
         pcm_chunks: list[bytes] = []
         offset = 0
-        while offset + 4 <= len(data) and data[offset] == _SYNCWORD:
+        while offset + 4 <= len(data) and data[offset] in (_SYNCWORD, _MSBC_SYNCWORD):
             header = SBCHeader.from_bytes(data[offset:offset + 4])
             frame_size = header.frame_length()
             if offset + frame_size > len(data):
