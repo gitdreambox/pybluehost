@@ -65,6 +65,7 @@ async def run_app_command(
     btsnoop: str | Path | None = None,
     trace_spec: Any = None,
     virtual_sniffer: str | None = None,
+    pts_config: Any = None,
 ) -> int:
     """Run a long-running app command with SIGINT/SIGTERM handling.
 
@@ -101,6 +102,8 @@ async def run_app_command(
             from pybluehost.sniffer.sink import build_virtual_sniffer_sink
             spec = parse_sniffer_arg(virtual_sniffer)
             config.trace_sinks.append(await build_virtual_sniffer_sink(spec))
+        if pts_config is not None:
+            config.pts = pts_config
         stack = await Stack._build(transport=transport, config=config)
         if trace_spec is not None and not trace_spec.is_empty():
             from pybluehost.core.trace_control import attach_console_sink
