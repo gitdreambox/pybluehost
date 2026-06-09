@@ -134,6 +134,150 @@ _ANALYSIS_M_8 = tuple(
 )
 
 
+# Loudness offset table per A2DP v1.4 §B.6.3 Table B.8 (rows: sampling-freq index;
+# cols: subband). Source: nxp-upstream/libsbc encoder/srce/sbc_enc_bit_alloc_mono.c
+# `sbc_enc_as16Offset8` (Apache 2.0 / Broadcom).
+_LOUDNESS_OFFSET_8 = (
+    (-2, 0, 0, 0, 0, 0, 0, 1),    # 16 kHz
+    (-3, 0, 0, 0, 0, 0, 1, 2),    # 32 kHz
+    (-4, 0, 0, 0, 0, 0, 1, 2),    # 44.1 kHz
+    (-4, 0, 0, 0, 0, 0, 1, 2),    # 48 kHz
+)
+_LOUDNESS_OFFSET_4 = (
+    (-1, 0, 0, 0),
+    (-2, 0, 0, 1),
+    (-2, 0, 0, 1),
+    (-2, 0, 0, 1),
+)
+
+
+def _compute_scale_factors(
+    blocks: list[list[int]], channels: int,
+) -> list[list[int]]:
+    """Per A2DP §B.6.1: scale_factor[ch][sb] = max bits needed to represent the
+    largest absolute sample value across all blocks for that (channel, subband).
+
+    Returns list[ch][sb] of int (0..15).
+
+    Input `blocks` shape: list[blocks][subband_idx], where each row has length
+    subbands*channels, interleaved as (sb0_ch0, sb0_ch1, sb1_ch0, sb1_ch1, ...)
+    for stereo, or just (sb0, sb1, ...) for mono.
+    """
+    if channels < 1 or channels > 2:
+        raise ValueError(f"channels must be 1 or 2, got {channels}")
+    if not blocks:
+        return [[0] * 0 for _ in range(channels)]
+    subbands = len(blocks[0]) // channels
+    result: list[list[int]] = []
+    for ch in range(channels):
+        sf_per_sb: list[int] = []
+        for sb in range(subbands):
+            max_abs = 0
+            for blk in blocks:
+                v = abs(blk[sb * channels + ch])
+                if v > max_abs:
+                    max_abs = v
+            # scale_factor = bit_length(max_abs); 0 for max_abs=0.
+            sf_per_sb.append(max_abs.bit_length())
+        result.append(sf_per_sb)
+    return result
+
+
+def _bit_allocation_loudness(
+    scale_factors: list[list[int]], *, bitpool: int, sample_rate: int, subbands: int,
+) -> list[list[int]]:
+    """A2DP v1.4 §B.6.3 loudness bit-allocation algorithm.
+
+    Port of nxp-upstream/libsbc encoder/srce/sbc_enc_bit_alloc_mono.c (Apache 2.0).
+    Returns list[ch][sb] of int (0..16): bits per subband, summing to ≤ bitpool.
+    """
+    if sample_rate not in _SAMPLE_RATES:
+        raise ValueError(f"unsupported sample_rate {sample_rate}")
+    sf_idx = _SAMPLE_RATES[sample_rate]
+    if subbands == 8:
+        offsets = _LOUDNESS_OFFSET_8[sf_idx]
+    elif subbands == 4:
+        offsets = _LOUDNESS_OFFSET_4[sf_idx]
+    else:
+        raise ValueError(f"subbands must be 4 or 8, got {subbands}")
+
+    channels = len(scale_factors)
+    result: list[list[int]] = [[0] * subbands for _ in range(channels)]
+    for ch in range(channels):
+        sf = scale_factors[ch]
+        # Step 1: compute bitneed per subband.
+        bitneed = [0] * subbands
+        for sb in range(subbands):
+            if sf[sb] == 0:
+                bitneed[sb] = -5
+            else:
+                loudness = sf[sb] - offsets[sb]
+                bitneed[sb] = loudness >> 1 if loudness > 0 else loudness
+
+        # Step 2: max bitneed.
+        max_bitneed = max(0, max(bitneed))
+
+        # Degenerate case: silent signal (all scale factors 0 → all bitneeds -5).
+        # No useful bits to allocate; the bitslice loop would never terminate
+        # because slice_count stays 0. Short-circuit to all-zero allocation.
+        if max_bitneed == 0:
+            result[ch] = [0] * subbands
+            continue
+
+        # Step 3: iteratively find the bitslice threshold.
+        bitslice = max_bitneed + 1
+        bit_count = bitpool
+        slice_count = 0
+        # Safety guard: bitslice can't usefully go below min(bitneed) - 1
+        # (no further slices can be added beyond that point).
+        min_bitslice = min(bitneed) - 1
+        while bitslice > min_bitslice:
+            bitslice -= 1
+            bit_count -= slice_count
+            slice_count = 0
+            for sb in range(subbands):
+                diff = bitneed[sb] - bitslice
+                if 1 <= diff < 16:
+                    slice_count += 2 if diff == 1 else 1
+            if bit_count - slice_count <= 0:
+                break
+
+        if bit_count == 0:
+            bit_count -= slice_count
+            bitslice -= 1
+
+        # Step 4: allocate bits per subband.
+        bits = [0] * subbands
+        for sb in range(subbands):
+            if bitneed[sb] < bitslice + 2:
+                bits[sb] = 0
+            else:
+                diff = bitneed[sb] - bitslice
+                bits[sb] = diff if diff < 16 else 16
+
+        # Step 5: distribute remaining bits — pass 1.
+        sb = 0
+        while bit_count > 0 and sb < subbands:
+            if 2 <= bits[sb] < 16:
+                bits[sb] += 1
+                bit_count -= 1
+            elif bitneed[sb] == bitslice + 1 and bit_count > 1:
+                bits[sb] = 2
+                bit_count -= 2
+            sb += 1
+
+        # Step 6: distribute remaining bits — pass 2.
+        sb = 0
+        while bit_count > 0 and sb < subbands:
+            if bits[sb] < 16:
+                bits[sb] += 1
+                bit_count -= 1
+            sb += 1
+
+        result[ch] = bits
+    return result
+
+
 def _analysis_filter_8(pcm: list[int]) -> list[list[int]]:
     """SBC 8-subband polyphase analysis filter per A2DP v1.4 §B.5.
 
