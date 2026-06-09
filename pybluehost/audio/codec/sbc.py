@@ -5,7 +5,7 @@ import math
 import struct
 from dataclasses import dataclass
 
-from pybluehost.audio.codec._common import BitWriter, sbc_crc8
+from pybluehost.audio.codec._common import BitReader, BitWriter, sbc_crc8
 
 
 _SAMPLE_RATES = {16000: 0b00, 32000: 0b01, 44100: 0b10, 48000: 0b11}
@@ -429,23 +429,17 @@ class SBCEncoder:
                     if sf == 0:
                         q = 0
                     else:
-                        # Quantize to nbits unsigned. The mapping is:
-                        #   q = floor((sample + 2^(sf-1)) * (2^nbits - 1) / 2^sf)
-                        # which maps signed range [-2^(sf-1), 2^(sf-1)-1] to
-                        # unsigned [0, 2^nbits - 1]. Decoder reverses this.
+                        # Inverse of the decoder's dequant (matched pair):
+                        #   dequant = 2^sf * ((2q + 1) / (2^nbits - 1) - 1)
+                        # Maps signed sample in [-2^sf, 2^sf) → q in [0, levels],
+                        # rounded to nearest.
                         levels = (1 << nbits) - 1
-                        offset = 1 << (sf - 1)
-                        # Clamp sample to expected signed range before mapping
-                        # (analysis filter can produce values slightly outside
-                        # the nominal range due to filter ringing).
-                        max_val = (1 << sf) - 1
-                        s = sample + offset
-                        if s < 0:
-                            s = 0
-                        elif s > max_val:
-                            s = max_val
-                        q = (s * levels) // (1 << sf)
-                        q = q & ((1 << nbits) - 1)
+                        two_sf = 1 << sf
+                        q = ((sample + two_sf) * levels + two_sf) // (two_sf << 1)
+                        if q < 0:
+                            q = 0
+                        elif q > levels:
+                            q = levels
                     bw.write(q, nbits)
         post_header = bytes(bw.finish())
 
@@ -475,3 +469,171 @@ class SBCEncoder:
         crc_payload = post_header[:crc_payload_bytes]
         header = self._hdr_template.to_bytes(payload_for_crc=crc_payload)
         return header + post_header
+
+
+# N[i][k] = cos((2k+1)(i-4)π/16) — synthesis cosine matrix per A2DP v1.4 §B.5
+# (transpose of the analysis matrix M).
+_SYNTH_N_8 = [
+    [math.cos((2 * k + 1) * (i - 4) * math.pi / 16) for k in range(8)]
+    for i in range(16)
+]
+
+
+def _synthesis_filter_8(blocks_subbands: list[list[int]], v_state: list[float]) -> list[int]:
+    """SBC 8-subband polyphase synthesis filter per A2DP v1.4 §B.5.
+
+    Args:
+        blocks_subbands: list[blocks] of list[8] subband samples.
+        v_state: 160-element list, MUTATED to track running synthesis state
+                 across calls (caller initializes to zeros once per channel).
+
+    Returns:
+        Flat list of int PCM samples (8 per block).
+    """
+    out: list[int] = []
+    for s_block in blocks_subbands:
+        # 1. Shift V buffer up by 16
+        for i in range(159, 15, -1):
+            v_state[i] = v_state[i - 16]
+        # 2. IDCT: V[0..15] = N · S
+        for i in range(16):
+            v_state[i] = sum(_SYNTH_N_8[i][k] * s_block[k] for k in range(8))
+        # 3. Build U[0..79] from V (A2DP §B.5)
+        u = [0.0] * 80
+        for j in range(5):
+            for i in range(8):
+                u[16 * j + i] = v_state[32 * j + i]
+                u[16 * j + i + 8] = v_state[32 * j + i + 24]
+        # 4. Window with proto C[] coefficients × per-phase sign alternation,
+        # then 10-tap overlap-add. The (-1)**k sign pattern across the 10 polyphase
+        # phases is the standard pseudo-QMF synthesis pattern that cancels
+        # aliasing between adjacent blocks. Final scale factor (×8) matches the
+        # filter bank gain so output magnitude tracks the original PCM.
+        for i in range(8):
+            s = sum(
+                ((-1) ** k) * _PROTO_FILTER_8[i + 8 * k] * u[i + 8 * k]
+                for k in range(10)
+            )
+            # Negate to align polarity with the analysis filter (the pseudo-QMF
+            # design intrinsically sign-flips the reconstruction; cancel it).
+            out.append(int(round(-s * 8.0)))
+    return out
+
+
+class SBCDecoder:
+    """A2DP v1.4 §B SBC decoder. Pure DSP, no Bluetooth deps.
+
+    Decoder is stateful: synthesis filter V-buffers persist across `decode()`
+    calls (one per channel index), so streamed frames reconstruct smoothly.
+    Construct one decoder per stream.
+    """
+
+    def __init__(self) -> None:
+        self._v_state: dict[int, list[float]] = {}
+
+    def _get_v_state(self, ch: int) -> list[float]:
+        v = self._v_state.get(ch)
+        if v is None:
+            v = [0.0] * 160
+            self._v_state[ch] = v
+        return v
+
+    def decode(self, data: bytes) -> tuple[bytes, int]:
+        """Decode one or more complete SBC frames from `data`.
+
+        Reads frames starting at byte 0 until the remaining bytes are smaller
+        than the next frame; leftover bytes are reported via `consumed`.
+
+        Args:
+            data: bytes starting with the SBC frame syncword.
+
+        Returns:
+            (pcm_le16, consumed_bytes) — interleaved int16 LE PCM (all decoded
+            frames concatenated) and the total bytes consumed.
+        """
+        if len(data) < 4 or data[0] != _SYNCWORD:
+            raise ValueError(f"SBC syncword 0x9C not found at byte 0 (got {data[:1].hex()})")
+
+        pcm_chunks: list[bytes] = []
+        offset = 0
+        while offset + 4 <= len(data) and data[offset] == _SYNCWORD:
+            header = SBCHeader.from_bytes(data[offset:offset + 4])
+            frame_size = header.frame_length()
+            if offset + frame_size > len(data):
+                break
+            chunk = self._decode_one(data[offset:offset + frame_size], header)
+            pcm_chunks.append(chunk)
+            offset += frame_size
+
+        if offset == 0:
+            # Couldn't decode anything (e.g., truncated single frame).
+            raise ValueError("no complete SBC frame found in input")
+
+        return b"".join(pcm_chunks), offset
+
+    def _decode_one(self, frame: bytes, header: SBCHeader) -> bytes:
+        post_header = frame[4:]
+        if header.subbands != 8:
+            raise NotImplementedError(
+                f"SBCDecoder: subbands={header.subbands} not supported in Plan A.1 "
+                f"(only subbands=8)"
+            )
+
+        channels = header.channels
+        subbands = header.subbands
+        blocks = header.blocks
+        br = BitReader(post_header)
+
+        # Read scale factors (4 bits each, channel-major).
+        scale_factors: list[list[int]] = [[0] * subbands for _ in range(channels)]
+        for ch in range(channels):
+            for sb in range(subbands):
+                scale_factors[ch][sb] = br.read(4)
+
+        # Skip join bits (we don't apply joint coding in Plan A.1).
+        if header.channel_mode == "joint_stereo":
+            br.read(subbands)
+
+        # Bit allocation from scale factors (identical to encoder).
+        bits = _bit_allocation_loudness(
+            scale_factors,
+            bitpool=header.bitpool,
+            sample_rate=header.sample_rate,
+            subbands=subbands,
+        )
+
+        # Read quantized samples block-major, dequantize, accumulate per channel.
+        per_channel_blocks: list[list[list[int]]] = [
+            [[0] * subbands for _ in range(blocks)] for _ in range(channels)
+        ]
+        for blk in range(blocks):
+            for ch in range(channels):
+                for sb in range(subbands):
+                    nbits = bits[ch][sb]
+                    sf = scale_factors[ch][sb]
+                    if nbits == 0 or sf == 0:
+                        per_channel_blocks[ch][blk][sb] = 0
+                    else:
+                        q = br.read(nbits)
+                        levels = (1 << nbits) - 1
+                        # dequant = ((2q + 1) << sf) // levels - (1 << sf)
+                        sample = ((2 * q + 1) << sf) // levels - (1 << sf)
+                        per_channel_blocks[ch][blk][sb] = sample
+
+        # Synthesis filter per channel.
+        per_channel_pcm: list[list[int]] = []
+        for ch in range(channels):
+            v = self._get_v_state(ch)
+            pcm_ch = _synthesis_filter_8(per_channel_blocks[ch], v)
+            # Clamp to int16 range to handle filter ringing on transients.
+            pcm_ch = [max(-32768, min(32767, s)) for s in pcm_ch]
+            per_channel_pcm.append(pcm_ch)
+
+        # Interleave channels.
+        if channels == 1:
+            interleaved = per_channel_pcm[0]
+        else:
+            interleaved = [
+                v for pair in zip(per_channel_pcm[0], per_channel_pcm[1]) for v in pair
+            ]
+        return struct.pack(f"<{len(interleaved)}h", *interleaved)
