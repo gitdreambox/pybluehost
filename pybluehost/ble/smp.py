@@ -785,6 +785,11 @@ class SMPPairingContext:
 class SMPManager:
     """SMP pairing state machine manager."""
 
+    _VALID_PTS_FAILURE_STAGES = frozenset({
+        "pairing_request", "pairing_response",
+        "confirm_value", "random_value", "key_distribution",
+    })
+
     def __init__(
         self,
         hci: object | None = None,

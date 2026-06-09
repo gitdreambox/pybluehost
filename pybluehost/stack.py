@@ -140,6 +140,28 @@ class Stack:
         from pybluehost.l2cap.manager import L2CAPManager
 
         cfg = config or StackConfig()
+
+        # PTS mode propagation (design spec §3). Single point: convert PTS-mode
+        # intent into existing SecurityConfig fields so SMP only consults the
+        # canonical security config.
+        if cfg.pts is not None:
+            if cfg.pts.secure_pair_only:
+                cfg.security.sc_only_mode = True
+                cfg.security.enable_secure_connections = True
+            if cfg.pts.smp_options is not None:
+                if len(cfg.pts.smp_options) != 6:
+                    raise ValueError(
+                        "pts.smp_options must be exactly 6 bytes (SMP Pairing Request body)"
+                    )
+            if cfg.pts.smp_failure_at is not None:
+                stage = cfg.pts.smp_failure_at.split(":", 1)[-1]
+                from pybluehost.ble.smp import SMPManager
+                if stage not in SMPManager._VALID_PTS_FAILURE_STAGES:
+                    raise ValueError(
+                        f"unknown smp_failure_at stage '{stage}'; "
+                        f"choose one of {sorted(SMPManager._VALID_PTS_FAILURE_STAGES)}"
+                    )
+
         from pybluehost.ble.security import _validate_sc_dependencies
         _validate_sc_dependencies(cfg.security)
         stack = cls()
@@ -979,3 +1001,8 @@ class Stack:
     @property
     def smp(self) -> Any:
         return self._smp
+
+    @property
+    def config(self) -> StackConfig:
+        """Return the StackConfig used to build this Stack."""
+        return self._config
