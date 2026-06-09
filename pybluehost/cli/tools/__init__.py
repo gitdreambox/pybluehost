@@ -15,6 +15,7 @@ def register_tools_commands(subparsers: argparse._SubParsersAction) -> None:
     from pybluehost.cli.tools.decode import register_decode_command
     from pybluehost.cli.tools.fw import register_fw_commands
     from pybluehost.cli.tools.info import register_info_command
+    from pybluehost.cli.tools.pics_gen import register_pics_gen_command
     from pybluehost.cli.tools.rpa import register_rpa_commands
     from pybluehost.cli.tools.usb import register_usb_commands
 
@@ -22,5 +23,6 @@ def register_tools_commands(subparsers: argparse._SubParsersAction) -> None:
     register_decode_command(tools_subs)
     register_fw_commands(tools_subs)
     register_info_command(tools_subs)
+    register_pics_gen_command(tools_subs)
     register_rpa_commands(tools_subs)
     register_usb_commands(tools_subs)
