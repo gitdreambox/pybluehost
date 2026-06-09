@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import math
+import struct
 from dataclasses import dataclass
 
-from pybluehost.audio.codec._common import sbc_crc8
+from pybluehost.audio.codec._common import BitWriter, sbc_crc8
 
 
 _SAMPLE_RATES = {16000: 0b00, 32000: 0b01, 44100: 0b10, 48000: 0b11}
@@ -310,3 +311,167 @@ def _analysis_filter_8(pcm: list[int]) -> list[list[int]]:
             block_samples.append(int(round(s)))
         result.append(block_samples)
     return result
+
+
+class SBCEncoder:
+    """A2DP v1.4 §B SBC encoder. Encodes int16 PCM blocks into SBC frames.
+
+    Constructor pins all codec parameters; each `encode()` call consumes exactly
+    `blocks × subbands × channels` int16 samples and produces one SBC frame.
+    """
+
+    def __init__(
+        self,
+        *,
+        sample_rate: int,
+        channels: int,
+        channel_mode: str,
+        blocks: int,
+        subbands: int,
+        allocation: str,
+        bitpool: int,
+    ) -> None:
+        # Channel-mode/channel-count consistency.
+        expected_ch = 1 if channel_mode == "mono" else 2
+        if channels != expected_ch:
+            raise ValueError(
+                f"channel_mode={channel_mode!r} implies {expected_ch} channels, "
+                f"got channels={channels}"
+            )
+        # Header construction also validates sample_rate/blocks/subbands/etc.
+        self._hdr_template = SBCHeader(
+            sample_rate=sample_rate, blocks=blocks, channel_mode=channel_mode,
+            allocation=allocation, subbands=subbands, bitpool=bitpool,
+        )
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.channel_mode = channel_mode
+        self.blocks = blocks
+        self.subbands = subbands
+        self.allocation = allocation
+        self.bitpool = bitpool
+        self._samples_per_frame = blocks * subbands * channels
+
+    @property
+    def frame_size(self) -> int:
+        return self._hdr_template.frame_length()
+
+    def encode(self, pcm_bytes: bytes) -> bytes:
+        """Encode one frame worth of int16 LE PCM samples.
+
+        Returns: a complete SBC frame (4-byte header + scale factors + samples).
+        """
+        expected = 2 * self._samples_per_frame
+        if len(pcm_bytes) != expected:
+            raise ValueError(
+                f"pcm_bytes length {len(pcm_bytes)} doesn't match expected {expected} "
+                f"(blocks={self.blocks} × subbands={self.subbands} × "
+                f"channels={self.channels} × 2 bytes)"
+            )
+        # Plan A.1 supports 8-subband only at encode-time (4-subband analysis
+        # filter would be a future extension). Reject 4-subband cleanly.
+        if self.subbands != 8:
+            raise NotImplementedError(
+                f"SBCEncoder: subbands={self.subbands} not supported in Plan A.1 "
+                f"(only subbands=8)"
+            )
+        if self.allocation != "loudness":
+            raise NotImplementedError(
+                f"SBCEncoder: allocation={self.allocation!r} not supported in Plan A.1 "
+                f"(only 'loudness')"
+            )
+
+        # 1. De-interleave PCM into per-channel streams.
+        pcm = list(struct.unpack(f"<{self._samples_per_frame}h", pcm_bytes))
+        if self.channels == 2:
+            pcm_l = pcm[0::2]
+            pcm_r = pcm[1::2]
+            blocks_l = _analysis_filter_8(pcm_l)
+            blocks_r = _analysis_filter_8(pcm_r)
+            # Re-interleave per-block: row[sb*2 + ch]
+            samples_blocks = [
+                [v for pair in zip(blocks_l[b], blocks_r[b]) for v in pair]
+                for b in range(self.blocks)
+            ]
+        else:
+            samples_blocks = _analysis_filter_8(pcm)
+
+        # 2. Scale factors per channel/subband.
+        scale_factors = _compute_scale_factors(samples_blocks, channels=self.channels)
+
+        # 3. Loudness bit allocation.
+        bits = _bit_allocation_loudness(
+            scale_factors,
+            bitpool=self.bitpool,
+            sample_rate=self.sample_rate,
+            subbands=self.subbands,
+        )
+
+        # 4. Build post-header bitstream (scale factors + join bits + quantized samples).
+        bw = BitWriter()
+        # 4a. Scale factors: 4 bits each, channel-major.
+        for ch in range(self.channels):
+            for sb in range(self.subbands):
+                bw.write(scale_factors[ch][sb] & 0xF, 4)
+        # 4b. Join bits — Plan A.1 doesn't apply joint coding (zeroes pad the
+        # joint-stereo flag bits). The slot is still reserved per A2DP §B.6.4.
+        if self.channel_mode == "joint_stereo":
+            bw.write(0, self.subbands)
+        # 4c. Quantized samples — block-major, then channel, then subband.
+        for blk in range(self.blocks):
+            for ch in range(self.channels):
+                for sb in range(self.subbands):
+                    nbits = bits[ch][sb]
+                    if nbits == 0:
+                        continue
+                    sample = samples_blocks[blk][sb * self.channels + ch]
+                    sf = scale_factors[ch][sb]
+                    if sf == 0:
+                        q = 0
+                    else:
+                        # Quantize to nbits unsigned. The mapping is:
+                        #   q = floor((sample + 2^(sf-1)) * (2^nbits - 1) / 2^sf)
+                        # which maps signed range [-2^(sf-1), 2^(sf-1)-1] to
+                        # unsigned [0, 2^nbits - 1]. Decoder reverses this.
+                        levels = (1 << nbits) - 1
+                        offset = 1 << (sf - 1)
+                        # Clamp sample to expected signed range before mapping
+                        # (analysis filter can produce values slightly outside
+                        # the nominal range due to filter ringing).
+                        max_val = (1 << sf) - 1
+                        s = sample + offset
+                        if s < 0:
+                            s = 0
+                        elif s > max_val:
+                            s = max_val
+                        q = (s * levels) // (1 << sf)
+                        q = q & ((1 << nbits) - 1)
+                    bw.write(q, nbits)
+        post_header = bytes(bw.finish())
+
+        # 4d. Pad post-header to exactly (frame_length - 4) bytes.
+        # The bit-allocation algorithm may consume fewer than `bitpool` bits per
+        # block when scale factors are low; SBC frames are fixed-length per the
+        # header config, so the remaining bytes are zero-padded.
+        expected_post_len = self._hdr_template.frame_length() - 4
+        if len(post_header) < expected_post_len:
+            post_header = post_header + bytes(expected_post_len - len(post_header))
+        elif len(post_header) > expected_post_len:
+            # Should not happen; would indicate a bit-allocation overrun.
+            raise RuntimeError(
+                f"SBC encode: post-header overflow ({len(post_header)} > {expected_post_len})"
+            )
+
+        # 5. Header with CRC over post-header bits up to end of join bits.
+        # For simplicity in Plan A.1, CRC covers scale factors + join bits.
+        # Bytes covered = scale_factor_bytes + join_bytes (joint stereo only).
+        if self.channel_mode == "joint_stereo":
+            join_bits = self.subbands
+        else:
+            join_bits = 0
+        nb = self.subbands * self.channels
+        scale_factor_bytes = math.ceil(nb / 2)
+        crc_payload_bytes = scale_factor_bytes + math.ceil(join_bits / 8)
+        crc_payload = post_header[:crc_payload_bytes]
+        header = self._hdr_template.to_bytes(payload_for_crc=crc_payload)
+        return header + post_header
