@@ -39,11 +39,11 @@ class SecurityConfig:
     enable_secure_connections: bool = False
     ctkd_enable: bool = False
     mitm_required: bool = False     # Sub-Plan 3a: triggers NC when IO caps + SC permit
+    sc_only_mode: bool = False      # SC-only (PTS mode v1.2)
     # Future hooks (commented stubs):
     # lea_enable: bool = False
     # le_security_mode: str = "1_2"
     # classic_security_mode: str = "4_2"
-    # sc_only_mode: bool = False
     # iso_encryption_enable: bool = False
     # numeric_comparison_enable: bool = False
 
@@ -51,17 +51,18 @@ class SecurityConfig:
 def _validate_sc_dependencies(cfg: "SecurityConfig") -> None:
     """Raise ConfigurationError if any SC-dependent feature is enabled without enable_secure_connections.
 
-    Currently checks only CTKD. Future Plans add their own checks here.
+    Currently checks CTKD and SC-only mode. Future Plans add their own checks here.
     """
     from pybluehost.core.errors import ConfigurationError
     requires_sc: list[str] = []
     if cfg.ctkd_enable:
         requires_sc.append("CTKD")
+    if cfg.sc_only_mode:
+        requires_sc.append("Secure Connections Only Mode")
     # Future hooks (commented stubs — uncomment when each feature lands):
     # if cfg.lea_enable:                          requires_sc.append("LE Audio")
     # if cfg.le_security_mode == "1_4":           requires_sc.append("LE Security Mode 1 Level 4")
     # if cfg.classic_security_mode == "4_4":      requires_sc.append("BR/EDR Security Mode 4 Level 4")
-    # if cfg.sc_only_mode:                        requires_sc.append("Secure Connections Only Mode")
     # if cfg.iso_encryption_enable:               requires_sc.append("ISO Channel encryption")
     # if cfg.numeric_comparison_enable:           requires_sc.append("Numeric Comparison")
     if requires_sc and not cfg.enable_secure_connections:
