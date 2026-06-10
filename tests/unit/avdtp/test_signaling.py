@@ -63,3 +63,75 @@ def test_signal_id_masks_rfa_bits():
     raw = bytes([0x50, 0xC1])
     msg = AVDTPMessage.from_bytes(raw)
     assert msg.signal_id == AVDTPSignalID.DISCOVER
+
+
+# Append to tests/unit/avdtp/test_signaling.py
+from pybluehost.avdtp.constants import MediaType, TSEP, ServiceCategory
+from pybluehost.avdtp.signaling import (
+    encode_sep_descriptor, decode_sep_descriptors,
+    encode_capabilities, decode_capabilities,
+    encode_seid_byte, decode_seid_byte,
+)
+
+
+def test_encode_sep_descriptor_source_not_in_use():
+    # seid=1, in_use=False, media=audio, tsep=SRC
+    b = encode_sep_descriptor(seid=1, in_use=False, media_type=MediaType.AUDIO, tsep=TSEP.SRC)
+    # byte 0: seid=1<<2 | in_use=0<<1 | RFA=0  = 0x04
+    # byte 1: media=0<<4 | tsep=0<<3 | RFA=0   = 0x00
+    assert b == bytes([0x04, 0x00])
+
+
+def test_encode_sep_descriptor_sink_in_use():
+    b = encode_sep_descriptor(seid=5, in_use=True, media_type=MediaType.AUDIO, tsep=TSEP.SNK)
+    # byte 0: 5<<2 | 1<<1 | 0 = 0x16
+    # byte 1: 0<<4 | 1<<3 | 0 = 0x08
+    assert b == bytes([0x16, 0x08])
+
+
+def test_decode_sep_descriptors_multiple():
+    raw = bytes([0x04, 0x00, 0x16, 0x08])
+    seps = decode_sep_descriptors(raw)
+    assert len(seps) == 2
+    assert seps[0] == (1, False, MediaType.AUDIO, TSEP.SRC)
+    assert seps[1] == (5, True, MediaType.AUDIO, TSEP.SNK)
+
+
+def test_decode_sep_descriptors_truncated_raises():
+    with pytest.raises(ValueError, match="truncated"):
+        decode_sep_descriptors(b"\x04")    # odd length
+
+
+def test_encode_capabilities_media_transport_only():
+    # Just media transport (LOSC=0)
+    caps = [(ServiceCategory.MEDIA_TRANSPORT, b"")]
+    b = encode_capabilities(caps)
+    assert b == bytes([0x01, 0x00])
+
+
+def test_encode_capabilities_with_sbc_codec():
+    sbc_blob = bytes([0x00, 0x00, 0xFF, 0xFF])    # placeholder SBC blob (codec_type+specific)
+    caps = [
+        (ServiceCategory.MEDIA_TRANSPORT, b""),
+        (ServiceCategory.MEDIA_CODEC, sbc_blob),
+    ]
+    b = encode_capabilities(caps)
+    # [01, 00, 07, 04, 00, 00, FF, FF]
+    assert b == bytes([0x01, 0x00, 0x07, 0x04]) + sbc_blob
+
+
+def test_decode_capabilities_round_trip():
+    sbc_blob = bytes([0x00, 0x00, 0xFF, 0xFF])
+    original = [
+        (ServiceCategory.MEDIA_TRANSPORT, b""),
+        (ServiceCategory.MEDIA_CODEC, sbc_blob),
+    ]
+    decoded = decode_capabilities(encode_capabilities(original))
+    assert decoded == original
+
+
+def test_seid_byte_round_trip():
+    assert encode_seid_byte(3) == 0x0C    # 3 << 2
+    assert decode_seid_byte(0x0C) == 3
+    assert encode_seid_byte(62) == 0xF8
+    assert decode_seid_byte(0xF8) == 62
