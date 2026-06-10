@@ -725,3 +725,42 @@ class SBCDecoder:
                 v for pair in zip(per_channel_pcm[0], per_channel_pcm[1]) for v in pair
             ]
         return struct.pack(f"<{len(interleaved)}h", *interleaved)
+
+
+# ---------------------------------------------------------------------
+# Backend selection.
+#
+# The pure-Python SBCEncoder/Decoder above is correct in structure but uses a
+# simplified filter bank that lacks the SBC pseudo-QMF perfect-reconstruction
+# design (see Plan A.1 Task 7 deferral). Audio reconstruction PSNR is ~20 dB
+# vs ~80 dB for a reference impl. When libsbc.so.1 (BlueZ SBC, LGPL-2.1+) is
+# available on the system, we transparently swap the classes here so callers
+# get production-grade SBC byte-for-byte.
+#
+# Pure-Python classes remain accessible as _PurePythonSBCEncoder /
+# _PurePythonSBCDecoder for tests that target the codec internals directly,
+# and for portability when libsbc isn't installed.
+# ---------------------------------------------------------------------
+
+_PurePythonSBCEncoder = SBCEncoder
+_PurePythonSBCDecoder = SBCDecoder
+
+try:  # pragma: no cover — branch tested explicitly in test_libsbc_backend
+    from pybluehost.audio.codec._sbc_libsbc import (
+        LibsbcSBCEncoder as _LibsbcSBCEncoder,
+        LibsbcSBCDecoder as _LibsbcSBCDecoder,
+        is_available as _libsbc_available,
+    )
+    if _libsbc_available():
+        SBCEncoder = _LibsbcSBCEncoder  # type: ignore[misc,assignment]
+        SBCDecoder = _LibsbcSBCDecoder  # type: ignore[misc,assignment]
+        _SBC_BACKEND = "libsbc"
+    else:
+        _SBC_BACKEND = "pure-python"
+except ImportError:  # pragma: no cover
+    _SBC_BACKEND = "pure-python"
+
+
+def sbc_backend() -> str:
+    """Returns the active SBC backend: 'libsbc' or 'pure-python'."""
+    return _SBC_BACKEND

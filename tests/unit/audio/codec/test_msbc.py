@@ -25,14 +25,17 @@ def test_msbc_frame_length_57_bytes():
 
 
 def test_msbc_round_trip_psnr_400hz():
-    """400 Hz sine at 16 kHz / mSBC → round-trip PSNR > 12 dB after warm-up.
+    """400 Hz sine at 16 kHz / mSBC → round-trip PSNR above backend threshold.
 
-    Threshold is 12 dB (not the plan's aspirational 25) because Plan A.1's
-    SBC synthesis filter has a 27 dB noiseless ceiling and mSBC's
-    bitpool=26 quantizes more aggressively than SBC's bitpool=53. Achieved
-    PSNR here is ~13 dB; Task 7 (deferred, byte-exact ETSI vectors) lifts
-    both the SBC and mSBC ceilings when a properly-matched PR pseudo-QMF
-    synthesis is wired in."""
+    Filter delay is backend-dependent (pure-Python ≈ 80, libsbc ≈ 193) so we
+    scan a range and pick the best alignment.
+
+    Thresholds:
+    - libsbc backend → > 60 dB (typically ~80 dB; near transparent)
+    - pure-Python fallback → > 12 dB (simplified filter bank, see Plan A.1
+      Task 8 deferral notes)."""
+    from pybluehost.audio.codec.sbc import sbc_backend
+
     sr = 16000
     pcm = _sine_pcm(400, sr, num_samples=15 * 8 * 50)
     enc = MSBCEncoder()
@@ -45,14 +48,23 @@ def test_msbc_round_trip_psnr_400hz():
 
     original = list(struct.unpack(f"<{len(pcm)//2}h", pcm))
     rec = list(struct.unpack(f"<{len(decoded)//2}h", bytes(decoded)))
-    # Account for 80-sample filter delay (same as SBC).
-    delay = 80
-    warmup = 80
-    n = len(rec) - delay - warmup
-    err = [original[i + warmup] - rec[i + delay + warmup] for i in range(n)]
-    mse = sum(e * e for e in err) / max(n, 1)
-    psnr = 10 * math.log10((32767 ** 2) / max(mse, 1))
-    assert psnr > 12, f"PSNR {psnr:.2f} dB below 12 dB threshold"
+    best_psnr = -math.inf
+    for delay in range(50, 250):
+        if delay + 200 >= len(rec):
+            break
+        n = min(len(original) - delay, len(rec) - delay) - 100
+        if n <= 0:
+            continue
+        err = [original[i] - rec[i + delay] for i in range(n)]
+        mse = sum(e * e for e in err) / n
+        if mse > 0:
+            best_psnr = max(best_psnr, 10 * math.log10((32767 ** 2) / mse))
+
+    backend = sbc_backend()
+    threshold = 60 if backend == "libsbc" else 12
+    assert best_psnr > threshold, (
+        f"PSNR {best_psnr:.2f} dB below {threshold} dB threshold ({backend} backend)"
+    )
 
 
 def test_msbc_optional_libsbc_cross_check():

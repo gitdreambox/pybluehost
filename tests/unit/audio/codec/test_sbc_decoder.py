@@ -52,19 +52,17 @@ def test_decoder_silence_round_trip():
 
 
 def test_decoder_sine_round_trip_psnr_above_threshold():
-    """1 kHz mono sine, encode → decode → PSNR > 15 dB after warmup blocks.
+    """1 kHz mono sine, encode → decode → PSNR above backend threshold.
 
-    The analysis+synthesis pseudo-QMF filter bank has a fixed 80-sample delay
-    (one window length), so rec[i+80] corresponds to orig[i]. We also discard
-    the first 80 samples to skip the V-state warmup transient.
+    Filter delay is backend-dependent (pure-Python ≈ 80, libsbc ≈ 73), so we
+    scan a range and pick the best alignment.
 
-    Note: Plan A.1 ships a simplified analysis/synthesis pair whose noiseless
-    reconstruction ceiling is ~27 dB (the pair isn't a fully matched PR
-    pseudo-QMF design). With quantization at bitpool=53 the achievable PSNR is
-    ~18-19 dB. Properly matched filter banks (per A2DP §B.5 Table B.7 synthesis
-    window) reach 30+ dB; Plan A.1 Task 7 (ETSI byte-exact vectors, deferred)
-    is where that work happens. The 15 dB floor here guards against regressions
-    while we still ship a usable round-trip."""
+    Thresholds:
+    - libsbc backend → > 60 dB (typically ~80 dB; near transparent)
+    - pure-Python fallback → > 15 dB (simplified analysis/synthesis pair,
+      noiseless reconstruction ceiling ~27 dB; see Plan A.1 Task 8 notes)."""
+    from pybluehost.audio.codec.sbc import sbc_backend
+
     sr = 44100
     blocks_per_frame = 16
     subbands = 8
@@ -83,16 +81,23 @@ def test_decoder_sine_round_trip_psnr_above_threshold():
     recovered, _ = dec.decode(frames)
     orig_samples = list(struct.unpack(f"<{num_samples}h", pcm))
     rec_samples = list(struct.unpack(f"<{len(recovered) // 2}h", recovered))
-    # Filter delay = 80; align orig[0..] with rec[80..]. Then skip 80 more
-    # samples to clear the V-state warmup.
-    delay = 80
-    warmup = 80
-    n = len(rec_samples) - delay - warmup
-    psnr = _psnr_db(
-        orig_samples[warmup:warmup + n],
-        rec_samples[delay + warmup:delay + warmup + n],
+    best_psnr = -math.inf
+    for delay in range(50, 250):
+        if delay + 200 >= len(rec_samples):
+            break
+        n = min(len(orig_samples) - delay, len(rec_samples) - delay) - 100
+        if n <= 0:
+            continue
+        err = [orig_samples[i] - rec_samples[i + delay] for i in range(n)]
+        mse = sum(e * e for e in err) / n
+        if mse > 0:
+            best_psnr = max(best_psnr, 10 * math.log10((32767 ** 2) / mse))
+
+    backend = sbc_backend()
+    threshold = 60 if backend == "libsbc" else 15
+    assert best_psnr > threshold, (
+        f"PSNR {best_psnr:.2f} dB below {threshold} dB threshold ({backend} backend)"
     )
-    assert psnr > 15, f"PSNR too low: {psnr:.2f} dB"
 
 
 def test_decoder_rejects_invalid_syncword():
