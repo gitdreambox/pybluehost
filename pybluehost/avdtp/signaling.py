@@ -21,9 +21,9 @@ class AVDTPMessage:
     transaction layer in `session.py` if the payload exceeds the L2CAP MTU.
     """
     transaction_id: int
-    packet_type: int
-    message_type: int
-    signal_id: int
+    packet_type: AVDTPPacketType
+    message_type: AVDTPMessageType
+    signal_id: AVDTPSignalID
     payload: bytes = b""
 
     def to_bytes(self) -> bytes:
