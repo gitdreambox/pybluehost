@@ -10,7 +10,7 @@ def test_psm_avdtp_value():
 
 
 def test_signal_ids_per_spec():
-    # AVDTP v1.3 §8.5 — signal IDs are 6-bit, values 1..12 used
+    # AVDTP v1.3 §8.5 — signal IDs are 6-bit, values 1..13 used
     assert AVDTPSignalID.DISCOVER == 0x01
     assert AVDTPSignalID.GET_CAPABILITIES == 0x02
     assert AVDTPSignalID.SET_CONFIGURATION == 0x03
@@ -21,6 +21,9 @@ def test_signal_ids_per_spec():
     assert AVDTPSignalID.CLOSE == 0x08
     assert AVDTPSignalID.SUSPEND == 0x09
     assert AVDTPSignalID.ABORT == 0x0A
+    assert AVDTPSignalID.SECURITY_CONTROL == 0x0B
+    assert AVDTPSignalID.GET_ALL_CAPABILITIES == 0x0C
+    assert AVDTPSignalID.DELAYREPORT == 0x0D
 
 
 def test_packet_types():
@@ -44,6 +47,20 @@ def test_tsep_constants():
 
 def test_media_type_audio():
     assert MediaType.AUDIO == 0x00
+
+
+def test_error_codes_per_spec():
+    # AVDTP v1.3 §8.20 — sample a representative set across signaling, payload,
+    # capability, and state error ranges.
+    assert AVDTPErrorCode.BAD_HEADER_FORMAT == 0x01
+    assert AVDTPErrorCode.BAD_LENGTH == 0x11
+    assert AVDTPErrorCode.BAD_ACP_SEID == 0x12
+    assert AVDTPErrorCode.SEP_IN_USE == 0x13
+    assert AVDTPErrorCode.SEP_NOT_IN_USE == 0x14
+    assert AVDTPErrorCode.NOT_SUPPORTED_COMMAND == 0x19
+    assert AVDTPErrorCode.INVALID_CAPABILITIES == 0x1A
+    assert AVDTPErrorCode.UNSUPPORTED_CONFIGURATION == 0x29
+    assert AVDTPErrorCode.BAD_STATE == 0x31
 
 
 def test_service_categories():

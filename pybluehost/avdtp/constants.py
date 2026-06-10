@@ -62,13 +62,14 @@ class AVDTPErrorCode(IntEnum):
 
 
 class MediaType(IntEnum):
+    """AVDTP v1.3 §8.21.2 — media type for a Stream End-Point."""
     AUDIO = 0x00
     VIDEO = 0x01
     MULTIMEDIA = 0x02
 
 
 class TSEP(IntEnum):
-    """Stream End-Point type (Source or Sink)."""
+    """AVDTP v1.3 §8.6.2 — Stream End-Point type field (Source or Sink)."""
     SRC = 0
     SNK = 1
 
@@ -85,9 +86,11 @@ class ServiceCategory(IntEnum):
     DELAY_REPORTING = 0x08
 
 
-# A2DP v1.4 §4.3.2 — SBC codec type within MEDIA_CODEC capability
+# A2DP v1.4 §4.3.2 — codec_type field within the MEDIA_CODEC capability blob.
+# Kept as bare ints (not IntEnum) because they're written directly into the
+# 1-byte codec_type slot of the wire format; the 0x03 gap is reserved.
 A2DP_CODEC_TYPE_SBC = 0x00
 A2DP_CODEC_TYPE_MPEG12 = 0x01
 A2DP_CODEC_TYPE_MPEG24_AAC = 0x02
-A2DP_CODEC_TYPE_ATRAC = 0x04
+A2DP_CODEC_TYPE_ATRAC = 0x04   # 0x03 reserved
 A2DP_CODEC_TYPE_NON_A2DP = 0xFF
