@@ -2,8 +2,13 @@ import pytest
 
 from pybluehost.avdtp.constants import (
     AVDTPMessageType, AVDTPPacketType, AVDTPSignalID,
+    MediaType, ServiceCategory, TSEP,
 )
-from pybluehost.avdtp.signaling import AVDTPMessage
+from pybluehost.avdtp.signaling import (
+    AVDTPMessage,
+    decode_capabilities, decode_sep_descriptors, decode_seid_byte,
+    encode_capabilities, encode_sep_descriptor, encode_seid_byte,
+)
 
 
 def test_single_command_to_bytes():
@@ -63,15 +68,6 @@ def test_signal_id_masks_rfa_bits():
     raw = bytes([0x50, 0xC1])
     msg = AVDTPMessage.from_bytes(raw)
     assert msg.signal_id == AVDTPSignalID.DISCOVER
-
-
-# Append to tests/unit/avdtp/test_signaling.py
-from pybluehost.avdtp.constants import MediaType, TSEP, ServiceCategory
-from pybluehost.avdtp.signaling import (
-    encode_sep_descriptor, decode_sep_descriptors,
-    encode_capabilities, decode_capabilities,
-    encode_seid_byte, decode_seid_byte,
-)
 
 
 def test_encode_sep_descriptor_source_not_in_use():

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from pybluehost.avdtp.constants import (
     AVDTPMessageType, AVDTPPacketType, AVDTPSignalID,
+    MediaType, ServiceCategory, TSEP,
 )
 
 
@@ -55,7 +56,6 @@ class AVDTPMessage:
 # ---------------------------------------------------------------------------
 # AVDTP payload codecs — DISCOVER + GET_CAPABILITIES
 # ---------------------------------------------------------------------------
-from pybluehost.avdtp.constants import MediaType, TSEP, ServiceCategory  # noqa: E402
 
 
 def encode_sep_descriptor(
@@ -105,7 +105,10 @@ def decode_capabilities(data: bytes) -> list[tuple[ServiceCategory, bytes]]:
         category = ServiceCategory(data[i])
         losc = data[i + 1]
         if i + 2 + losc > len(data):
-            raise ValueError(f"capability LOSC overruns buffer (i={i}, losc={losc})")
+            raise ValueError(
+                f"capability LOSC overruns buffer for {category.name} "
+                f"(i={i}, losc={losc}, buffer_len={len(data)})"
+            )
         out.append((category, bytes(data[i + 2:i + 2 + losc])))
         i += 2 + losc
     return out
