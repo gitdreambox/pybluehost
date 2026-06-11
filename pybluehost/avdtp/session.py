@@ -14,6 +14,7 @@ from pybluehost.avdtp.constants import (
     AVDTPErrorCode, AVDTPMessageType, AVDTPPacketType, AVDTPSignalID,
     ServiceCategory,
 )
+from pybluehost.avdtp.media import AVDTPMediaPacket
 from pybluehost.avdtp.sep import StreamEndpoint
 from pybluehost.avdtp.signaling import (
     AVDTPMessage,
@@ -77,9 +78,25 @@ class AVDTPSession:
     def set_capabilities(self, *, seid: int, capabilities: list[tuple[ServiceCategory, bytes]]) -> None:
         self._capabilities[seid] = capabilities
 
-    # media channel attach (Task 8 fills in send/recv) ---------------
+    # media channel ---------------------------------------------------
     def attach_media_channel(self, channel) -> None:
+        """Attach the L2CAP media channel that was opened in response to OPEN.
+
+        Caller arranges the L2CAP connect+config; AVDTPSession handles only the
+        AVDTP layer on top of the channel.
+        """
         self._media_channel = channel
+
+    async def send_media(self, packet: AVDTPMediaPacket) -> None:
+        if self._media_channel is None:
+            raise RuntimeError("media channel not attached — call attach_media_channel() after OPEN")
+        await self._media_channel.send(packet.to_bytes())
+
+    async def recv_media(self) -> AVDTPMediaPacket:
+        if self._media_channel is None:
+            raise RuntimeError("media channel not attached — call attach_media_channel() after OPEN")
+        data = await self._media_channel.recv()
+        return AVDTPMediaPacket.from_bytes(data)
 
     # transaction allocator ------------------------------------------
     def _allocate_tid(self) -> int:

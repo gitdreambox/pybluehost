@@ -6,6 +6,7 @@ import pytest_asyncio
 from pybluehost.avdtp.constants import (
     AVDTPSignalID, MediaType, ServiceCategory, TSEP,
 )
+from pybluehost.avdtp.media import AVDTPMediaPacket
 from pybluehost.avdtp.sep import StreamEndpoint
 from pybluehost.avdtp.session import AVDTPSession
 from pybluehost.avdtp.signaling import (
@@ -114,3 +115,39 @@ async def test_transaction_id_wraps_around_after_15(paired_sessions):
     sess_a, _ = paired_sessions
     for _ in range(20):
         await sess_a.discover()
+
+
+async def test_send_media_round_trip(paired_sessions):
+    sess_a, sess_b = paired_sessions
+    media_a = _FakeChannel()
+    media_b = _FakeChannel()
+    media_a.pair(media_b)
+    sess_a.attach_media_channel(media_a)
+    sess_b.attach_media_channel(media_b)
+
+    pkt = AVDTPMediaPacket(
+        sequence_number=1, timestamp=128, ssrc=0xABCD1234,
+        payload=bytes([0x9C] + [0x00] * 118), frame_count=1,
+    )
+    await sess_a.send_media(pkt)
+    received = await sess_b.recv_media()
+    assert received.sequence_number == 1
+    assert received.frame_count == 1
+    assert received.payload == pkt.payload
+
+
+async def test_send_media_without_channel_raises():
+    # Fresh session — no attach_media_channel() was called.
+    ch = _FakeChannel()
+    ch.pair(_FakeChannel())
+    sess = AVDTPSession(
+        ch,
+        local_seps=[StreamEndpoint(seid=1, media_type=MediaType.AUDIO, tsep=TSEP.SRC)],
+    )
+    await sess.start()
+    try:
+        pkt = AVDTPMediaPacket(sequence_number=1, timestamp=0, ssrc=0)
+        with pytest.raises(RuntimeError, match="media channel"):
+            await sess.send_media(pkt)
+    finally:
+        await sess.stop()
