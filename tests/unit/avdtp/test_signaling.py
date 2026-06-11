@@ -6,6 +6,7 @@ from pybluehost.avdtp.constants import (
 )
 from pybluehost.avdtp.signaling import (
     AVDTPMessage,
+    SBCCapability, decode_sbc_codec_capability, encode_sbc_codec_capability,
     decode_capabilities, decode_sep_descriptors, decode_seid_byte,
     encode_capabilities, encode_sep_descriptor, encode_seid_byte,
 )
@@ -131,3 +132,44 @@ def test_seid_byte_round_trip():
     assert decode_seid_byte(0x0C) == 3
     assert encode_seid_byte(62) == 0xF8
     assert decode_seid_byte(0xF8) == 62
+
+
+def test_encode_sbc_full_capability():
+    cap = SBCCapability(
+        sample_rates={44100, 48000},
+        channel_modes={"joint_stereo", "stereo", "mono"},
+        block_lengths={4, 8, 12, 16},
+        subbands={8},
+        allocations={"loudness"},
+        min_bitpool=2, max_bitpool=53,
+    )
+    b = encode_sbc_codec_capability(cap)
+    # media_type=AUDIO(0)<<4 | RFA, codec_type=SBC(0)
+    # Byte 0: 0x00
+    # Byte 1: 0x00
+    # Byte 2: sample_rate (44100=bit5, 48000=bit4) = 0x30 | channel_mode (mono=8, stereo=2, js=1) = 0x0B
+    #         → 0x3B
+    # Byte 3: block_length all=F<<4=0xF0 | subbands {8}=bit2=0x04 | alloc {loudness}=bit0=0x01
+    #         → 0xF5
+    # Byte 4: min_bitpool=2
+    # Byte 5: max_bitpool=53
+    assert b == bytes([0x00, 0x00, 0x3B, 0xF5, 0x02, 0x35])
+
+
+def test_decode_sbc_capability_round_trip():
+    cap_in = SBCCapability(
+        sample_rates={44100},
+        channel_modes={"joint_stereo"},
+        block_lengths={16},
+        subbands={8},
+        allocations={"loudness"},
+        min_bitpool=2, max_bitpool=53,
+    )
+    blob = encode_sbc_codec_capability(cap_in)
+    cap_out = decode_sbc_codec_capability(blob)
+    assert cap_out == cap_in
+
+
+def test_decode_sbc_capability_wrong_length():
+    with pytest.raises(ValueError, match="SBC capability"):
+        decode_sbc_codec_capability(b"\x00\x00\x3B\xF5\x02")    # missing max_bitpool

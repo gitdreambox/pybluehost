@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pybluehost.avdtp.constants import (
+    A2DP_CODEC_TYPE_SBC,
     AVDTPMessageType, AVDTPPacketType, AVDTPSignalID,
     MediaType, ServiceCategory, TSEP,
 )
@@ -123,3 +124,64 @@ def encode_seid_byte(seid: int) -> int:
 
 def decode_seid_byte(b: int) -> int:
     return (b >> 2) & 0x3F
+
+
+_SBC_SAMPLE_RATE_BITS = {16000: 0x80, 32000: 0x40, 44100: 0x20, 48000: 0x10}
+_SBC_CHANNEL_MODE_BITS = {"mono": 0x08, "dual": 0x04, "stereo": 0x02, "joint_stereo": 0x01}
+_SBC_BLOCK_LEN_BITS = {4: 0x80, 8: 0x40, 12: 0x20, 16: 0x10}
+_SBC_SUBBANDS_BITS = {4: 0x08, 8: 0x04}
+_SBC_ALLOC_BITS = {"snr": 0x02, "loudness": 0x01}
+
+
+@dataclass(frozen=True)
+class SBCCapability:
+    """A2DP v1.4 §4.3.2 — SBC media codec capability or configuration.
+
+    Capability form holds bitmask sets (multiple values accepted by the SEP);
+    configuration form holds singleton sets (the chosen value)."""
+    sample_rates: frozenset[int]
+    channel_modes: frozenset[str]
+    block_lengths: frozenset[int]
+    subbands: frozenset[int]
+    allocations: frozenset[str]
+    min_bitpool: int
+    max_bitpool: int
+
+    def __init__(self, *, sample_rates, channel_modes, block_lengths,
+                 subbands, allocations, min_bitpool, max_bitpool):
+        object.__setattr__(self, "sample_rates", frozenset(sample_rates))
+        object.__setattr__(self, "channel_modes", frozenset(channel_modes))
+        object.__setattr__(self, "block_lengths", frozenset(block_lengths))
+        object.__setattr__(self, "subbands", frozenset(subbands))
+        object.__setattr__(self, "allocations", frozenset(allocations))
+        object.__setattr__(self, "min_bitpool", min_bitpool)
+        object.__setattr__(self, "max_bitpool", max_bitpool)
+
+
+def encode_sbc_codec_capability(cap: SBCCapability) -> bytes:
+    """Encode the 6-byte SBC codec capability blob (A2DP §4.3.2)."""
+    b0 = 0x00   # media_type=AUDIO << 4 | RFA
+    b1 = A2DP_CODEC_TYPE_SBC
+    sr = sum(_SBC_SAMPLE_RATE_BITS[r] for r in cap.sample_rates)
+    cm = sum(_SBC_CHANNEL_MODE_BITS[m] for m in cap.channel_modes)
+    bl = sum(_SBC_BLOCK_LEN_BITS[b] for b in cap.block_lengths)
+    sb = sum(_SBC_SUBBANDS_BITS[s] for s in cap.subbands)
+    al = sum(_SBC_ALLOC_BITS[a] for a in cap.allocations)
+    return bytes([b0, b1, sr | cm, bl | sb | al, cap.min_bitpool, cap.max_bitpool])
+
+
+def decode_sbc_codec_capability(blob: bytes) -> SBCCapability:
+    """Decode a 6-byte SBC codec capability blob into an SBCCapability."""
+    if len(blob) != 6:
+        raise ValueError(f"SBC capability blob must be 6 bytes, got {len(blob)}")
+    sr_byte = blob[2]
+    bl_byte = blob[3]
+    return SBCCapability(
+        sample_rates={r for r, bit in _SBC_SAMPLE_RATE_BITS.items() if sr_byte & bit},
+        channel_modes={m for m, bit in _SBC_CHANNEL_MODE_BITS.items() if sr_byte & bit},
+        block_lengths={b for b, bit in _SBC_BLOCK_LEN_BITS.items() if bl_byte & bit},
+        subbands={s for s, bit in _SBC_SUBBANDS_BITS.items() if bl_byte & bit},
+        allocations={a for a, bit in _SBC_ALLOC_BITS.items() if bl_byte & bit},
+        min_bitpool=blob[4],
+        max_bitpool=blob[5],
+    )
