@@ -50,6 +50,17 @@ class AVDTPSession:
         self._rx_task: Optional[asyncio.Task] = None
         self._stopped = asyncio.Event()
         self._media_channel = None
+        # Inbound queue. Real L2CAP ClassicChannel pushes via on_data callback;
+        # in-memory test channels expose async recv() and the rx loop pulls
+        # from there directly. We bridge both into one queue.
+        self._inbound: asyncio.Queue[bytes] = asyncio.Queue()
+        self._channel_uses_callback = hasattr(channel, "set_events")
+        if self._channel_uses_callback:
+            from pybluehost.l2cap.channel import SimpleChannelEvents
+            channel.set_events(SimpleChannelEvents(on_data=self._on_channel_data))
+
+    async def _on_channel_data(self, data: bytes) -> None:
+        await self._inbound.put(bytes(data))
 
     # lifecycle ------------------------------------------------------
     async def start(self) -> None:
@@ -179,7 +190,10 @@ class AVDTPSession:
     async def _rx_loop(self) -> None:
         while not self._stopped.is_set():
             try:
-                data = await self._channel.recv()
+                if self._channel_uses_callback:
+                    data = await self._inbound.get()
+                else:
+                    data = await self._channel.recv()
             except asyncio.CancelledError:
                 raise
             except Exception:
