@@ -93,10 +93,21 @@ class A2DPSource(ClassicProfile):
         return _build_a2dp_sdp_record(service_class_uuid=_AUDIO_SOURCE_UUID)
 
     def _on_psm_connect(self, channel) -> None:
-        # Peer-initiated channel on our signaling PSM. Source side typically
-        # initiates, but support the inverse for the loopback test.
+        # Peer-initiated channel on our signaling PSM. Source role typically
+        # initiates; handle peer-driven path for completeness. First channel
+        # for a given ACL handle is signaling; subsequent is media.
+        handle = channel.connection_handle
+        existing = self._sessions.get(handle)
+        if existing is not None:
+            existing.avdtp.attach_media_channel(channel)
+            return
         avdtp = AVDTPSession(channel, local_seps=[self._local_sep])
         avdtp.set_capabilities(seid=self._local_sep.seid, capabilities=self.local_capabilities())
+        session = A2DPSession(
+            stack=self.stack, avdtp=avdtp, local_sep=self._local_sep,
+            role="source", handle=handle,
+        )
+        self._sessions[handle] = session
         asyncio.create_task(avdtp.start())
 
     async def connect(self, *, handle: int) -> "A2DPSession":
@@ -106,7 +117,8 @@ class A2DPSource(ClassicProfile):
         avdtp.set_capabilities(seid=self._local_sep.seid, capabilities=self.local_capabilities())
         await avdtp.start()
         session = A2DPSession(
-            stack=self.stack, avdtp=avdtp, local_sep=self._local_sep, role="source",
+            stack=self.stack, avdtp=avdtp, local_sep=self._local_sep,
+            role="source", handle=handle,
         )
         self._sessions[handle] = session
         return session
@@ -138,13 +150,21 @@ class A2DPSink(ClassicProfile):
         return _build_a2dp_sdp_record(service_class_uuid=_AUDIO_SINK_UUID)
 
     def _on_psm_connect(self, channel) -> None:
+        # First channel for a given ACL handle is the AVDTP signaling channel;
+        # a subsequent channel on the same handle is the media channel that
+        # the source opened after we accepted OPEN.
+        handle = channel.connection_handle
+        existing = self._sessions.get(handle)
+        if existing is not None:
+            existing.avdtp.attach_media_channel(channel)
+            return
         avdtp = AVDTPSession(channel, local_seps=[self._local_sep])
         avdtp.set_capabilities(seid=self._local_sep.seid, capabilities=self.local_capabilities())
         session = A2DPSession(
             stack=self.stack, avdtp=avdtp, local_sep=self._local_sep,
-            role="sink", on_pcm=self.on_pcm,
+            role="sink", on_pcm=self.on_pcm, handle=handle,
         )
-        self._sessions[id(channel)] = session
+        self._sessions[handle] = session
         asyncio.create_task(avdtp.start())
         asyncio.create_task(session._sink_rx_loop())
 
@@ -161,6 +181,7 @@ class A2DPSession:
     local_sep: StreamEndpoint
     role: str
     on_pcm: Optional[Callable[[bytes], Awaitable[None]]] = None
+    handle: Optional[int] = None
 
     _encoder: Optional[SBCEncoder] = field(default=None, init=False)
     _decoder: Optional[SBCDecoder] = field(default=None, init=False)
@@ -200,6 +221,18 @@ class A2DPSession:
         if self._peer_seid is None:
             raise RuntimeError("call negotiate_codec() first")
         await self.avdtp.open(peer_seid=self._peer_seid)
+        # Source side opens the L2CAP media channel after AVDTP OPEN — peer's
+        # L2CAP listener at PSM 0x0019 routes the second channel to the same
+        # A2DPSession (by ACL handle) and attaches it as media. Done before
+        # START so the streaming path is fully wired.
+        if self.role == "source" and self.handle is not None:
+            media_ch = await self.stack.l2cap.connect_classic_channel(
+                self.handle, PSM_AVDTP,
+            )
+            self.avdtp.attach_media_channel(media_ch)
+            # Give peer a tick to receive its media channel via _on_psm_connect
+            # and attach it to its own AVDTPSession before we start streaming.
+            await asyncio.sleep(0.05)
         await self.avdtp.start_stream(peer_seids=[self._peer_seid])
 
     async def suspend(self) -> None:

@@ -50,10 +50,13 @@ class AVDTPSession:
         self._rx_task: Optional[asyncio.Task] = None
         self._stopped = asyncio.Event()
         self._media_channel = None
-        # Inbound queue. Real L2CAP ClassicChannel pushes via on_data callback;
+        self._media_uses_callback = False
+        self._media_attached = asyncio.Event()
+        # Inbound queues. Real L2CAP ClassicChannel pushes via on_data callback;
         # in-memory test channels expose async recv() and the rx loop pulls
-        # from there directly. We bridge both into one queue.
+        # from there directly. We bridge both into one queue per channel type.
         self._inbound: asyncio.Queue[bytes] = asyncio.Queue()
+        self._media_inbound: asyncio.Queue[bytes] = asyncio.Queue()
         self._channel_uses_callback = hasattr(channel, "set_events")
         if self._channel_uses_callback:
             from pybluehost.l2cap.channel import SimpleChannelEvents
@@ -97,6 +100,14 @@ class AVDTPSession:
         AVDTP layer on top of the channel.
         """
         self._media_channel = channel
+        self._media_uses_callback = hasattr(channel, "set_events")
+        if self._media_uses_callback:
+            from pybluehost.l2cap.channel import SimpleChannelEvents
+            channel.set_events(SimpleChannelEvents(on_data=self._on_media_data))
+        self._media_attached.set()
+
+    async def _on_media_data(self, data: bytes) -> None:
+        await self._media_inbound.put(bytes(data))
 
     async def send_media(self, packet: AVDTPMediaPacket) -> None:
         if self._media_channel is None:
@@ -104,9 +115,14 @@ class AVDTPSession:
         await self._media_channel.send(packet.to_bytes())
 
     async def recv_media(self) -> AVDTPMediaPacket:
+        # Block until a media channel is attached (peer-side path: the channel
+        # arrives asynchronously via the L2CAP listener after OPEN).
         if self._media_channel is None:
-            raise RuntimeError("media channel not attached — call attach_media_channel() after OPEN")
-        data = await self._media_channel.recv()
+            await self._media_attached.wait()
+        if self._media_uses_callback:
+            data = await self._media_inbound.get()
+        else:
+            data = await self._media_channel.recv()
         return AVDTPMediaPacket.from_bytes(data)
 
     # transaction allocator ------------------------------------------

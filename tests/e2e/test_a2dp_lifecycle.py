@@ -73,21 +73,21 @@ async def a2dp_pair(stack, peer_stack, transport_mode):
         pytest.skip("real-hardware A2DP loopback is part of A.6 runbook, not e2e suite")
 
 
-async def test_a2dp_signaling_chain_via_virtual(
+async def test_a2dp_source_to_sink_loopback_via_virtual(
     a2dp_pair, transport_mode,
 ):
-    """AVDTP signaling chain over Classic ACL: pair → connect PSM 0x0019 →
-    DISCOVER → GET_CAPABILITIES → SET_CONFIGURATION.
-
-    Validates that AVDTPSession + A2DPSource/Sink + VirtualClassicLink wire up
-    correctly through L2CAP. Full media-channel loopback + PSNR is a Task 10
-    follow-up — opening the second L2CAP channel and routing it to the sink's
-    AVDTPSession via the dispatch table needs more A.2-level wiring than this
-    e2e test ships."""
+    """End-to-end PCM loopback over AVDTP: pair → AVDTP signaling chain →
+    open second L2CAP media channel → push 16 frames of 1 kHz sine →
+    sink decodes back to PCM → assert PSNR > 60 dB."""
     stack_src, stack_snk, _link = a2dp_pair
     timeout = e2e_timeout(transport_mode, virtual=5.0)
 
-    sink = A2DPSink(stack=stack_snk)
+    received_pcm: list[bytes] = []
+
+    async def collect_pcm(pcm: bytes) -> None:
+        received_pcm.append(pcm)
+
+    sink = A2DPSink(stack=stack_snk, on_pcm=collect_pcm)
     sink.register()
 
     src = A2DPSource(stack=stack_src)
@@ -101,24 +101,37 @@ async def test_a2dp_signaling_chain_via_virtual(
         )
         session = await src.connect(handle=handle)
 
-        # Give the peer's _on_psm_connect handler a tick to spin up its
-        # AVDTPSession and start its rx loop before we issue DISCOVER.
+        # Let peer spin up its AVDTPSession before we issue signaling commands.
         await asyncio.sleep(0.1)
 
-        peer_seps = await asyncio.wait_for(session.avdtp.discover(), timeout=timeout)
-        assert len(peer_seps) == 1
-        assert peer_seps[0].seid == sink._local_sep.seid
+        await asyncio.wait_for(session.negotiate_codec(), timeout=timeout)
+        await asyncio.wait_for(session.start(), timeout=timeout)
 
-        caps = await asyncio.wait_for(
-            session.avdtp.get_capabilities(peer_seid=peer_seps[0].seid),
-            timeout=timeout,
-        )
-        from pybluehost.avdtp.constants import ServiceCategory
-        cats = {c for c, _ in caps}
-        assert ServiceCategory.MEDIA_TRANSPORT in cats
-        assert ServiceCategory.MEDIA_CODEC in cats
+        # Push 16 frames of 1 kHz sine. Source-side SBCEncoder is joint-stereo,
+        # 16 blocks × 8 subbands × 2 channels = 256 samples = 512 bytes per
+        # encode call.
+        n_frames = 16
+        bytes_per_frame_in = 2 * 16 * 8 * 2
+        pcm = _sine_pcm_stereo(1000, 44100, n_frames * 16 * 8)
+        for f in range(n_frames):
+            await session.send_pcm(
+                pcm[f * bytes_per_frame_in:(f + 1) * bytes_per_frame_in]
+            )
+
+        # Drain sink — wait up to a few seconds for accumulated PCM.
+        for _ in range(60):
+            if sum(len(b) for b in received_pcm) >= bytes_per_frame_in * (n_frames - 2):
+                break
+            await asyncio.sleep(0.05)
 
         await session.close()
+
+        rec_bytes = b"".join(received_pcm)
+        assert rec_bytes, "sink received no PCM"
+        orig_left = list(struct.unpack(f"<{len(pcm) // 2}h", pcm))[0::2]
+        rec_left = list(struct.unpack(f"<{len(rec_bytes) // 2}h", rec_bytes))[0::2]
+        psnr = _best_psnr(orig_left, rec_left)
+        assert psnr > 60, f"PSNR {psnr:.2f} dB below 60 dB e2e threshold"
     finally:
         if handle is not None:
             try:
