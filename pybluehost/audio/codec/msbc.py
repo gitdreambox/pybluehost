@@ -38,6 +38,16 @@ class MSBCDecoder:
     """Inverse of MSBCEncoder. Routes 0xAD-prefixed frames through SBCDecoder."""
 
     def __init__(self) -> None:
+        # libsbc needs sbc_init_msbc (separate init path) for 0xAD frames; the
+        # generic SBCDecoder uses sbc_init which can't parse mSBC. Pure-Python
+        # SBCDecoder handles both via the same header path.
+        try:
+            from pybluehost.audio.codec._sbc_libsbc import LibsbcSBCDecoder, is_available
+            if is_available():
+                self._dec = LibsbcSBCDecoder(msbc=True)
+                return
+        except ImportError:
+            pass
         self._dec = SBCDecoder()
 
     def decode(self, frame: bytes) -> bytes:
