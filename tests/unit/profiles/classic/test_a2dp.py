@@ -81,3 +81,20 @@ def test_a2dp_source_uuid_in_record():
     src.register()
     record = stack.registered_sdp_records[0]
     assert 0x110A in _service_class_uuids(record)
+
+
+def test_public_api_imports():
+    """Every documented entry point is importable from the public API."""
+    from pybluehost.profiles.classic import A2DPSink, A2DPSource
+    from pybluehost.avdtp import (
+        AVDTPSignalID, AVDTPPacketType, AVDTPMessageType,
+        AVDTPErrorCode, MediaType, TSEP, ServiceCategory, PSM_AVDTP,
+    )
+    from pybluehost.avdtp.signaling import AVDTPMessage, SBCCapability
+    from pybluehost.avdtp.media import AVDTPMediaPacket
+    from pybluehost.avdtp.sep import StreamEndpoint
+    from pybluehost.avdtp.session import AVDTPSession
+
+    for symbol in (A2DPSource, A2DPSink, AVDTPMessage, AVDTPMediaPacket,
+                   StreamEndpoint, AVDTPSession, SBCCapability):
+        assert symbol is not None

@@ -10,7 +10,7 @@
 **下一步候选**：
 1. **v1.1 Virtual Sniffer**——PRD 草案就绪（[`docs/PRD-v1.1.md`](../PRD-v1.1.md)）。把 PyBlueHost live HCI 注入 Ellisys/WPS 分析仪软件显示。4 个 Plan、~5 周、Windows-only。design spec + Plan **未编写**。
 2. **v1.2 PTS IUT**——PRD 草案就绪（[`docs/PRD-v1.2.md`](../PRD-v1.2.md)）。PyBlueHost 当 IUT 跑 SIG PTS 一致性。Phase 1 = Fluoride 式 PTS mode + 交互式控制台手动驱动，4 个 Plan、~7.5-8.5 周；Phase 2 = auto-pts BTP 自动化（后续）。design spec + Plan **未编写**。
-3. **v2.0 Classic Audio**——PRD + design spec 已就绪（[`docs/PRD-v2.0.md`](../PRD-v2.0.md) + [`docs/superpowers/specs/2026-05-27-prd-v2.0-classic-audio-design.md`](specs/2026-05-27-prd-v2.0-classic-audio-design.md)）。6 个 Plan、14-17 周、SBC+CVSD+mSBC（无 AAC）。**Plan A.1（codec 层）已完成** ✅（11 个 Task，47 单测；Task 7 ETSI byte-exact 留 scaffold/skip 待 fixtures）。Plans A.2-A.6 详细文档**未编写**——动工前先做。
+3. **v2.0 Classic Audio**——PRD + design spec 已就绪（[`docs/PRD-v2.0.md`](../PRD-v2.0.md) + [`docs/superpowers/specs/2026-05-27-prd-v2.0-classic-audio-design.md`](specs/2026-05-27-prd-v2.0-classic-audio-design.md)）。6 个 Plan、14-17 周、SBC+CVSD+mSBC（无 AAC）。**Plan A.1（codec 层）✅** + **Plan A.2（AVDTP + A2DP）✅**（A.2: 11 个 Task + 53 单测/e2e；AVDTP signaling 完整、A2DPSource/Sink 注册到 PSM 0x0019、virtual loopback 通过 DISCOVER/GET_CAPABILITIES；media 通道全链路 PSNR 是 Task 10 follow-up，需第二条 L2CAP 信道路由完善）。Plans A.3-A.6 详细文档**未编写**。
 4. 自托管硬件 CI runner / 真机首批 adapter survey / 断线重连闭环（v1.0 运营改进，可并行）
 **版本互不依赖**：v1.1 / v1.2 / v2.0 可任意顺序或并行推进
 **不在路线图**：SMP Sub-Plan 3c (OOB)、HFP 实时 SCO 音频（推 v2.1）、AAC（推 v2.x）、LE Audio、macOS native
