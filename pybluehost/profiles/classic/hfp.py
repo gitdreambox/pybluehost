@@ -28,6 +28,28 @@ from pybluehost.profiles.classic._common import ClassicProfile
 _log = logging.getLogger(__name__)
 
 
+def _rfcomm_listen(rfcomm, channel: int, handler) -> None:
+    """Register *handler* on *channel* using whatever API *rfcomm* exposes.
+
+    The real ``RFCOMMManager.listen()`` is ``async def`` (it must await the
+    L2CAP PSM registration).  Unit-test fakes often use a plain sync
+    ``listen_channel()`` or ``listen()`` method instead.  This helper handles
+    both cases so HFP's ``register()`` stays synchronous while remaining
+    compatible with both contexts.
+    """
+    import inspect
+    if hasattr(rfcomm, "listen") and callable(rfcomm.listen):
+        result = rfcomm.listen(channel, handler)
+        if inspect.iscoroutine(result):
+            asyncio.ensure_future(result)
+    elif hasattr(rfcomm, "listen_channel"):
+        rfcomm.listen_channel(channel, handler)
+    else:
+        raise AttributeError(
+            f"{type(rfcomm).__name__!r} has neither 'listen' nor 'listen_channel'"
+        )
+
+
 HFP_RFCOMM_CHANNEL = 13           # convention for Plan A.4
 GENERIC_AUDIO_UUID = 0x1203
 _L2CAP_UUID = 0x0100
@@ -86,24 +108,24 @@ class HFPHandsFree(ClassicProfile):
 
     def register(self) -> None:
         self.stack.sdp.register(self._build_sdp_record())
-        self.stack.rfcomm.listen_channel(HFP_RFCOMM_CHANNEL, self._on_rfcomm_connect)
+        _rfcomm_listen(self.stack.rfcomm, HFP_RFCOMM_CHANNEL, self._on_rfcomm_connect)
 
-    def _on_rfcomm_connect(self, rfcomm_session) -> None:
+    def _on_rfcomm_connect(self, rfcomm_channel) -> None:
         # HF role usually initiates; the inverse direction is rare but supported.
-        handle = getattr(rfcomm_session, "connection_handle", 0)
+        handle = getattr(rfcomm_channel, "connection_handle", 0)
         sm = HFPStateMachine(
             role="hf",
             local_features=int(DEFAULT_HF_FEATURES),
             local_codecs=[HFPCodecID.CVSD, HFPCodecID.MSBC],
         )
         session = HFPSession(
-            stack=self.stack, rfcomm=rfcomm_session, sm=sm, handle=handle, role="hf",
+            stack=self.stack, rfcomm=rfcomm_channel, sm=sm, handle=handle, role="hf",
         )
         self._sessions[handle] = session
         asyncio.create_task(session._run())
 
     async def connect(self, *, handle: int, channel: int = HFP_RFCOMM_CHANNEL) -> "HFPSession":
-        rfcomm_session = await self.stack.rfcomm.connect(handle=handle, channel=channel)
+        rfcomm_session = await self.stack.rfcomm.connect(handle, channel)
         sm = HFPStateMachine(
             role="hf",
             local_features=int(DEFAULT_HF_FEATURES),
@@ -142,10 +164,10 @@ class HFPAudioGateway(ClassicProfile):
 
     def register(self) -> None:
         self.stack.sdp.register(self._build_sdp_record())
-        self.stack.rfcomm.listen_channel(HFP_RFCOMM_CHANNEL, self._on_rfcomm_connect)
+        _rfcomm_listen(self.stack.rfcomm, HFP_RFCOMM_CHANNEL, self._on_rfcomm_connect)
 
-    def _on_rfcomm_connect(self, rfcomm_session) -> None:
-        handle = getattr(rfcomm_session, "connection_handle", 0)
+    def _on_rfcomm_connect(self, rfcomm_channel) -> None:
+        handle = getattr(rfcomm_channel, "connection_handle", 0)
         sm = HFPStateMachine(
             role="ag",
             local_features=int(DEFAULT_AG_FEATURES),
@@ -158,7 +180,7 @@ class HFPAudioGateway(ClassicProfile):
             indicator_values={"service": 1, "call": 0, "callsetup": 0},
         )
         session = HFPSession(
-            stack=self.stack, rfcomm=rfcomm_session, sm=sm, handle=handle, role="ag",
+            stack=self.stack, rfcomm=rfcomm_channel, sm=sm, handle=handle, role="ag",
             on_call_event=self.on_call_event,
         )
         self._sessions[handle] = session
@@ -187,7 +209,7 @@ class HFPSession:
 
     async def _kick_off(self) -> None:
         """HF-side: register on_data and emit AT+BRSF."""
-        self.rfcomm.on_data = self._on_data
+        self.rfcomm.on_data(self._on_data)
         out = self.sm.begin()
         for m in out:
             await self._send_at(m)
@@ -196,8 +218,12 @@ class HFPSession:
 
     async def _run(self) -> None:
         """AG-side: drive the RFCOMM channel passively until SLC + beyond."""
-        self.rfcomm.on_data = self._on_data
+        self.rfcomm.on_data(self._on_data)
         await self._slc_done.wait()
+        # AG side: arm a listener for the next Synchronous_Connection_Complete
+        # event so that when HF calls setup_synchronous_connection the AG can
+        # also build its SCOLink.
+        asyncio.create_task(self._arm_sco_listener())
 
     async def _on_data(self, data: bytes) -> None:
         self._line_buf.feed(data)
@@ -220,6 +246,47 @@ class HFPSession:
         else:
             text = format_unsolicited(msg)
         await self.rfcomm.send(text.encode("ascii"))
+
+    async def setup_sco(self) -> "SCOLink":
+        """HF-side: set up a synchronous (SCO/eSCO) connection.
+
+        Calls HCI Setup_Synchronous_Connection, waits for
+        Synchronous_Connection_Complete, creates a SCOLink, and wires inbound
+        SCO data to the link's receive path.
+
+        Returns the newly created SCOLink.
+        """
+        from pybluehost.hci.sco_constants import PRESET_CVSD_S1, PRESET_MSBC_T2
+        from pybluehost.hci.sco import SCOLink
+
+        preset = PRESET_MSBC_T2 if self.negotiated_codec == "mSBC" else PRESET_CVSD_S1
+        sco_handle = await self.stack.hci.setup_synchronous_connection(
+            acl_handle=self.handle, preset=preset,
+        )
+        codec = self.negotiated_codec or "CVSD"
+        self._sco_link = SCOLink(
+            handle=sco_handle, codec=codec, controller=self.stack.hci,
+        )
+        self.stack.hci.set_on_sco_data(self._sco_link._on_inbound)
+        return self._sco_link
+
+    async def _arm_sco_listener(self) -> None:
+        """AG-side: wait passively for Synchronous_Connection_Complete, then
+        build a SCOLink so callers can access ``self._sco_link``.
+        """
+        from pybluehost.hci.sco import SCOLink
+
+        hci = self.stack.hci
+        fut = hci.add_sco_complete_listener()
+        try:
+            sco_handle = await asyncio.wait_for(fut, timeout=30.0)
+        except (asyncio.TimeoutError, Exception):
+            return
+        codec = self.negotiated_codec or "CVSD"
+        self._sco_link = SCOLink(
+            handle=sco_handle, codec=codec, controller=hci,
+        )
+        hci.set_on_sco_data(self._sco_link._on_inbound)
 
     async def close(self) -> None:
         if self._sco_link is not None:

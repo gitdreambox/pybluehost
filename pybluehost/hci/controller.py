@@ -156,6 +156,11 @@ class HCIController:
         # Synchronous_Connection_Complete (event code 0x2C).
         self._pending_sync_conn: dict[int, asyncio.Future] = {}
 
+        # Generic one-shot listeners for Synchronous_Connection_Complete.
+        # Each entry is a Future[int] that resolves with the SCO handle.
+        # Used by the AG side of HFPSession to learn its own SCO handle.
+        self._sco_complete_listeners: list[asyncio.Future] = []
+
         # SC (Secure Connections / SSP) event listeners
         self._io_capability_request_listeners: list = []
         self._user_confirmation_request_listeners: list = []
@@ -670,6 +675,18 @@ class HCIController:
             )
         return sco_handle
 
+    def add_sco_complete_listener(self) -> "asyncio.Future[int]":
+        """Return a Future that resolves with the SCO handle when the next
+        Synchronous_Connection_Complete event arrives on this controller.
+
+        Intended for the AG side of HFPSession, which receives the event
+        passively (it does not call setup_synchronous_connection()).
+        """
+        loop = asyncio.get_event_loop()
+        fut: asyncio.Future[int] = loop.create_future()
+        self._sco_complete_listeners.append(fut)
+        return fut
+
     def set_on_sco_data(self, callback: "OnSCOData | None") -> None:
         """Register a callback invoked with each received HCISCOData packet.
 
@@ -814,6 +831,18 @@ class HCIController:
                         )
                 del self._pending_sync_conn[acl_handle]
                 break  # only the first match
+            # Notify generic one-shot listeners (e.g. AG-side HFPSession).
+            for fut in list(self._sco_complete_listeners):
+                self._sco_complete_listeners.remove(fut)
+                if not fut.done():
+                    if status == 0:
+                        fut.set_result(sco_handle)
+                    else:
+                        fut.set_exception(
+                            RuntimeError(
+                                f"Synchronous_Connection_Complete failed: status=0x{status:02X}"
+                            )
+                        )
 
         # All other events go to the upper layer
         if self._on_hci_event is not None:
