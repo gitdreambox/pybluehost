@@ -175,8 +175,11 @@ def test_acl_data_roundtrip():
 def test_sco_data_encode():
     pkt = HCISCOData(handle=0x0001, packet_status=0, data=b"\xAB\xCD")
     raw = pkt.to_bytes()
-    assert raw[0] == 0x03
-    assert raw[4:] == b"\xAB\xCD"
+    # to_bytes() returns the 3-byte SCO header + payload (no H4 indicator)
+    assert raw[0] == 0x01   # handle low byte
+    assert raw[1] == 0x00   # handle high nibble | psf
+    assert raw[2] == 0x02   # data_total_length
+    assert raw[3:] == b"\xAB\xCD"
 
 
 def test_sco_data_decode():

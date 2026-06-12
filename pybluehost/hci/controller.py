@@ -594,6 +594,30 @@ class HCIController:
         self._emit_trace(Direction.DOWN, raw)
         await self._transport.send(raw)  # type: ignore[union-attr]
 
+    async def send_sco_data(self, handle: int, data: bytes, packet_status: int = 0) -> None:
+        """Send an HCI SCO Data packet — Bluetooth Core §5.4.3.
+
+        Prepends the H4 SCO indicator byte (0x03) before forwarding to the
+        transport, since HCISCOData.to_bytes() returns only the 3-byte header
+        + payload without the H4 byte.
+        """
+        from pybluehost.hci.constants import HCI_SCO_PACKET
+
+        packet = HCISCOData(handle=handle, packet_status=packet_status, data=data)
+        raw = bytes([HCI_SCO_PACKET]) + packet.to_bytes()
+        self._emit_trace(Direction.DOWN, raw)
+        await self._transport.send(raw)  # type: ignore[union-attr]
+
+    def set_on_sco_data(self, callback: "OnSCOData | None") -> None:
+        """Register a callback invoked with each received HCISCOData packet.
+
+        The callback signature is ``callback(packet: HCISCOData) -> None | Awaitable[None]``.
+        Passing None clears a previously registered callback.  This is a
+        convenience wrapper around the ``on_sco_data`` parameter of
+        ``set_upstream()``.
+        """
+        self._on_sco_data = callback
+
     def _emit_trace(self, direction: Direction, raw: bytes) -> None:
         if self._trace is None:
             return

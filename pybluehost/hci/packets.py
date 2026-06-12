@@ -157,26 +157,45 @@ class HCIACLData(HCIPacket):
 
 @dataclass
 class HCISCOData(HCIPacket):
-    """HCI SCO Data: H4(0x03) + handle+status(2 LE) + data_len(1) + data."""
+    """HCI SCO Data Packet — Bluetooth Core §5.4.3.
+
+    Header is 3 bytes (no H4 indicator in to_bytes/from_bytes):
+        byte 0:  Connection_Handle low (8 bits)
+        byte 1:  Handle high (4 bits) | PSF (2 bits) | RFU (2 bits)
+        byte 2:  Data_Total_Length (uint8)
+    Payload is `Data_Total_Length` bytes of CVSD/mSBC audio.
+    """
 
     handle: int = 0  # 12 bits
-    packet_status: int = 0  # 2 bits
+    packet_status: int = 0  # 2 bits (Packet Status Flag)
     data: bytes = b""
 
     def to_bytes(self) -> bytes:
-        handle_flags = (self.handle & 0x0FFF) | ((self.packet_status & 0x03) << 12)
-        return struct.pack(
-            "<BHB", HCI_SCO_PACKET, handle_flags, len(self.data)
-        ) + self.data
+        if not 0 <= self.handle <= 0x0FFF:
+            raise ValueError(f"handle {self.handle:#06x} out of range 0..0xFFF")
+        if not 0 <= len(self.data) <= 0xFF:
+            raise ValueError(f"SCO data too large ({len(self.data)} > 255 bytes)")
+        b0 = self.handle & 0xFF
+        b1 = ((self.handle >> 8) & 0x0F) | ((self.packet_status & 0x3) << 4)
+        return bytes([b0, b1, len(self.data) & 0xFF]) + self.data
 
     @classmethod
     def from_bytes(cls, data: bytes) -> HCISCOData:
         """Decode from raw bytes (without H4 indicator)."""
-        handle_flags, data_len = struct.unpack_from("<HB", data)
-        handle = handle_flags & 0x0FFF
-        packet_status = (handle_flags >> 12) & 0x03
-        payload = data[3 : 3 + data_len]
-        return cls(handle=handle, packet_status=packet_status, data=payload)
+        if len(data) < 3:
+            raise ValueError(f"HCI SCO data too short: {len(data)} bytes (need >= 3)")
+        handle = data[0] | ((data[1] & 0x0F) << 8)
+        psf = (data[1] >> 4) & 0x3
+        length = data[2]
+        if len(data) < 3 + length:
+            raise ValueError(
+                f"HCI SCO length byte says {length} but only {len(data) - 3} payload bytes"
+            )
+        return cls(
+            handle=handle,
+            packet_status=psf,
+            data=bytes(data[3 : 3 + length]),
+        )
 
 
 @dataclass
