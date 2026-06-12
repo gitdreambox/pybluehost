@@ -89,3 +89,32 @@ def test_ag_constructor_with_handler():
 
     ag = HFPAudioGateway(stack=_FakeStack(), on_call_event=on_event)
     assert ag.on_call_event is on_event
+
+
+def test_public_api_imports():
+    """All A.4 entry points are importable from the public API."""
+    from pybluehost.profiles.classic import (
+        HFPAudioGateway, HFPHandsFree, HFPSession,
+    )
+    from pybluehost.profiles.classic._hfp_constants import (
+        HFPCodecID, HFPCallState, HFPCallSetupState, HFPIndicator,
+        HFFeature, AGFeature, HFP_HF_UUID, HFP_AG_UUID, HANDSFREE_UUID,
+    )
+    from pybluehost.profiles.classic._at_parser import (
+        ATCommand, ATResponse, ATUnsolicited, parse_at_line, ATLineBuffer,
+    )
+    from pybluehost.profiles.classic._hfp_at import (
+        build_brsf_command, build_brsf_response, build_bac_command,
+        build_cind_test_response, build_cind_read_response, build_cmer_command,
+        build_ciev_unsolicited, build_bcs_command, build_bcs_unsolicited,
+    )
+    from pybluehost.profiles.classic._hfp_state import HFPStateMachine, SLCState
+    from pybluehost.profiles.classic._sco_loopback import (
+        WavToScoSender, ScoToWavReceiver,
+    )
+    from pybluehost.hci.packets import HCISCOData
+    from pybluehost.hci.sco import SCOLink
+    for sym in (HFPHandsFree, HFPAudioGateway, HFPSession,
+                ATCommand, HFPStateMachine, SLCState,
+                WavToScoSender, ScoToWavReceiver, HCISCOData, SCOLink):
+        assert sym is not None
