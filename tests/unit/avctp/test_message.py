@@ -3,7 +3,7 @@ import pytest
 from pybluehost.avctp.constants import (
     AVCTPMessageDirection, AVCTPPacketType, AVRCP_PROFILE_UUID,
 )
-from pybluehost.avctp.message import AVCTPMessage
+from pybluehost.avctp.message import AVCTPMessage, AVCTPReassembler
 
 
 def test_single_command_to_bytes():
@@ -142,3 +142,71 @@ def test_start_packet_validates_num_packets():
     )
     with pytest.raises(ValueError, match="num_packets"):
         msg.to_bytes()
+
+
+def test_reassembler_single_packet_returns_immediately():
+    r = AVCTPReassembler()
+    msg = AVCTPMessage(
+        transaction_label=1, packet_type=AVCTPPacketType.SINGLE,
+        cr=AVCTPMessageDirection.COMMAND, ipid=0,
+        profile_id=AVRCP_PROFILE_UUID, payload=b"\xAA",
+    )
+    out = r.feed(msg)
+    assert out is not None
+    assert out.payload == b"\xAA"
+
+
+def test_reassembler_start_then_end():
+    r = AVCTPReassembler()
+    start = AVCTPMessage(
+        transaction_label=2, packet_type=AVCTPPacketType.START,
+        cr=AVCTPMessageDirection.COMMAND, ipid=0,
+        profile_id=AVRCP_PROFILE_UUID, payload=b"\x11\x22", num_packets=2,
+    )
+    end = AVCTPMessage(
+        transaction_label=2, packet_type=AVCTPPacketType.END,
+        cr=AVCTPMessageDirection.COMMAND, ipid=0,
+        profile_id=0, payload=b"\x33\x44",
+    )
+    assert r.feed(start) is None      # awaiting more
+    out = r.feed(end)
+    assert out is not None
+    assert out.transaction_label == 2
+    assert out.profile_id == AVRCP_PROFILE_UUID
+    assert out.payload == b"\x11\x22\x33\x44"
+
+
+def test_reassembler_start_continue_end():
+    r = AVCTPReassembler()
+    start = AVCTPMessage(
+        transaction_label=3, packet_type=AVCTPPacketType.START,
+        cr=AVCTPMessageDirection.COMMAND, ipid=0,
+        profile_id=0x1234, payload=b"\x01", num_packets=3,
+    )
+    cont = AVCTPMessage(
+        transaction_label=3, packet_type=AVCTPPacketType.CONTINUE,
+        cr=AVCTPMessageDirection.COMMAND, ipid=0,
+        profile_id=0, payload=b"\x02",
+    )
+    end = AVCTPMessage(
+        transaction_label=3, packet_type=AVCTPPacketType.END,
+        cr=AVCTPMessageDirection.COMMAND, ipid=0,
+        profile_id=0, payload=b"\x03",
+    )
+    assert r.feed(start) is None
+    assert r.feed(cont) is None
+    out = r.feed(end)
+    assert out is not None
+    assert out.payload == b"\x01\x02\x03"
+    assert out.profile_id == 0x1234
+
+
+def test_reassembler_continue_without_start_is_dropped():
+    """A CONTINUE/END that arrives without a prior START is dropped silently."""
+    r = AVCTPReassembler()
+    cont = AVCTPMessage(
+        transaction_label=4, packet_type=AVCTPPacketType.CONTINUE,
+        cr=AVCTPMessageDirection.COMMAND, ipid=0,
+        profile_id=0, payload=b"\x99",
+    )
+    assert r.feed(cont) is None

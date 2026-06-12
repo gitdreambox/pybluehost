@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
+from typing import Optional
 
 from pybluehost.avctp.constants import (
     AVCTPMessageDirection, AVCTPPacketType,
@@ -92,3 +93,45 @@ class AVCTPMessage:
             transaction_label=tid, packet_type=pt, cr=cr, ipid=ipid,
             profile_id=profile_id, payload=bytes(data[3:]),
         )
+
+
+class AVCTPReassembler:
+    """AVCTP v1.4 §6.3 fragmentation reassembler.
+
+    One instance per peer L2CAP channel. Stash START/CONTINUE bytes per
+    transaction_label; return the reassembled `AVCTPMessage` (logically a
+    SINGLE-form message) on END. SINGLE packets pass through immediately.
+    Orphan CONTINUE/END fragments (no matching prior START) are dropped silently
+    per the spec.
+    """
+
+    def __init__(self) -> None:
+        self._partial: dict[int, AVCTPMessage] = {}
+
+    def feed(self, msg: AVCTPMessage) -> Optional[AVCTPMessage]:
+        if msg.packet_type == AVCTPPacketType.SINGLE:
+            return msg
+
+        if msg.packet_type == AVCTPPacketType.START:
+            # Stash a working copy whose final form is logically SINGLE.
+            self._partial[msg.transaction_label] = AVCTPMessage(
+                transaction_label=msg.transaction_label,
+                packet_type=AVCTPPacketType.SINGLE,
+                cr=msg.cr, ipid=msg.ipid,
+                profile_id=msg.profile_id,
+                payload=bytes(msg.payload),
+            )
+            return None
+
+        # CONTINUE or END
+        partial = self._partial.get(msg.transaction_label)
+        if partial is None:
+            # Orphan fragment — drop silently.
+            return None
+        partial.payload = partial.payload + bytes(msg.payload)
+
+        if msg.packet_type == AVCTPPacketType.END:
+            self._partial.pop(msg.transaction_label, None)
+            return partial
+
+        return None
