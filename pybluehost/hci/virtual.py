@@ -37,6 +37,7 @@ from pybluehost.hci.constants import (
     HCI_READ_LOCAL_VERSION,
     HCI_RESET,
     HCI_SET_EVENT_MASK,
+    HCI_SETUP_SYNCHRONOUS_CONNECTION,
     HCI_USER_CONFIRMATION_REQUEST_REPLY,
     HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
     HCI_WRITE_LE_HOST_SUPPORTED,
@@ -266,6 +267,15 @@ class VirtualController:
                 opcode, b"\x00" + struct.pack("<H", handle)
             )
 
+        # --- Setup_Synchronous_Connection — Command Status + async event ---
+        if opcode == HCI_SETUP_SYNCHRONOUS_CONNECTION and len(raw_params) >= 2:
+            acl_handle = struct.unpack_from("<H", raw_params, 0)[0]
+            sco_handle = 0x0100  # synthetic SCO handle issued by the virtual controller
+            asyncio.create_task(
+                self._emit_synchronous_connection_complete(acl_handle, sco_handle)
+            )
+            return self._make_command_status(opcode, status=0)
+
         # --- Standard Command Complete dispatch ---
         packet = decode_hci_packet(data)
         if not isinstance(packet, HCICommand):
@@ -308,6 +318,34 @@ class VirtualController:
         params = bytes([1]) + struct.pack("<HH", handle, count)
         event = HCIEvent(
             event_code=int(EventCode.NUM_COMPLETED_PACKETS), parameters=params,
+        )
+        await self._send_event_to_host(event)
+
+    async def _emit_synchronous_connection_complete(
+        self, acl_handle: int, sco_handle: int
+    ) -> None:
+        """Emit a synthetic Synchronous_Connection_Complete event.
+
+        Layout per Core §7.7.35:
+          status(1) + sco_handle(2 LE) + bd_addr(6) + link_type(1) +
+          tx_interval(1) + retransmission_window(1) + rx_packet_length(2 LE) +
+          tx_packet_length(2 LE) + air_mode(1)   [= 17 bytes total]
+        """
+        await asyncio.sleep(0)  # let Command Status reach the host first
+        params = (
+            bytes([0x00])                          # status = success
+            + struct.pack("<H", sco_handle)        # SCO connection handle
+            + bytes(self._address.address)         # BD_ADDR (6 bytes)
+            + bytes([0x02])                        # link_type = eSCO
+            + bytes([0x06])                        # tx_interval (placeholder)
+            + bytes([0x02])                        # retransmission_window
+            + struct.pack("<H", 0x003C)            # rx_packet_length (60 bytes)
+            + struct.pack("<H", 0x003C)            # tx_packet_length (60 bytes)
+            + bytes([0x02])                        # air_mode = transparent (mSBC-compatible)
+        )
+        event = HCIEvent(
+            event_code=int(EventCode.SYNCHRONOUS_CONNECTION_COMPLETE),
+            parameters=params,
         )
         await self._send_event_to_host(event)
 

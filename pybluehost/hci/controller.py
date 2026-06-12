@@ -152,6 +152,10 @@ class HCIController:
         self._encryption_change_listeners: list = []
         self._le_ltk_request_listeners: list = []
 
+        # SCO setup — pending futures keyed by ACL handle awaiting
+        # Synchronous_Connection_Complete (event code 0x2C).
+        self._pending_sync_conn: dict[int, asyncio.Future] = {}
+
         # SC (Secure Connections / SSP) event listeners
         self._io_capability_request_listeners: list = []
         self._user_confirmation_request_listeners: list = []
@@ -608,6 +612,64 @@ class HCIController:
         self._emit_trace(Direction.DOWN, raw)
         await self._transport.send(raw)  # type: ignore[union-attr]
 
+    async def setup_synchronous_connection(
+        self,
+        *,
+        acl_handle: int,
+        preset: dict,
+    ) -> int:
+        """HCI Setup_Synchronous_Connection (Core §7.1.41).
+
+        Sends the command and awaits the asynchronous
+        ``Synchronous_Connection_Complete`` event (event code 0x2C), then
+        returns the new SCO/eSCO connection handle on success.
+
+        Raises ``RuntimeError`` if the controller reports a non-zero status.
+        Raises ``CommandTimeoutError`` if no response arrives within
+        ``command_timeout`` seconds.
+
+        *preset* should be one of ``PRESET_CVSD_S1`` or ``PRESET_MSBC_T2``
+        from ``pybluehost.hci.sco_constants``.
+        """
+        import struct
+        from pybluehost.hci.constants import HCI_SETUP_SYNCHRONOUS_CONNECTION
+
+        # Build the 17-byte parameter block (Core §7.1.41 Table 7.26).
+        # connection_handle(2) + tx_bw(4) + rx_bw(4) + max_latency(2) +
+        # voice_setting(2) + retransmission_effort(1) + packet_type(2)
+        params = struct.pack(
+            "<HIIHHBH",
+            acl_handle,
+            preset["tx_bw"],
+            preset["rx_bw"],
+            preset["max_latency"],
+            preset["voice_setting"],
+            preset["retransmission_effort"],
+            preset["packet_type"],
+        )
+        cmd = HCICommand(opcode=HCI_SETUP_SYNCHRONOUS_CONNECTION, parameters=params)
+
+        # Register a future to catch the async Synchronous_Connection_Complete event.
+        loop = asyncio.get_event_loop()
+        fut: asyncio.Future[int] = loop.create_future()
+        self._pending_sync_conn[acl_handle] = fut
+
+        # The spec says the controller responds to Setup_Synchronous_Connection
+        # with a Command Status event first, then an async
+        # Synchronous_Connection_Complete event.  send_command() resolves on
+        # Command Status so we can then wait for the future.
+        await self.send_command(cmd)
+
+        try:
+            sco_handle = await asyncio.wait_for(fut, timeout=self._command_timeout)
+        except asyncio.TimeoutError:
+            self._pending_sync_conn.pop(acl_handle, None)
+            raise CommandTimeoutError(
+                f"Synchronous_Connection_Complete for ACL handle 0x{acl_handle:04X} "
+                f"timed out after {self._command_timeout}s"
+            )
+        return sco_handle
+
     def set_on_sco_data(self, callback: "OnSCOData | None") -> None:
         """Register a callback invoked with each received HCISCOData packet.
 
@@ -726,6 +788,32 @@ class HCIController:
                 result = listener(addr)
                 if asyncio.iscoroutine(result):
                     await result
+
+        # Synchronous_Connection_Complete (0x2C) — resolve any pending
+        # setup_synchronous_connection() futures.
+        # Layout per Core §7.7.35:
+        #   status(1) + sco_handle(2 LE) + bd_addr(6) + link_type(1) +
+        #   tx_interval(1) + retransmission_window(1) + rx_packet_length(2 LE) +
+        #   tx_packet_length(2 LE) + air_mode(1)
+        if event.event_code == EventCode.SYNCHRONOUS_CONNECTION_COMPLETE and len(event.parameters) >= 3:
+            status = event.parameters[0]
+            sco_handle = int.from_bytes(event.parameters[1:3], "little")
+            # Resolve the oldest pending future (keyed by ACL handle; since we
+            # don't know which ACL handle the event corresponds to at this level,
+            # resolve all waiting futures with the first Synchronous_Connection_Complete
+            # that arrives — sufficient for the unit-test / HFP single-SCO case).
+            for acl_handle, fut in list(self._pending_sync_conn.items()):
+                if not fut.done():
+                    if status == 0:
+                        fut.set_result(sco_handle)
+                    else:
+                        fut.set_exception(
+                            RuntimeError(
+                                f"Synchronous_Connection_Complete failed: status=0x{status:02X}"
+                            )
+                        )
+                del self._pending_sync_conn[acl_handle]
+                break  # only the first match
 
         # All other events go to the upper layer
         if self._on_hci_event is not None:
