@@ -1,7 +1,8 @@
-"""AVCTP v1.4 message encode/decode.
+"""AVCTP v1.4 §6.1 message encode/decode — SINGLE/START/CONTINUE/END packet forms.
 
-Single-packet form (PT=SINGLE) only in this module's constructor — START/
-CONTINUE/END fragmentation is handled at the session layer in Task 3."""
+This module handles per-packet wire format. Reassembling fragmented messages
+(stashing START + CONTINUEs and emitting a unified payload on END) is the
+session-layer concern; see `pybluehost.avctp.session` (Task 3+)."""
 from __future__ import annotations
 
 import struct
@@ -40,6 +41,10 @@ class AVCTPMessage:
             | (self.ipid & 0x1)
         )
         if self.packet_type == AVCTPPacketType.START:
+            if not 1 <= self.num_packets <= 0xFF:
+                raise ValueError(
+                    f"num_packets {self.num_packets} out of range 1..255 (AVCTP v1.4 §6.3)"
+                )
             return (
                 bytes([b0, self.num_packets & 0xFF])
                 + struct.pack(">H", self.profile_id & 0xFFFF)

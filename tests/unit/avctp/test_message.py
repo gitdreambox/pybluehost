@@ -73,3 +73,72 @@ def test_to_bytes_validates_transaction_label():
     )
     with pytest.raises(ValueError, match="transaction_label"):
         msg.to_bytes()
+
+
+def test_continue_packet_round_trip():
+    """CONTINUE packets carry only TID/PT/CR — no profile_id."""
+    msg = AVCTPMessage(
+        transaction_label=0x7,
+        packet_type=AVCTPPacketType.CONTINUE,
+        cr=AVCTPMessageDirection.COMMAND,
+        ipid=0, profile_id=0, payload=b"\xCC\xDD",
+    )
+    raw = msg.to_bytes()
+    # byte 0: 0x7<<4 | 2<<2 | 0<<1 | 0 = 0x78
+    # then payload bytes only
+    assert raw == bytes([0x78, 0xCC, 0xDD])
+    decoded = AVCTPMessage.from_bytes(raw)
+    assert decoded.transaction_label == 7
+    assert decoded.packet_type == AVCTPPacketType.CONTINUE
+    assert decoded.cr == AVCTPMessageDirection.COMMAND
+    assert decoded.profile_id == 0
+    assert decoded.payload == b"\xCC\xDD"
+
+
+def test_end_packet_round_trip():
+    msg = AVCTPMessage(
+        transaction_label=0x9,
+        packet_type=AVCTPPacketType.END,
+        cr=AVCTPMessageDirection.RESPONSE,
+        ipid=0, profile_id=0, payload=b"\xEE",
+    )
+    raw = msg.to_bytes()
+    # byte 0: 0x9<<4 | 3<<2 | 1<<1 | 0 = 0x9E
+    assert raw == bytes([0x9E, 0xEE])
+    decoded = AVCTPMessage.from_bytes(raw)
+    assert decoded.packet_type == AVCTPPacketType.END
+    assert decoded.cr == AVCTPMessageDirection.RESPONSE
+    assert decoded.payload == b"\xEE"
+
+
+def test_start_packet_round_trip():
+    """START packets carry num_packets byte + profile_id + payload."""
+    msg = AVCTPMessage(
+        transaction_label=0x2,
+        packet_type=AVCTPPacketType.START,
+        cr=AVCTPMessageDirection.COMMAND,
+        ipid=0, profile_id=AVRCP_PROFILE_UUID,
+        payload=b"\x11\x22", num_packets=3,
+    )
+    raw = msg.to_bytes()
+    # byte 0: 0x2<<4 | 1<<2 | 0<<1 | 0 = 0x24
+    # byte 1: num_packets=3
+    # bytes 2-3: profile_id = 0x110E BE
+    # bytes 4+: payload
+    assert raw == bytes([0x24, 0x03, 0x11, 0x0E, 0x11, 0x22])
+    decoded = AVCTPMessage.from_bytes(raw)
+    assert decoded.packet_type == AVCTPPacketType.START
+    assert decoded.num_packets == 3
+    assert decoded.profile_id == AVRCP_PROFILE_UUID
+    assert decoded.payload == b"\x11\x22"
+
+
+def test_start_packet_validates_num_packets():
+    """START packets require 1..255 num_packets per AVCTP v1.4 §6.3."""
+    msg = AVCTPMessage(
+        transaction_label=0x1, packet_type=AVCTPPacketType.START,
+        cr=AVCTPMessageDirection.COMMAND, ipid=0,
+        profile_id=AVRCP_PROFILE_UUID, payload=b"\x00", num_packets=0,
+    )
+    with pytest.raises(ValueError, match="num_packets"):
+        msg.to_bytes()
