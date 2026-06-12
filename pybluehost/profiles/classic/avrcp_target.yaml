@@ -1,0 +1,15 @@
+# AVRCP Target SDP record (AVRCP v1.6 §6, UUID 0x110C + 0x110E)
+ServiceClassIDList:
+  - uuid16: 0x110E   # AVRemoteControl
+  - uuid16: 0x110C   # AVRemoteControlTarget
+ProtocolDescriptorList:
+  - - uuid16: 0x0100
+      params:
+        - uint16: 0x0017
+  - - uuid16: 0x0017
+      params:
+        - uint16: 0x0104
+BluetoothProfileDescriptorList:
+  - - uuid16: 0x110E
+      version: 0x0106
+SupportedFeatures: 0x0001

@@ -1,8 +1,10 @@
-"""Bluetooth Classic profiles (A2DP, AVRCP, HFP, HSP).
-
-Each profile is a small class that registers an SDP record + L2CAP/RFCOMM
-listeners against a Stack and exposes session objects for active connections.
-"""
+"""Bluetooth Classic profiles (A2DP, AVRCP, HFP, HSP)."""
 from pybluehost.profiles.classic.a2dp import A2DPSession, A2DPSink, A2DPSource
+from pybluehost.profiles.classic.avrcp import (
+    AVRCPController, AVRCPSession, AVRCPTarget,
+)
 
-__all__ = ["A2DPSource", "A2DPSink", "A2DPSession"]
+__all__ = [
+    "A2DPSource", "A2DPSink", "A2DPSession",
+    "AVRCPController", "AVRCPTarget", "AVRCPSession",
+]

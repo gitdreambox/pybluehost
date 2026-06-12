@@ -1,0 +1,15 @@
+# AVRCP Controller SDP record (AVRCP v1.6 §6, UUID 0x110F + 0x110E)
+ServiceClassIDList:
+  - uuid16: 0x110E   # AVRemoteControl (legacy generic)
+  - uuid16: 0x110F   # AVRemoteControlController
+ProtocolDescriptorList:
+  - - uuid16: 0x0100   # L2CAP
+      params:
+        - uint16: 0x0017   # PSM_AVCTP
+  - - uuid16: 0x0017   # AVCTP
+      params:
+        - uint16: 0x0104   # AVCTP v1.4
+BluetoothProfileDescriptorList:
+  - - uuid16: 0x110E
+      version: 0x0106   # AVRCP v1.6
+SupportedFeatures: 0x0001   # Category 1 (Player)
