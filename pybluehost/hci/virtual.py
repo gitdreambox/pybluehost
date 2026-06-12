@@ -16,6 +16,7 @@ from pybluehost.hci.constants import (
     EventCode,
     HCI_ACL_PACKET,
     HCI_COMMAND_PACKET,
+    HCI_SCO_PACKET,
     HCI_HOST_BUFFER_SIZE,
     HCI_IO_CAPABILITY_REQUEST_REPLY,
     HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY,
@@ -55,6 +56,7 @@ from pybluehost.hci.packets import (
     HCIACLData,
     HCICommand,
     HCIEvent,
+    HCISCOData,
     decode_hci_packet,
 )
 from pybluehost.transport.base import Transport, TransportInfo
@@ -71,6 +73,11 @@ class VirtualController:
         self._address = address
         self._host_sink: object | None = None  # set by create(); used for async event injection
         self._acl_forwarder = None  # set by VirtualLELink to bridge ACL frames
+        self._sco_forwarder = None  # set by VirtualClassicLink to bridge SCO frames
+        # Optional async hook for VirtualClassicLink to intercept Setup_Synchronous_Connection.
+        # Signature: async (acl_handle: int, raw_params: bytes) -> Optional[bytes]
+        # If it returns non-None bytes, that becomes the HCI response; the local stub is skipped.
+        self._sco_setup_hook = None
         # Optional async hook called by VirtualLELink to intercept encryption starts.
         # Signature: async (handle, rand, ediv, ltk) -> None
         # When set, the VirtualController skips its own ENCRYPTION_CHANGE emission
@@ -168,6 +175,22 @@ class VirtualController:
         if sink is not None:
             await sink.on_transport_data(acl.to_bytes())  # type: ignore[union-attr]
 
+    def set_sco_forwarder(self, forwarder) -> None:
+        """Register an async callback invoked with each SCO frame coming from the host.
+
+        forwarder: async callable taking HCISCOData. Used by VirtualClassicLink to bridge
+        SCO frames between two VirtualControllers.
+        """
+        self._sco_forwarder = forwarder
+
+    async def _inject_sco_to_host(self, sco: HCISCOData) -> None:
+        """Push an SCO frame (with H4 indicator) to the host-side sink."""
+        sink = self._host_sink
+        if sink is not None:
+            # Prepend H4 SCO indicator byte
+            raw = bytes([HCI_SCO_PACKET]) + sco.to_bytes()
+            await sink.on_transport_data(raw)  # type: ignore[union-attr]
+
     async def process(self, data: bytes) -> bytes | None:
         """Process raw H4+HCI bytes and return a response event.
 
@@ -177,6 +200,14 @@ class VirtualController:
         Returns None if the packet is not a command.
         """
         if not data:
+            return None
+
+        # Route SCO frames to the registered forwarder (if any)
+        if data[0] == HCI_SCO_PACKET:
+            if self._sco_forwarder is not None and len(data) >= 4:
+                raw_body = data[1:]  # strip H4 indicator
+                sco = HCISCOData.from_bytes(raw_body)
+                asyncio.create_task(self._sco_forwarder(sco))
             return None
 
         # Route ACL frames to the registered forwarder (if any)
@@ -270,6 +301,13 @@ class VirtualController:
         # --- Setup_Synchronous_Connection — Command Status + async event ---
         if opcode == HCI_SETUP_SYNCHRONOUS_CONNECTION and len(raw_params) >= 2:
             acl_handle = struct.unpack_from("<H", raw_params, 0)[0]
+            if self._sco_setup_hook is not None:
+                # VirtualClassicLink intercepts: allocates handles, populates maps,
+                # and emits Synchronous_Connection_Complete on both controllers.
+                result = await self._sco_setup_hook(acl_handle, raw_params)
+                if result is not None:
+                    return result
+            # Stand-alone (no bridge): synthesize the event locally.
             sco_handle = 0x0100  # synthetic SCO handle issued by the virtual controller
             asyncio.create_task(
                 self._emit_synchronous_connection_complete(acl_handle, sco_handle)

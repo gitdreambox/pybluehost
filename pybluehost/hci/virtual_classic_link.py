@@ -29,10 +29,11 @@ from pybluehost.hci.constants import (
     HCI_PIN_CODE_REQUEST_REPLY,
     HCI_REJECT_CONNECTION_REQ,
     HCI_SET_CONNECTION_ENCRYPTION,
+    HCI_SETUP_SYNCHRONOUS_CONNECTION,
     HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
     HCI_USER_CONFIRMATION_REQUEST_REPLY,
 )
-from pybluehost.hci.packets import HCIACLData, HCIEvent
+from pybluehost.hci.packets import HCIACLData, HCIEvent, HCISCOData
 from pybluehost.hci.virtual import VirtualController
 
 
@@ -66,6 +67,9 @@ class VirtualClassicLink:
     _next_handle: int = field(default=0x0040, init=False)
     _auth_state: dict = field(default_factory=dict, init=False)
     _attached: bool = field(default=False, init=False)
+    # SCO handle mappings: central SCO handle -> peripheral SCO handle and vice versa
+    _central_to_peripheral_sco: dict = field(default_factory=dict, init=False)
+    _peripheral_to_central_sco: dict = field(default_factory=dict, init=False)
 
     # -- Lifecycle ---------------------------------------------------------
 
@@ -74,6 +78,10 @@ class VirtualClassicLink:
         self.peripheral.command_interceptor = self._make_interceptor(self.peripheral)
         self.central.set_acl_forwarder(self._forward_central_to_peripheral)
         self.peripheral.set_acl_forwarder(self._forward_peripheral_to_central)
+        self.central.set_sco_forwarder(self._forward_sco_central_to_peripheral)
+        self.peripheral.set_sco_forwarder(self._forward_sco_peripheral_to_central)
+        self.central._sco_setup_hook = self._make_sco_setup_hook(self.central)
+        self.peripheral._sco_setup_hook = self._make_sco_setup_hook(self.peripheral)
         self._attached = True
 
     def detach(self) -> None:
@@ -81,8 +89,14 @@ class VirtualClassicLink:
         self.peripheral.command_interceptor = None
         self.central.set_acl_forwarder(None)
         self.peripheral.set_acl_forwarder(None)
+        self.central.set_sco_forwarder(None)
+        self.peripheral.set_sco_forwarder(None)
+        self.central._sco_setup_hook = None
+        self.peripheral._sco_setup_hook = None
         self._handles.clear()
         self._auth_state.clear()
+        self._central_to_peripheral_sco.clear()
+        self._peripheral_to_central_sco.clear()
         self._attached = False
 
     async def disconnect(self) -> None:
@@ -357,6 +371,116 @@ class VirtualClassicLink:
             return
         peer = self._peer_of(source)
         await peer._inject_acl_to_host(acl)
+
+    # -- SCO forwarders ----------------------------------------------------
+
+    def _allocate_sco_handle(self, acl_handle: int) -> int:
+        """Derive a SCO handle from the ACL handle, keeping it distinct (bit 9 set)."""
+        return 0x0200 | (acl_handle & 0xFF)
+
+    def _make_sco_setup_hook(self, controller: VirtualController):
+        """Build a _sco_setup_hook closure bound to `controller`.
+
+        Called by VirtualController when it sees HCI_SETUP_SYNCHRONOUS_CONNECTION.
+        Returns a Command_Status response and schedules Synchronous_Connection_Complete
+        on BOTH controllers with their respective SCO handles.
+        """
+
+        async def _hook(acl_handle: int, raw_params: bytes):
+            # Determine which is initiator and which is peer
+            if controller is self.central:
+                initiator = self.central
+                peer = self.peripheral
+                central_sco_handle = self._allocate_sco_handle(acl_handle)
+                # Use a slightly different handle on the peer side to be safe,
+                # but using the same handle is fine if symmetric; keep same value.
+                peripheral_sco_handle = central_sco_handle
+            else:
+                initiator = self.peripheral
+                peer = self.central
+                peripheral_sco_handle = self._allocate_sco_handle(acl_handle)
+                central_sco_handle = peripheral_sco_handle
+
+            # Populate the bidirectional maps
+            self._central_to_peripheral_sco[central_sco_handle] = peripheral_sco_handle
+            self._peripheral_to_central_sco[peripheral_sco_handle] = central_sco_handle
+
+            # Emit Synchronous_Connection_Complete on both sides concurrently
+            asyncio.create_task(
+                self._emit_synchronous_connection_complete_both(
+                    initiator=initiator,
+                    peer=peer,
+                    initiator_sco_handle=central_sco_handle if controller is self.central
+                                        else peripheral_sco_handle,
+                    peer_sco_handle=peripheral_sco_handle if controller is self.central
+                                   else central_sco_handle,
+                )
+            )
+            # Return a Command_Status(0) to the controller so it sends it to the host
+            body = bytes([0x00, 0x01]) + struct.pack("<H", HCI_SETUP_SYNCHRONOUS_CONNECTION)
+            return bytes([0x04, int(EventCode.COMMAND_STATUS), len(body)]) + body
+
+        return _hook
+
+    async def _emit_synchronous_connection_complete_both(
+        self,
+        initiator: VirtualController,
+        peer: VirtualController,
+        initiator_sco_handle: int,
+        peer_sco_handle: int,
+    ) -> None:
+        """Emit Synchronous_Connection_Complete on both sides after a brief yield."""
+        await asyncio.sleep(0)  # let Command_Status reach the host first
+
+        def _make_params(controller: VirtualController, sco_handle: int) -> bytes:
+            peer_ctrl = self._peer_of(controller)
+            peer_addr = self._addr_of(peer_ctrl)
+            return (
+                bytes([0x00])                       # status = success
+                + struct.pack("<H", sco_handle)     # SCO connection handle
+                + peer_addr.to_hci()                # BD_ADDR of peer
+                + bytes([0x02])                     # link_type = eSCO
+                + bytes([0x06])                     # tx_interval
+                + bytes([0x02])                     # retransmission_window
+                + struct.pack("<H", 0x003C)         # rx_packet_length (60)
+                + struct.pack("<H", 0x003C)         # tx_packet_length (60)
+                + bytes([0x02])                     # air_mode = transparent
+            )
+
+        await asyncio.gather(
+            initiator._send_event_to_host(HCIEvent(
+                event_code=int(EventCode.SYNCHRONOUS_CONNECTION_COMPLETE),
+                parameters=_make_params(initiator, initiator_sco_handle),
+            )),
+            peer._send_event_to_host(HCIEvent(
+                event_code=int(EventCode.SYNCHRONOUS_CONNECTION_COMPLETE),
+                parameters=_make_params(peer, peer_sco_handle),
+            )),
+        )
+
+    async def _forward_sco_central_to_peripheral(self, sco: HCISCOData) -> None:
+        """Forward SCO data from central to peripheral, translating the handle."""
+        peer_sco_handle = self._central_to_peripheral_sco.get(sco.handle)
+        if peer_sco_handle is None:
+            return
+        translated = HCISCOData(
+            handle=peer_sco_handle,
+            packet_status=sco.packet_status,
+            data=sco.data,
+        )
+        await self.peripheral._inject_sco_to_host(translated)
+
+    async def _forward_sco_peripheral_to_central(self, sco: HCISCOData) -> None:
+        """Forward SCO data from peripheral to central, translating the handle."""
+        central_sco_handle = self._peripheral_to_central_sco.get(sco.handle)
+        if central_sco_handle is None:
+            return
+        translated = HCISCOData(
+            handle=central_sco_handle,
+            packet_status=sco.packet_status,
+            data=sco.data,
+        )
+        await self.central._inject_sco_to_host(translated)
 
     # -- AuthBridge --------------------------------------------------------
 
