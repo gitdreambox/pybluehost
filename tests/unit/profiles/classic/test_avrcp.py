@@ -87,3 +87,35 @@ def test_target_constructor_with_handlers():
     )
     assert tgt.on_pass_through is on_pt
     assert tgt.on_notification_register is on_notify_register
+
+
+def test_public_api_imports():
+    """All A.3 entry points are importable from the public API."""
+    from pybluehost.profiles.classic import (
+        AVRCPController, AVRCPSession, AVRCPTarget,
+    )
+    from pybluehost.avctp import (
+        AVCTPPacketType, AVCTPMessageDirection,
+        PSM_AVCTP, AVRCP_PROFILE_UUID,
+        AVRCP_CONTROLLER_UUID, AVRCP_TARGET_UUID,
+    )
+    from pybluehost.avctp.message import AVCTPMessage, AVCTPReassembler
+    from pybluehost.avctp.session import AVCTPSession
+    from pybluehost.avrcp import (
+        AVCFrame, AVCCtype, AVCOpCode, AVCSubunitType,
+        AVRCPEventID, AVRCPMetadataPDU, AVRCPOperationID, AVRCPPlayStatus,
+    )
+    from pybluehost.avrcp.passthrough import PassThroughCommand, PassThroughResponse
+    from pybluehost.avrcp.notification import (
+        build_notification_changed_response,
+        build_notification_interim_response,
+        build_register_notification_command,
+    )
+    from pybluehost.avrcp.unit_info import (
+        build_unit_info_command, build_unit_info_response,
+        build_subunit_info_command, build_subunit_info_response,
+    )
+    for sym in (AVRCPController, AVRCPTarget, AVRCPSession,
+                AVCTPMessage, AVCTPReassembler, AVCTPSession,
+                AVCFrame, PassThroughCommand, PassThroughResponse):
+        assert sym is not None
