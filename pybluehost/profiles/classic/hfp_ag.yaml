@@ -1,0 +1,14 @@
+# HFP AG SDP record (HFP v1.8 §5.4, UUID 0x111F + 0x1203)
+ServiceClassIDList:
+  - uuid16: 0x111F   # HandsfreeAudioGateway (AG role)
+  - uuid16: 0x1203
+ProtocolDescriptorList:
+  - - uuid16: 0x0100
+  - - uuid16: 0x0003
+      params:
+        - uint8: 13
+BluetoothProfileDescriptorList:
+  - - uuid16: 0x111E
+      version: 0x0108
+SupportedFeatures: 0x0222   # EC_NR + REJECT_CALL + CODEC_NEGOTIATION
+Network: 0x01   # AG can reject calls

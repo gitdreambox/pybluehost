@@ -1,0 +1,13 @@
+# HFP HF SDP record (HFP v1.8 §5.4, UUID 0x111E + 0x1203)
+ServiceClassIDList:
+  - uuid16: 0x111E   # Handsfree (HF role)
+  - uuid16: 0x1203   # GenericAudio
+ProtocolDescriptorList:
+  - - uuid16: 0x0100   # L2CAP
+  - - uuid16: 0x0003   # RFCOMM
+      params:
+        - uint8: 13     # HFP_RFCOMM_CHANNEL
+BluetoothProfileDescriptorList:
+  - - uuid16: 0x111E
+      version: 0x0108   # HFP v1.8
+SupportedFeatures: 0x0085   # EC_NR + CLI + CODEC_NEGOTIATION
