@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 
 from pybluehost.audio.codec import (
-    CVSDEncoder, MSBCEncoder,
+    CVSDDecoder, CVSDEncoder, MSBCDecoder, MSBCEncoder,
 )
 from pybluehost.hci.sco import SCOLink
 
@@ -83,3 +83,41 @@ class MicToScoSender:
     async def stop(self) -> None:
         """Signal the run loop to exit cleanly."""
         self._stop.set()
+
+
+class ScoToSpeakerReceiver:
+    """Registers an on_data callback on the SCO link, decodes inbound
+    payloads (CVSD: one 30-byte frame; mSBC: two 57-byte frames packed),
+    and writes PCM to an AudioOutputDevice.
+
+    Write errors are swallowed so a misbehaving speaker can't stall the
+    SCO receive path.
+    """
+
+    def __init__(self, *, audio_output, sco_link: SCOLink) -> None:
+        if sco_link.codec not in _CODEC_PROFILE:
+            raise ValueError(f"unsupported codec {sco_link.codec!r}")
+        self._audio = audio_output
+        self._codec = sco_link.codec
+        self._decoder: CVSDDecoder | MSBCDecoder = (
+            CVSDDecoder() if self._codec == "CVSD" else MSBCDecoder()
+        )
+        sco_link.set_on_data(self._on_data)
+
+    async def _on_data(self, data: bytes) -> None:
+        if self._codec == "mSBC":
+            offset = 0
+            while offset + _MSBC_FRAME_BYTES <= len(data):
+                frame = data[offset: offset + _MSBC_FRAME_BYTES]
+                pcm = self._decoder.decode(frame)
+                try:
+                    await self._audio.write_frame(pcm)
+                except Exception:
+                    pass
+                offset += _MSBC_FRAME_BYTES
+        else:
+            pcm = self._decoder.decode(data)
+            try:
+                await self._audio.write_frame(pcm)
+            except Exception:
+                pass
