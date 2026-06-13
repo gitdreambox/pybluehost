@@ -31,3 +31,7 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_bridge_command(app_subs)
     from pybluehost.cli.app.mitm.cli import register_mitm_command
     register_mitm_command(app_subs)
+    from pybluehost.cli.app.a2dp_source import register_a2dp_source_command
+    register_a2dp_source_command(app_subs)
+    from pybluehost.cli.app.a2dp_sink import register_a2dp_sink_command
+    register_a2dp_sink_command(app_subs)
