@@ -43,3 +43,7 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_hfp_test_command(app_subs)
     from pybluehost.cli.app.hsp_test import register_hsp_test_command
     register_hsp_test_command(app_subs)
+    from pybluehost.cli.app.demo_phone import register_demo_phone_command
+    register_demo_phone_command(app_subs)
+    from pybluehost.cli.app.demo_headphone import register_demo_headphone_command
+    register_demo_headphone_command(app_subs)
