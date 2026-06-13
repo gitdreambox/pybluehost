@@ -87,6 +87,9 @@ class USBTransport(Transport):
         self._extra_fw_dirs = extra_fw_dirs or []
         self._is_open = False
         self._reader_tasks: list[asyncio.Task] = []  # type: ignore[type-arg]
+        self._ep_iso_in: Any = None
+        self._ep_iso_out: Any = None
+        self._current_alt_setting: int = 0
 
     @classmethod
     def _get_usb_backend(cls) -> Any:
@@ -625,6 +628,37 @@ class USBTransport(Transport):
             self._device.close()
         except Exception:
             pass
+
+    async def select_sco_alt_setting(self, alt: int) -> None:
+        """Switch USB Interface 0 to alternate setting `alt`, then re-enumerate
+        the iso IN/OUT endpoints.
+
+        Alt 0 = SCO off (only HCI events + ACL); iso endpoints are absent.
+        Alt >= 1 = SCO on; vendor-specific iso packet sizes (CVSD vs mSBC).
+
+        Cached: a no-op if we're already on the requested alt setting.
+        """
+        if self._current_alt_setting == alt:
+            return
+        import usb.util as usbutil
+        self._device.set_interface_altsetting(interface=0, alternate_setting=alt)
+        cfg = self._device.get_active_configuration()
+        iface = cfg[(0, alt)]
+        self._ep_iso_in = usbutil.find_descriptor(
+            iface,
+            custom_match=lambda e: (
+                usbutil.endpoint_direction(e.bEndpointAddress) == usbutil.ENDPOINT_IN
+                and usbutil.endpoint_type(e.bmAttributes) == usbutil.ENDPOINT_TYPE_ISO
+            ),
+        )
+        self._ep_iso_out = usbutil.find_descriptor(
+            iface,
+            custom_match=lambda e: (
+                usbutil.endpoint_direction(e.bEndpointAddress) == usbutil.ENDPOINT_OUT
+                and usbutil.endpoint_type(e.bmAttributes) == usbutil.ENDPOINT_TYPE_ISO
+            ),
+        )
+        self._current_alt_setting = alt
 
     async def send(self, data: bytes) -> None:
         """Route by H4 packet type indicator byte."""
