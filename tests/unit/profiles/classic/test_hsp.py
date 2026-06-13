@@ -179,3 +179,24 @@ async def test_hsp_sco_link_works_with_a4_wav_workers(tmp_path):
     assert os.path.exists(dst)
     with wave.open(str(dst), "rb") as r:
         assert r.getframerate() == 8000
+
+
+def test_public_api_imports():
+    """All A.5 entry points are importable from the public API."""
+    from pybluehost.profiles.classic import (
+        HSPAudioGateway, HSPHeadset, HSPSession,
+    )
+    from pybluehost.profiles.classic._hsp_constants import (
+        HEADSET_UUID, HSP_HS_UUID, HSP_AG_UUID, HSP_PROFILE_VERSION,
+        HSP_HS_RFCOMM_CHANNEL, HSP_AG_RFCOMM_CHANNEL,
+        HSP_AT_VGS, HSP_AT_VGM, HSP_AT_CKPD,
+        HSP_DEFAULT_GAIN, HSP_GAIN_MAX, HSP_CKPD_KEY,
+    )
+    from pybluehost.profiles.classic._hsp_at import (
+        build_vgs_command, build_vgm_command, build_ckpd_command,
+        build_ring_unsolicited,
+        parse_vgs_command, parse_vgm_command, parse_ckpd_command,
+    )
+    for sym in (HSPHeadset, HSPAudioGateway, HSPSession,
+                build_vgs_command, build_ckpd_command, build_ring_unsolicited):
+        assert sym is not None
