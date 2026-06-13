@@ -39,3 +39,7 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_avrcp_control_command(app_subs)
     from pybluehost.cli.app.avrcp_target import register_avrcp_target_command
     register_avrcp_target_command(app_subs)
+    from pybluehost.cli.app.hfp_test import register_hfp_test_command
+    register_hfp_test_command(app_subs)
+    from pybluehost.cli.app.hsp_test import register_hsp_test_command
+    register_hsp_test_command(app_subs)
