@@ -638,6 +638,19 @@ class HCIController:
         """
         import struct
         from pybluehost.hci.constants import HCI_SETUP_SYNCHRONOUS_CONNECTION
+        from pybluehost.hci.sco_constants import PRESET_MSBC_T2
+
+        # Notify the transport of the upcoming codec so it can configure its
+        # SCO path before we send the HCI command.
+        codec = "mSBC" if preset is PRESET_MSBC_T2 else "CVSD"
+        transport = getattr(self, "_transport", None)
+        prepare_hook = (
+            getattr(transport, "prepare_for_sco", None)
+            if transport is not None
+            else None
+        )
+        if prepare_hook is not None:
+            await prepare_hook(codec)
 
         # Build the 17-byte parameter block (Core §7.1.41 Table 7.26).
         # connection_handle(2) + tx_bw(4) + rx_bw(4) + max_latency(2) +
