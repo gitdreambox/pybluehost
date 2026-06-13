@@ -9,10 +9,14 @@ from pybluehost.profiles.classic.hfp import (
 from pybluehost.profiles.classic.hsp import (
     HSPAudioGateway, HSPHeadset, HSPSession,
 )
+from pybluehost.profiles.classic._sco_realtime import (
+    MicToScoSender, ScoToSpeakerReceiver,
+)
 
 __all__ = [
     "A2DPSource", "A2DPSink", "A2DPSession",
     "AVRCPController", "AVRCPTarget", "AVRCPSession",
     "HFPAudioGateway", "HFPHandsFree", "HFPSession",
     "HSPAudioGateway", "HSPHeadset", "HSPSession",
+    "MicToScoSender", "ScoToSpeakerReceiver",
 ]
