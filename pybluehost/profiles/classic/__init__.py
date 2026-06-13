@@ -6,9 +6,13 @@ from pybluehost.profiles.classic.avrcp import (
 from pybluehost.profiles.classic.hfp import (
     HFPAudioGateway, HFPHandsFree, HFPSession,
 )
+from pybluehost.profiles.classic.hsp import (
+    HSPAudioGateway, HSPHeadset, HSPSession,
+)
 
 __all__ = [
     "A2DPSource", "A2DPSink", "A2DPSession",
     "AVRCPController", "AVRCPTarget", "AVRCPSession",
     "HFPAudioGateway", "HFPHandsFree", "HFPSession",
+    "HSPAudioGateway", "HSPHeadset", "HSPSession",
 ]

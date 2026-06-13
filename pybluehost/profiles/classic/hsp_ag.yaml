@@ -1,0 +1,12 @@
+# HSP AG SDP record (HSP v1.2 §5.1)
+ServiceClassIDList:
+  - uuid16: 0x1112   # HeadsetAudioGateway
+  - uuid16: 0x1203   # GenericAudio
+ProtocolDescriptorList:
+  - - uuid16: 0x0100
+  - - uuid16: 0x0003
+      params:
+        - uint8: 12
+BluetoothProfileDescriptorList:
+  - - uuid16: 0x1108
+      version: 0x0102

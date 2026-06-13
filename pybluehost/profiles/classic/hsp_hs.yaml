@@ -1,0 +1,13 @@
+# HSP HS SDP record (HSP v1.2 §5.1)
+ServiceClassIDList:
+  - uuid16: 0x1131   # Headset - HS (v1.2)
+  - uuid16: 0x1108   # Headset (legacy compat)
+  - uuid16: 0x1203   # GenericAudio
+ProtocolDescriptorList:
+  - - uuid16: 0x0100   # L2CAP
+  - - uuid16: 0x0003   # RFCOMM
+      params:
+        - uint8: 5
+BluetoothProfileDescriptorList:
+  - - uuid16: 0x1108
+      version: 0x0102
