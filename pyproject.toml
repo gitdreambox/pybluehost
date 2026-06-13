@@ -34,6 +34,9 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
 ]
+audio = [
+    "sounddevice>=0.4",
+]
 
 [project.scripts]
 pybluehost = "pybluehost.cli:main"

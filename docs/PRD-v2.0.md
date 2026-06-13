@@ -1,8 +1,10 @@
 # PyBlueHost PRD v2.0 — Classic Audio Profiles
 
+> **Status:** ✅ DELIVERED (2026-06-13). All six plans (A.1 codec, A.2 AVDTP+A2DP, A.3 AVCTP+AVRCP, A.4 HFP+SCO, A.5 HSP, A.6 CLI+runbook) complete. Virtual-loopback validation in `tests/e2e/test_{a2dp,avrcp,hfp,hsp}_lifecycle.py`. Real-hardware procedures in [`docs/CLASSIC_AUDIO_E2E.md`](CLASSIC_AUDIO_E2E.md).
+
 **版本**：v2.0
 **日期**：2026-05-27
-**状态**：草案（brainstorm 已确认主线，待评审）
+**状态**：✅ 已交付（2026-06-13）
 **前置版本**：[PRD v1.0](PRD.md)（已完成 31 个 Plan，BLE 全栈 + Classic 基础设施已就位）
 
 ---
