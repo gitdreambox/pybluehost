@@ -130,6 +130,69 @@ pybluehost app hsp-test --transport=usb \
 HSP uses CVSD only; no codec negotiation, no SLC. The HS sends `AT+CKPD=200`
 to request audio, AG accepts, SCO opens.
 
+## Live Mic / Speaker (v2.1 Plan B.2)
+
+Run HFP/HSP against an actual microphone and speaker instead of WAV files.
+
+**Setup:**
+
+```bash
+pip install 'pybluehost[audio]'    # pulls sounddevice + PortAudio
+pybluehost tools audio list-devices
+```
+
+Sample output:
+
+```
+ idx   in out    rate  name
+   0    2   0   48000  Built-in Microphone
+   1    0   2   48000  Built-in Speaker
+   2    2   2   48000  USB Headset
+```
+
+**Use the indices with `app hfp-test` or `app hsp-test`:**
+
+```bash
+# HFP HF role — live phone call audio through USB headset
+pybluehost app hfp-test --transport=usb \
+    --role=hf \
+    --target=AA:BB:CC:DD:EE:FF \
+    --mic-device=2 \
+    --speaker-device=2
+```
+
+```bash
+# HSP HS role — same idea, CVSD-only
+pybluehost app hsp-test --transport=usb \
+    --role=hs \
+    --target=AA:BB:CC:DD:EE:FF \
+    --mic-device=2 \
+    --speaker-device=2
+```
+
+`--mic-device` and `--wav` are mutually exclusive (same for `--speaker-device`
+vs `--out`/`--output`). Mix-and-match is fine: `--mic-device=2 --out=rx.wav`
+streams live mic to the peer while capturing the inbound audio to a file.
+
+**Sample-rate matching:** PyBlueHost asks PortAudio for the native SCO rate
+(8 kHz CVSD or 16 kHz mSBC) and lets the host audio backend resample. If your
+device only supports 44.1/48 kHz, sounddevice/PortAudio handles the conversion
+transparently.
+
+**Latency:** end-to-end ~50–100 ms depending on platform. Buffer size is set
+to one SCO packet's worth of samples (240 for CVSD, 120 for mSBC).
+
+**Underrun handling:** if the mic stream stalls, the sender emits silence
+frames so the SCO clock keeps ticking — the peer never hears a buffer hiccup.
+
+**Known issues:**
+- **PulseAudio default sinks may downmix to mono incorrectly.** If voice
+  sounds garbled, pass an explicit mono-capable device index.
+- **macOS CoreAudio:** sometimes refuses 8 kHz mono and silently up-samples;
+  the result is fine but adds a few ms of extra latency.
+- **Windows WinUSB-bound adapters** still need the v2.1 Plan B.1 SCO
+  routing (handled automatically) — see "USB SCO Alt Setting" below.
+
 ## Known Issues
 
 ### USB SCO Alt Setting
