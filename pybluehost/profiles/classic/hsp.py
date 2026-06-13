@@ -35,6 +35,7 @@ from pybluehost.profiles.classic._hsp_constants import (
     HSP_PROFILE_VERSION,
 )
 from pybluehost.profiles.classic._common import ClassicProfile
+from pybluehost.profiles.classic.hfp import _rfcomm_listen
 
 
 _log = logging.getLogger(__name__)
@@ -90,9 +91,7 @@ class HSPHeadset(ClassicProfile):
 
     def register(self) -> None:
         self.stack.sdp.register(self._build_sdp_record())
-        self.stack.rfcomm.listen_channel(
-            HSP_HS_RFCOMM_CHANNEL, self._on_rfcomm_connect,
-        )
+        _rfcomm_listen(self.stack.rfcomm, HSP_HS_RFCOMM_CHANNEL, self._on_rfcomm_connect)
 
     def _on_rfcomm_connect(self, rfcomm_session) -> None:
         handle = getattr(rfcomm_session, "connection_handle", 0)
@@ -103,7 +102,7 @@ class HSPHeadset(ClassicProfile):
         asyncio.create_task(session._run())
 
     async def connect(self, *, handle: int, channel: int = HSP_AG_RFCOMM_CHANNEL) -> "HSPSession":
-        rfcomm_session = await self.stack.rfcomm.connect(handle=handle, channel=channel)
+        rfcomm_session = await self.stack.rfcomm.connect(handle, channel)
         session = HSPSession(
             stack=self.stack, rfcomm=rfcomm_session, handle=handle, role="hs",
         )
@@ -135,9 +134,7 @@ class HSPAudioGateway(ClassicProfile):
 
     def register(self) -> None:
         self.stack.sdp.register(self._build_sdp_record())
-        self.stack.rfcomm.listen_channel(
-            HSP_AG_RFCOMM_CHANNEL, self._on_rfcomm_connect,
-        )
+        _rfcomm_listen(self.stack.rfcomm, HSP_AG_RFCOMM_CHANNEL, self._on_rfcomm_connect)
 
     def _on_rfcomm_connect(self, rfcomm_session) -> None:
         handle = getattr(rfcomm_session, "connection_handle", 0)
@@ -184,25 +181,26 @@ class HSPSession:
     async def _run(self) -> None:
         self._bind_on_data()
         if self.role == "ag":
-            self._arm_sco_listener()
+            asyncio.create_task(self._arm_sco_listener())
         self._ready.set()
 
-    def _arm_sco_listener(self) -> None:
-        """AG-side: listen for Synchronous_Connection_Complete and auto-build SCOLink."""
+    async def _arm_sco_listener(self) -> None:
+        """AG-side: wait passively for Synchronous_Connection_Complete, then
+        build a SCOLink so callers can access ``self._sco_link``.
+        """
         hci = getattr(self.stack, "hci", None)
         if hci is None or not hasattr(hci, "add_sco_complete_listener"):
             return
-
-        async def _on_complete(acl_handle: int, sco_handle: int) -> None:
-            if acl_handle != self.handle:
-                return
-            self._sco_link = SCOLink(
-                handle=sco_handle, codec="CVSD", controller=hci,
-            )
-            if hasattr(hci, "set_on_sco_data"):
-                hci.set_on_sco_data(self._sco_link._on_inbound)
-
-        hci.add_sco_complete_listener(_on_complete)
+        fut = hci.add_sco_complete_listener()
+        try:
+            sco_handle = await asyncio.wait_for(fut, timeout=30.0)
+        except (asyncio.TimeoutError, Exception):
+            return
+        self._sco_link = SCOLink(
+            handle=sco_handle, codec="CVSD", controller=hci,
+        )
+        if hasattr(hci, "set_on_sco_data"):
+            hci.set_on_sco_data(self._sco_link._on_inbound)
 
     async def _on_data(self, data: bytes) -> None:
         self._line_buf.feed(data)
