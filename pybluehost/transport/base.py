@@ -64,6 +64,15 @@ class Transport(ABC):
     def set_sink(self, sink: TransportSink | None) -> None:
         self._sink = sink
 
+    async def prepare_for_sco(self, codec: str) -> None:
+        """Pre-SCO setup hook. Override in chip-specific subclasses
+        (Intel Alt-Setting, Realtek vendor command). Default: no-op so
+        virtual transport stays compatible.
+
+        codec is one of {"CVSD", "mSBC"}.
+        """
+        return None
+
     async def reset(self) -> None:
         """Default reconnect: close then open. Subclasses may override."""
         await self.close()
