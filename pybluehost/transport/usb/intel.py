@@ -17,6 +17,14 @@ from pybluehost.transport.usb.base import USBTransport
 logger = logging.getLogger(__name__)
 
 
+# USB Alt Setting by SCO codec — mirrors btusb.c BTUSB_ISOC_ALT_BAND_NB/WB constants.
+# Verified against AX200 / AX210 / BE200; other Intel chips use the same mapping.
+INTEL_SCO_ALT_BY_CODEC: dict[str, int] = {
+    "CVSD": 1,   # narrow-band, 8 kHz mono, BTUSB_ISOC_ALT_BAND_NB
+    "mSBC": 6,   # wide-band, 16 kHz mono, BTUSB_ISOC_ALT_BAND_WB
+}
+
+
 class IntelUSBTransport(USBTransport):
     """Intel Bluetooth USB transport with firmware loading.
 
@@ -86,6 +94,21 @@ class IntelUSBTransport(USBTransport):
 
     _BOOT_PARAMS_RSA = _BootParams(0, 128, 128, 256, 388, 256, 964)
     _BOOT_PARAMS_ECDSA = _BootParams(644, 128, 772, 96, 868, 96, 964)
+
+    async def prepare_for_sco(self, codec: str) -> None:
+        """Intel-specific: select USB Alt Setting based on codec.
+
+        BlueZ btusb.c uses Alt 1 for CVSD (narrow-band) and Alt 6 for mSBC
+        (wide-band) on Intel chips. The exact alt numbers may differ on
+        other vendors; this mapping is verified against AX200 / AX210 / BE200.
+        """
+        alt = INTEL_SCO_ALT_BY_CODEC.get(codec)
+        if alt is None:
+            raise ValueError(
+                f"Intel: unsupported SCO codec {codec!r} "
+                f"(known: {sorted(INTEL_SCO_ALT_BY_CODEC)})"
+            )
+        await self.select_sco_alt_setting(alt)
 
     async def _initialize(self) -> None:
         """Intel firmware loading — auto-detects legacy vs new-gen platform.
