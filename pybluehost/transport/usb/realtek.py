@@ -16,6 +16,11 @@ from pybluehost.transport.usb.base import USBTransport
 
 logger = logging.getLogger(__name__)
 
+# Realtek vendor command to switch SCO routing from PCM bus to HCI bus.
+# Reference: BlueZ drivers/bluetooth/btrtl.c
+HCI_VENDOR_RTK_SET_SCO_ROUTING_TYPE = 0xFC8B
+RTK_SCO_ROUTING_HCI = 0x02
+
 
 @dataclass(frozen=True)
 class RealtekLocalVersion:
@@ -60,6 +65,22 @@ class RealtekUSBTransport(USBTransport):
         # lmp_subver=0x8852, hci_rev=0x000c, hci_ver=0x0c.
         (0x8852, 0x000C, 0x0C),
     }
+
+    async def prepare_for_sco(self, codec: str) -> None:
+        """Realtek-specific: route SCO via HCI bus (not PCM).
+
+        Sent only on the first SCO setup — `codec` is accepted but ignored
+        because Realtek doesn't switch USB Alt Setting per codec (mSBC vs
+        CVSD ride the same iso EP, distinguished by HCI SCO Data packet
+        status flag).
+        """
+        if getattr(self, "_rtk_sco_routing_set", False):
+            return
+        await self._send_hci_command(
+            HCI_VENDOR_RTK_SET_SCO_ROUTING_TYPE,
+            bytes([RTK_SCO_ROUTING_HCI]),
+        )
+        self._rtk_sco_routing_set = True
 
     async def _initialize(self) -> None:
         """Realtek 5-step firmware loading sequence."""
