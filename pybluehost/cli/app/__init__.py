@@ -35,3 +35,7 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_a2dp_source_command(app_subs)
     from pybluehost.cli.app.a2dp_sink import register_a2dp_sink_command
     register_a2dp_sink_command(app_subs)
+    from pybluehost.cli.app.avrcp_control import register_avrcp_control_command
+    register_avrcp_control_command(app_subs)
+    from pybluehost.cli.app.avrcp_target import register_avrcp_target_command
+    register_avrcp_target_command(app_subs)
