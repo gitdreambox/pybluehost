@@ -90,6 +90,7 @@ class USBTransport(Transport):
         self._ep_iso_in: Any = None
         self._ep_iso_out: Any = None
         self._current_alt_setting: int = 0
+        self._iso_reader_task: asyncio.Task | None = None  # type: ignore[type-arg]
 
     @classmethod
     def _get_usb_backend(cls) -> Any:
@@ -659,6 +660,10 @@ class USBTransport(Transport):
             ),
         )
         self._current_alt_setting = alt
+        if alt > 0 and self._ep_iso_in is not None:
+            if getattr(self, "_iso_reader_task", None) is None or self._iso_reader_task.done():
+                self._iso_reader_task = asyncio.create_task(self._read_iso_loop())
+                self._reader_tasks.append(self._iso_reader_task)
 
     async def send(self, data: bytes) -> None:
         """Route by H4 packet type indicator byte."""
@@ -783,9 +788,35 @@ class USBTransport(Transport):
 
     async def _isoch_out(self, data: bytes) -> None:
         """Send SCO data via USB isochronous OUT endpoint.
-        (Isochronous transfers not fully supported by libusb on Windows.)
+
+        Requires select_sco_alt_setting(alt>=1) to have been called first
+        (typically via Transport.prepare_for_sco hook).
         """
-        raise NotImplementedError("Isochronous SCO transfers require OS-level access")
+        if self._ep_iso_out is None:
+            raise RuntimeError(
+                "SCO iso OUT endpoint not active. "
+                "Call select_sco_alt_setting(>=1) first (or via prepare_for_sco)."
+            )
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: self._ep_iso_out.write(data))
+
+    async def _read_iso_loop(self) -> None:
+        """Background reader: pull SCO data from iso IN, forward to sink as H4 0x03."""
+        if self._ep_iso_in is None:
+            return
+        loop = asyncio.get_event_loop()
+        while self._is_open and self._ep_iso_in is not None:
+            try:
+                data = await loop.run_in_executor(
+                    None,
+                    lambda: bytes(self._ep_iso_in.read(1024, timeout=50)),
+                )
+                if self._sink is not None and data:
+                    await self._sink.on_transport_data(b"\x03" + data)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(0.005)
 
     def read_interrupt_sync(self, size: int = 64, timeout: int = 5000) -> bytes:
         """Blocking interrupt IN read (runs in executor thread)."""

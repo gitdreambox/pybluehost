@@ -42,6 +42,8 @@ def _make_transport():
     t._ep_iso_in = None
     t._ep_iso_out = None
     t._current_alt_setting = 0
+    t._reader_tasks = []
+    t._iso_reader_task = None
     return t
 
 
