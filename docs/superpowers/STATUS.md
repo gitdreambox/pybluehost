@@ -6,7 +6,7 @@
 
 ## 快速定位
 
-**当前状态**：v1.0 完结（31 Plans，Hardware E2E Readiness ✅）；**v1.1 / v1.2 / v2.0 三份 PRD 草案就绪，均待动工**
+**当前状态**：v1.0 完结（31 Plans，Hardware E2E Readiness ✅）；**v2.0 Classic Audio ✅ 全部交付 + v2.1 Plan B.1（USB SCO quirk 适配）✅**；v1.1 Virtual Sniffer / v1.2 PTS IUT PRD 草案就绪，待动工
 **下一步候选**：
 1. **v1.1 Virtual Sniffer**——PRD 草案就绪（[`docs/PRD-v1.1.md`](../PRD-v1.1.md)）。把 PyBlueHost live HCI 注入 Ellisys/WPS 分析仪软件显示。4 个 Plan、~5 周、Windows-only。design spec + Plan **未编写**。
 2. **v1.2 PTS IUT**——PRD 草案就绪（[`docs/PRD-v1.2.md`](../PRD-v1.2.md)）。PyBlueHost 当 IUT 跑 SIG PTS 一致性。Phase 1 = Fluoride 式 PTS mode + 交互式控制台手动驱动，4 个 Plan、~7.5-8.5 周；Phase 2 = auto-pts BTP 自动化（后续）。design spec + Plan **未编写**。
@@ -65,10 +65,13 @@
 | MITM-2 | BLE 路径 + app 内最小 SMP（SC Just Works/Numeric） | ✅ 完成（范围 C：编排+fake 单测；虚拟三角 e2e 留真机） | [mitm-2](plans/2026-06-01-mitm-2-ble-path-min-smp.md) | `pybluehost/cli/app/mitm/{pairing/,recon,impersonate,orchestrator}.py` |
 | MITM-3 | BR/EDR 路径 + SSP 终结（HCI 事件）+ 可选改址 | ✅ 完成（范围 C：SSP/编排+fake 单测；VirtualClassicLink e2e 留真机） | [mitm-3](plans/2026-06-01-mitm-3-bredr-path-ssp.md) | `pybluehost/cli/app/mitm/{pairing/ssp,bredr_recon,bredr_impersonate,address,orchestrator}.py` |
 | MITM-4 | CLI（le/bredr/both）+ Numeric Comparison 交互 + runbook | ✅ 完成 | [mitm-4](plans/2026-06-01-mitm-4-cli-numeric-docs.md) | `pybluehost/cli/app/mitm/cli.py`, `pybluehost/cli/app/mitm/pairing/delegate.py`, `docs/MITM.md` |
+| v2.1 Plan B.1 | USB SCO Alt-Setting + vendor quirks（Intel Alt 1/6、Realtek 0xFC8B、真 iso IN/OUT、prepare_for_sco hook） | ✅ 完成（mock-based 单测；真机 E2E 待 adapter） | [b.1](plans/2026-06-13-v2.1-plan-B.1-usb-sco-alt-setting.md) | `pybluehost/transport/{base.py,usb/{base,intel,realtek}.py}`, `pybluehost/hci/controller.py` |
 
 > **MITM 透传应用（独立应用，4 Plan）✅ 全部完成（2026-06-02）**：授权安全测试用中间人，双 radio、B 式 HCI-ACL 透传，仅复用 `transport`+`hci`，**协议栈+hci 层零改动**，89 个 mitm 单元测试全 PASS。spec：[`specs/2026-06-01-mitm-passthrough-design.md`](specs/2026-06-01-mitm-passthrough-design.md)。v1 = BLE+BR 透传+抓包（btsnoop）；**改写（规则/hook）为后续**。**待真机验证**：recon/impersonate/连接/逐链路加密的 HCI 时序、虚拟三角 e2e（虚拟控制器不支持真实广播/SSP 桥接，故 Task 7/MITM-3 Task 5 取范围 C：编排+fake 单测）、`--clone-address`、both 模式并发接线。
 
-**总计：31 个 Plan（原 20 个 + SMP Sub-Plan 1 + SMP Sub-Plan 1 收尾 + HCI 容错初始化 + Secure Connections + SMP Sub-Plan 3a + SMP Sub-Plan 3b-1 + SMP Sub-Plan 3b-2 + E2E LE Lifecycle + VirtualClassicLink + Classic Workflow E2E + Hardware E2E Readiness）**
+> **v2.1 Plan B.1 ✅（2026-06-13）**：v2.0 deferred 的 USB SCO Alt-Setting + vendor quirk 适配。8 Task（Transport.prepare_for_sco hook、HCIController 自动调用、select_sco_alt_setting + iso EP 枚举、真正 iso IN/OUT、Intel Alt 1/6 选择、Realtek vendor cmd 0xFC8B、mocked Intel 集成测试、文档更新）。全部 mock-based 单测覆盖，真机 E2E 验证待 Intel/Realtek adapter 到货后手动执行。Out-of-scope：Broadcom Alt 编号（B.2）、实时 PCM↔OS 音频（B.2）、多 SCO、CSR8510（硬件不支持）。
+
+**总计：32 个 Plan（原 31 个 + v2.1 Plan B.1）**
 
 ---
 

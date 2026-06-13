@@ -83,10 +83,13 @@ pybluehost app avrcp-target --transport=usb
 
 ## HFP — Connect to a Phone as a Headset
 
-> **CRITICAL:** SCO data over USB requires Alt-Setting switching. Most adapters
-> default to Alt 0 (no isochronous endpoint); SCO data path will not work until
-> the adapter is moved to Alt 1+. See "Known Issues — USB SCO Alt Setting"
-> below.
+> **SCO data over USB** requires the adapter to be switched to Alt Setting ≥ 1
+> so the isochronous endpoint becomes active. PyBlueHost v2.1 now does this
+> automatically: `HCIController.setup_synchronous_connection` calls
+> `transport.prepare_for_sco(codec)`, which on `IntelUSBTransport` selects
+> Alt 1 (CVSD) or Alt 6 (mSBC) and on `RealtekUSBTransport` issues vendor
+> command `0xFC8B` (`SET_SCO_ROUTING_TYPE` param `0x02` = HCI bus). See
+> "Known Issues — USB SCO Alt Setting" below for the per-vendor matrix.
 
 ```bash
 # Pair the phone first via your OS Bluetooth UI (or bluetoothctl).
@@ -133,36 +136,43 @@ to request audio, AG accepts, SCO opens.
 
 USB Bluetooth controllers expose the SCO audio path via an isochronous
 endpoint that's only active in Alt Setting 1 or higher. By default the
-controller is in Alt 0 (no SCO data). PyBlueHost's HFP/HSP signaling completes
-and `HCI Setup_Synchronous_Connection` succeeds, but **SCO data packets are
-dropped silently** until the adapter is in Alt ≥ 1.
+controller is in Alt 0 (no SCO data).
 
-Workarounds:
-- **Intel adapters**: BlueZ's `btusb` driver switches Alt automatically when
-  a SCO connection completes if `CONFIG_BT_HCIUART_AG6XX` or similar is set.
-  Verify with `dmesg | grep btusb` after SCO setup — look for
-  "Alternate setting" log entries. If absent, the kernel module needs a patch
-  or a vendor-specific HCI command.
-- **Realtek adapters**: Often need a vendor HCI command (`HCI_VENDOR_OP=0xFC1E`
-  or similar) to switch Alt. See `pybluehost/transport/usb/realtek.py` for the
-  v2.1 plan.
+**v2.1 Plan B.1 implements this automatically.** `HCIController.
+setup_synchronous_connection` infers the codec from the SCO preset
+(`PRESET_CVSD_S1` → `"CVSD"`, `PRESET_MSBC_T2` → `"mSBC"`) and calls
+`transport.prepare_for_sco(codec)` before issuing the HCI command.
 
-This is **explicitly deferred to v2.1** (`docs/PRD-v2.1.md`, when written).
-For v2.0, SCO data paths are validated on the virtual transport only;
-real-hardware HFP/HSP SCO is best-effort.
+Per-vendor implementations:
+- **Intel** (`IntelUSBTransport`): selects Alt 1 (CVSD) or Alt 6 (mSBC) via
+  `usb_set_interface(0, alt)`, then re-enumerates iso IN/OUT endpoints. The
+  alt-to-codec mapping matches Linux BlueZ `drivers/bluetooth/btusb.c`
+  (`BTUSB_ISOC_ALT_BAND_NB`/`_WB`).
+- **Realtek** (`RealtekUSBTransport`): sends vendor HCI command `0xFC8B`
+  (`HCI_VENDOR_RTK_SET_SCO_ROUTING_TYPE`) with parameter `0x02` (route SCO via
+  HCI bus instead of PCM). Cached: sent only on the first SCO setup.
+- **Broadcom / others**: not yet covered. Alt-Setting numbers differ from
+  Intel — `prepare_for_sco` falls back to the no-op default until tested
+  against actual hardware (Plan B.2).
+- **CSR8510 and similar legacy 4.0 dongles**: hardware-incompatible
+  (SCO routed only via PCM bus, not exposed externally).
+
+Real-hardware verification is still pending an adapter; the v2.1 unit-test
+coverage uses mocked `usb.core.Device` instances.
 
 ### Adapter Compatibility Matrix
 
 | Adapter | A2DP | AVRCP | HFP SCO (data) | Notes |
 |---|---|---|---|---|
-| Intel AX200 | ✅ | ✅ | ⚠️ Alt Setting required | Most reliable on Linux |
-| Intel AX211 | ✅ | ✅ | ⚠️ Alt Setting required | Same |
-| Realtek RTL8761 | ✅ | ✅ | ⚠️ Vendor command needed | Inquiry sometimes slow |
-| CSR8510 | ✅ | ✅ | ❌ No SCO over USB | Legacy; ACL only |
-| Broadcom BCM20702 | ✅ | ✅ | ⚠️ Alt Setting required | Varies by firmware version |
+| Intel AX200 | ✅ | ✅ | 🧪 Alt 1/6 selection implemented; awaiting hardware verification | Most reliable on Linux |
+| Intel AX211 | ✅ | ✅ | 🧪 Same as AX200 | Same |
+| Realtek RTL8761 | ✅ | ✅ | 🧪 Vendor cmd 0xFC8B implemented; awaiting hardware verification | Inquiry sometimes slow |
+| CSR8510 | ✅ | ✅ | ❌ Hardware-incompatible (SCO via PCM only) | Legacy; ACL only |
+| Broadcom BCM20702 | ✅ | ✅ | ⚠️ Alt numbers differ from Intel — needs adapter (Plan B.2) | Varies by firmware version |
 
-✅ = works out of the box. ⚠️ = works after kernel/vendor config. ❌ = not
-supported in v2.0 scope.
+✅ = works out of the box. 🧪 = code path implemented and unit-tested
+(mocked USB), real-hardware verification pending. ⚠️ = not yet implemented.
+❌ = hardware-incompatible.
 
 ### Phone-Specific Quirks
 
