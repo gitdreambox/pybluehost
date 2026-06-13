@@ -11,12 +11,14 @@ def register_tools_commands(subparsers: argparse._SubParsersAction) -> None:
     tools_parser.set_defaults(func=lambda _args: tools_parser.print_help() or 2)
     tools_subs = tools_parser.add_subparsers(dest="tools_cmd")
 
+    from pybluehost.cli.tools.audio import register_audio_command
     from pybluehost.cli.tools.decode import register_decode_command
     from pybluehost.cli.tools.fw import register_fw_commands
     from pybluehost.cli.tools.info import register_info_command
     from pybluehost.cli.tools.rpa import register_rpa_commands
     from pybluehost.cli.tools.usb import register_usb_commands
 
+    register_audio_command(tools_subs)
     register_decode_command(tools_subs)
     register_fw_commands(tools_subs)
     register_info_command(tools_subs)
