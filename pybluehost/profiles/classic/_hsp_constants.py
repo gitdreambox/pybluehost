@@ -1,0 +1,21 @@
+"""HSP v1.2 constants — UUIDs, AT command names, RFCOMM channels."""
+from __future__ import annotations
+
+
+HEADSET_UUID = 0x1108
+HSP_HS_UUID = 0x1131
+HSP_AG_UUID = 0x1112
+
+HSP_PROFILE_VERSION = 0x0102
+
+HSP_HS_RFCOMM_CHANNEL = 5
+HSP_AG_RFCOMM_CHANNEL = 12
+
+HSP_AT_VGS = "+VGS"
+HSP_AT_VGM = "+VGM"
+HSP_AT_CKPD = "+CKPD"
+
+HSP_DEFAULT_GAIN = 7
+HSP_GAIN_MAX = 15
+
+HSP_CKPD_KEY = 200
