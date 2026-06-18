@@ -3,13 +3,13 @@ import asyncio
 import pytest
 import pytest_asyncio
 
-from pybluehost.avdtp.constants import (
+from pybluehost.classic.avdtp.constants import (
     AVDTPSignalID, MediaType, ServiceCategory, TSEP,
 )
-from pybluehost.avdtp.media import AVDTPMediaPacket
-from pybluehost.avdtp.sep import StreamEndpoint
-from pybluehost.avdtp.session import AVDTPSession
-from pybluehost.avdtp.signaling import (
+from pybluehost.classic.avdtp.media import AVDTPMediaPacket
+from pybluehost.classic.avdtp.sep import StreamEndpoint
+from pybluehost.classic.avdtp.session import AVDTPSession
+from pybluehost.classic.avdtp.signaling import (
     SBCCapability, encode_sbc_codec_capability,
 )
 

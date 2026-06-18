@@ -1,6 +1,6 @@
 import pytest
 
-from pybluehost.avdtp.media import AVDTPMediaPacket
+from pybluehost.classic.avdtp.media import AVDTPMediaPacket
 
 
 def test_to_bytes_minimum_header():

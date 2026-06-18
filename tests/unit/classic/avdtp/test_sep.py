@@ -1,7 +1,7 @@
 import pytest
 
-from pybluehost.avdtp.constants import MediaType, TSEP
-from pybluehost.avdtp.sep import StreamEndpoint, SEPStateError
+from pybluehost.classic.avdtp.constants import MediaType, TSEP
+from pybluehost.classic.avdtp.sep import StreamEndpoint, SEPStateError
 
 
 def _src_sep(seid: int = 1) -> StreamEndpoint:

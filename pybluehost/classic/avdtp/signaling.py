@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pybluehost.avdtp.constants import (
+from pybluehost.classic.avdtp.constants import (
     A2DP_CODEC_TYPE_SBC,
     AVDTPMessageType, AVDTPPacketType, AVDTPSignalID,
     MediaType, ServiceCategory, TSEP,

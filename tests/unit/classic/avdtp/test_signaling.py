@@ -1,10 +1,10 @@
 import pytest
 
-from pybluehost.avdtp.constants import (
+from pybluehost.classic.avdtp.constants import (
     AVDTPMessageType, AVDTPPacketType, AVDTPSignalID,
     MediaType, ServiceCategory, TSEP,
 )
-from pybluehost.avdtp.signaling import (
+from pybluehost.classic.avdtp.signaling import (
     AVDTPMessage,
     SBCCapability, decode_sbc_codec_capability, encode_sbc_codec_capability,
     decode_capabilities, decode_sep_descriptors, decode_seid_byte,

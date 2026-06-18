@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pybluehost.avdtp.constants import MediaType, TSEP
+from pybluehost.classic.avdtp.constants import MediaType, TSEP
 
 
 class SEPStateError(RuntimeError):

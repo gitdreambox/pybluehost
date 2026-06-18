@@ -10,13 +10,13 @@ import asyncio
 import logging
 from typing import Optional
 
-from pybluehost.avdtp.constants import (
+from pybluehost.classic.avdtp.constants import (
     AVDTPErrorCode, AVDTPMessageType, AVDTPPacketType, AVDTPSignalID,
     ServiceCategory,
 )
-from pybluehost.avdtp.media import AVDTPMediaPacket
-from pybluehost.avdtp.sep import StreamEndpoint
-from pybluehost.avdtp.signaling import (
+from pybluehost.classic.avdtp.media import AVDTPMediaPacket
+from pybluehost.classic.avdtp.sep import StreamEndpoint
+from pybluehost.classic.avdtp.signaling import (
     AVDTPMessage,
     decode_capabilities, decode_sep_descriptors, decode_seid_byte,
     encode_capabilities, encode_sep_descriptor, encode_seid_byte,

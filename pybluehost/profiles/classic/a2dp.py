@@ -6,13 +6,13 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
 from pybluehost.audio.codec import SBCDecoder, SBCEncoder
-from pybluehost.avdtp.constants import (
+from pybluehost.classic.avdtp.constants import (
     MediaType, PSM_AVDTP, ServiceCategory, TSEP,
 )
-from pybluehost.avdtp.media import AVDTPMediaPacket
-from pybluehost.avdtp.sep import StreamEndpoint
-from pybluehost.avdtp.session import AVDTPSession
-from pybluehost.avdtp.signaling import (
+from pybluehost.classic.avdtp.media import AVDTPMediaPacket
+from pybluehost.classic.avdtp.sep import StreamEndpoint
+from pybluehost.classic.avdtp.session import AVDTPSession
+from pybluehost.classic.avdtp.signaling import (
     SBCCapability, encode_sbc_codec_capability,
 )
 from pybluehost.classic.sdp import DataElement, ServiceRecord

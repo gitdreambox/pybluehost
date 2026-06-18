@@ -1,4 +1,4 @@
-from pybluehost.avdtp.constants import (
+from pybluehost.classic.avdtp.constants import (
     AVDTPSignalID, AVDTPPacketType, AVDTPMessageType,
     AVDTPErrorCode, MediaType, TSEP, ServiceCategory,
     PSM_AVDTP,

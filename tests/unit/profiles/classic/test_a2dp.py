@@ -41,7 +41,7 @@ def _service_class_uuids(record) -> list[int]:
 
 
 def test_a2dp_source_default_sbc_capability():
-    from pybluehost.avdtp.constants import ServiceCategory
+    from pybluehost.classic.avdtp.constants import ServiceCategory
     src = A2DPSource(stack=_FakeStack())
     caps = src.local_capabilities()
     cats = [c for c, _ in caps]
@@ -58,7 +58,7 @@ def test_a2dp_source_register_installs_sdp_and_listener():
 
 
 def test_a2dp_sink_default_sbc_capability():
-    from pybluehost.avdtp.constants import ServiceCategory
+    from pybluehost.classic.avdtp.constants import ServiceCategory
     sink = A2DPSink(stack=_FakeStack())
     caps = sink.local_capabilities()
     cats = [c for c, _ in caps]
@@ -86,14 +86,14 @@ def test_a2dp_source_uuid_in_record():
 def test_public_api_imports():
     """Every documented entry point is importable from the public API."""
     from pybluehost.profiles.classic import A2DPSink, A2DPSource
-    from pybluehost.avdtp import (
+    from pybluehost.classic.avdtp import (
         AVDTPSignalID, AVDTPPacketType, AVDTPMessageType,
         AVDTPErrorCode, MediaType, TSEP, ServiceCategory, PSM_AVDTP,
     )
-    from pybluehost.avdtp.signaling import AVDTPMessage, SBCCapability
-    from pybluehost.avdtp.media import AVDTPMediaPacket
-    from pybluehost.avdtp.sep import StreamEndpoint
-    from pybluehost.avdtp.session import AVDTPSession
+    from pybluehost.classic.avdtp.signaling import AVDTPMessage, SBCCapability
+    from pybluehost.classic.avdtp.media import AVDTPMediaPacket
+    from pybluehost.classic.avdtp.sep import StreamEndpoint
+    from pybluehost.classic.avdtp.session import AVDTPSession
 
     for symbol in (A2DPSource, A2DPSink, AVDTPMessage, AVDTPMediaPacket,
                    StreamEndpoint, AVDTPSession, SBCCapability):
