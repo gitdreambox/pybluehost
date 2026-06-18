@@ -11,7 +11,7 @@ from typing import Awaitable, Callable, Protocol, runtime_checkable
 
 import asyncio
 
-from pybluehost.core.address import BDAddress
+from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.statemachine import StateMachine
 from pybluehost.core.types import IOCapability
 
@@ -363,31 +363,27 @@ class SMPCrypto:
         ia: bytes, ra: bytes,
     ) -> bytes:
         """Legacy pairing confirm value (BT Spec Vol 3 Part H §2.2.3)."""
-        # p1 = pres || preq || rat || iat (LSB first per spec encoding)
+        # Bluetooth SMP treats 128-bit values as little-endian. Keep this API in
+        # on-air byte order and flip only at the AES block boundary.
         p1 = bytearray(16)
-        p1[0] = iat
-        p1[1] = rat
+        p1[0] = int(iat)
+        p1[1] = int(rat)
         p1[2:9] = preq
         p1[9:16] = pres
 
-        # p2 = padding(4) || ia(6) || ra(6)
-        p2 = bytearray(16)
-        p2[0:6] = ra
-        p2[6:12] = ia
-        # p2[12:16] = 0x00 padding
-
         # confirm = e(k, e(k, r XOR p1) XOR p2)
-        step1 = _aes_ecb(k, _xor(r, bytes(p1)))
-        return _aes_ecb(k, _xor(step1, bytes(p2)))
+        step1 = _aes_ecb(k, _xor(r[::-1], bytes(p1)[::-1]))
+        p2 = b"\x00" * 4 + ia + ra
+        return _aes_ecb(k, _xor(step1, p2))[::-1]
 
     @staticmethod
     def s1(k: bytes, r1: bytes, r2: bytes) -> bytes:
         """Legacy STK generation (BT Spec Vol 3 Part H §2.2.4).
 
-        r' = r1[8:16] || r2[8:16] (least significant 8 bytes of each), result = e(k, r').
+        r' = r1[0:8] || r2[0:8] (least significant 8 bytes of each), result = e(k, r').
         """
-        r_prime = r1[8:16] + r2[8:16]
-        return _aes_ecb(k, r_prime)
+        r_prime = r2[:8] + r1[:8]
+        return _aes_ecb(k, r_prime[::-1])[::-1]
 
     @staticmethod
     def f4(U: bytes, V: bytes, X: bytes, Z: int) -> bytes:
@@ -558,7 +554,10 @@ class JsonBondStorage:
         if entry is None:
             return None
         return BondInfo(
-            peer_address=BDAddress.from_string(entry["peer_address"]),
+            peer_address=BDAddress.from_string(
+                entry["peer_address"],
+                type=AddressType(entry.get("address_type", 0)),
+            ),
             address_type=entry.get("address_type", 0),
             ltk=bytes.fromhex(entry["ltk"]) if entry.get("ltk") else None,
             irk=bytes.fromhex(entry["irk"]) if entry.get("irk") else None,
@@ -581,7 +580,10 @@ class JsonBondStorage:
         result = []
         for entry in self._data.values():
             result.append(BondInfo(
-                peer_address=BDAddress.from_string(entry["peer_address"]),
+                peer_address=BDAddress.from_string(
+                    entry["peer_address"],
+                    type=AddressType(entry.get("address_type", 0)),
+                ),
                 address_type=entry.get("address_type", 0),
                 ltk=bytes.fromhex(entry["ltk"]) if entry.get("ltk") else None,
                 irk=bytes.fromhex(entry["irk"]) if entry.get("irk") else None,
@@ -847,6 +849,13 @@ class SMPManager:
 
     def get_context(self, connection_handle: int) -> SMPPairingContext | None:
         return self._contexts.get(connection_handle)
+
+    async def request_security(self, connection_handle: int, *, auth_req: int = 0x01) -> None:
+        """Send Security Request as LE peripheral to ask the central to pair."""
+        send = self._senders.get(connection_handle)
+        if send is None:
+            raise RuntimeError(f"No SMP channel bound for handle=0x{connection_handle:04X}")
+        await send(SMPSecurityRequest(auth_req=auth_req).to_bytes())
 
     async def start_initiator(self, connection_handle: int) -> "asyncio.Future[None]":
         """Begin Initiator-role pairing on a connected LE link."""

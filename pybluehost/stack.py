@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from pybluehost.ble.security import SecurityConfig
 from pybluehost.ble.smp import BondStorage
-from pybluehost.core.address import BDAddress
+from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.types import IOCapability
 
 
@@ -57,6 +57,7 @@ class StackConnectionEvent:
     state: str
     handle: int | None = None
     reason: str | None = None
+    peer_address: BDAddress | None = None
 
 
 def _hci_status_text(status: int) -> str:
@@ -501,7 +502,7 @@ class Stack:
 
     async def _auto_encrypt_on_reconnect(self, handle: int, peer_addr: "BDAddress") -> None:
         from pybluehost.hci.packets import HCI_LE_Start_Encryption_Command
-        bond = await self._config.bond_storage.load_bond(peer_addr)  # type: ignore[union-attr]
+        bond = await self._load_bond_for_peer(peer_addr)
         if bond is None or not bond.ltk:
             return
         await self._hci.send_command(HCI_LE_Start_Encryption_Command(
@@ -510,6 +511,23 @@ class Stack:
             encrypted_diversifier=bond.ediv,
             long_term_key=bond.ltk,
         ))
+
+    async def _load_bond_for_peer(self, peer_addr: "BDAddress"):
+        storage = self._config.bond_storage
+        if storage is None:
+            return None
+        bond = await storage.load_bond(peer_addr)
+        if bond is not None:
+            return bond
+        if peer_addr.type not in (AddressType.RANDOM, AddressType.RANDOM_IDENTITY):
+            return None
+
+        from pybluehost.ble.gap import PrivacyManager
+
+        for candidate in await storage.list_bonds():
+            if candidate.irk and PrivacyManager.resolve_rpa(peer_addr.address, candidate.irk):
+                return candidate
+        return None
 
     def _attach_gatt_server_to_att_channels(self) -> None:
         if self._l2cap is None or self._gatt_server is None:
@@ -641,18 +659,21 @@ class Stack:
         waiters = self._le_connection_waiters
         self._le_connection_waiters = []
         if status == ErrorCode.SUCCESS:
-            self._emit_connection_event(StackConnectionEvent(state="connected", handle=handle))
+            params = event.subevent_parameters
+            peer_addr = None
+            if len(params) >= 11:
+                peer_addr = BDAddress.from_hci(params[5:11], type=AddressType(params[4]))
+                if self._smp is not None:
+                    self._smp.register_peer_address(handle, peer_addr)
+            self._emit_connection_event(
+                StackConnectionEvent(state="connected", handle=handle, peer_address=peer_addr)
+            )
             for waiter in waiters:
                 if not waiter.done():
                     waiter.set_result(handle)
             # Register peer address in SMP + optional auto-encrypt on bonded reconnect
-            params = event.subevent_parameters
-            if len(params) >= 11:
+            if len(params) >= 11 and peer_addr is not None:
                 role = params[3]
-                peer_addr = BDAddress.from_hci(params[5:11])
-                # Always register peer address so SMP.start_initiator() can look it up
-                if self._smp is not None:
-                    self._smp.register_peer_address(handle, peer_addr)
                 # Auto-encrypt on bonded reconnect (Central role only — Peripheral waits for LTK_Request)
                 if (
                     self._config.auto_encrypt_on_bonded_reconnect
@@ -830,7 +851,7 @@ class Stack:
         peer = self._smp._peer_addrs.get(handle)
         if peer is None:
             raise RuntimeError(f"No peer address bound for handle=0x{handle:04X}")
-        bond = await self._config.bond_storage.load_bond(peer)
+        bond = await self._load_bond_for_peer(peer)
         if bond is None or not bond.ltk:
             raise RuntimeError(f"No bond available for peer={peer}")
 

@@ -33,7 +33,7 @@ from pybluehost.ble.smp import (
     SMPSigningInformation,
     decode_smp_pdu,
 )
-from pybluehost.core.address import BDAddress
+from pybluehost.core.address import AddressType, BDAddress
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ class TestSMPPdu:
 
 class TestSMPCrypto:
     def test_c1(self) -> None:
-        """BT Spec v5.4 sample data for c1 (Legacy Confirm)."""
+        """Local c1 vector using SMP on-air byte order."""
         k = bytes(16)  # all zeros
         r = bytes.fromhex("5783D52156AD6F0E6388274EC6702EE0")
         preq = bytes.fromhex("07071000000110")
@@ -224,15 +224,30 @@ class TestSMPCrypto:
         ia = bytes.fromhex("A1A2A3A4A5A6")
         ra = bytes.fromhex("B1B2B3B4B5B6")
         result = SMPCrypto.c1(k, r, preq, pres, iat, rat, ia, ra)
-        assert result == bytes.fromhex("5879c1c6d455dd39718f9b946248d19a")
+        assert result == bytes.fromhex("d6285700668f87985c99d73f145839a8")
+
+    def test_c1_matches_android_legacy_confirm_capture(self) -> None:
+        """Legacy c1 must match SMP PDU byte order captured from Android."""
+        k = bytes(16)
+        r = bytes.fromhex("aadd075ee8925cec103ffd45c8a637d7")
+        preq = bytes.fromhex("0104002d100f0f")
+        pres = bytes.fromhex("02030001100707")
+        iat = AddressType.RANDOM
+        rat = AddressType.PUBLIC
+        ia = bytes.fromhex("5e0b6aa95668")
+        ra = bytes.fromhex("001a7dda7111")
+
+        result = SMPCrypto.c1(k, r, preq, pres, iat, rat, ia, ra)
+
+        assert result == bytes.fromhex("b5877dbe04a37bad65cd17dd979f6ff4")
 
     def test_s1(self) -> None:
-        """BT Spec v5.4 sample data for s1 (Legacy STK)."""
+        """Local s1 vector using SMP on-air byte order."""
         k = bytes(16)
         r1 = bytes.fromhex("000F0E0D0C0B0A091122334455667788")
         r2 = bytes.fromhex("010203040506070899AABBCCDDEEFF00")
         result = SMPCrypto.s1(k, r1, r2)
-        assert result == bytes.fromhex("9a1fe1f0e8b0f49b5b4216ae796da062")
+        assert result == bytes.fromhex("74bfcf1c3f4473dd9aebac44ac607977")
 
     def test_f4(self) -> None:
         """BT Spec v5.4 sample data for f4 (SC Confirm)."""
@@ -407,3 +422,16 @@ class TestSMPManager:
     def test_smp_manager_construction(self) -> None:
         mgr = SMPManager(hci=None, bond_storage=None, delegate=AutoAcceptDelegate())
         assert mgr is not None
+
+    async def test_smp_manager_request_security_sends_security_request(self) -> None:
+        sent = []
+
+        async def send(data: bytes) -> None:
+            sent.append(data)
+
+        mgr = SMPManager(hci=None, bond_storage=None, delegate=AutoAcceptDelegate())
+        mgr.bind_channel(0x0045, send, BDAddress.from_string("38:6F:6B:A5:E8:20"))
+
+        await mgr.request_security(0x0045, auth_req=0x01)
+
+        assert sent == [bytes([SMPCode.SECURITY_REQUEST, 0x01])]

@@ -111,6 +111,43 @@ async def test_acl_data_routed_to_upstream():
     assert received[0].data == b"\x01\x02\x03"
 
 
+async def test_async_encryption_listener_does_not_block_acl_credit_events():
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    ctrl._acl_flow.configure(num_buffers=1, buffer_size=251)
+
+    await ctrl._acl_flow.acquire(handle=0x0001)
+    listener_done = asyncio.Event()
+
+    async def listener(_handle: int, _status: int, _enabled: int) -> None:
+        await ctrl._acl_flow.acquire(handle=0x0001)
+        listener_done.set()
+
+    ctrl.on_encryption_change(listener)
+
+    enc_event = bytes([
+        HCI_EVENT_PACKET,
+        EventCode.ENCRYPTION_CHANGE,
+        0x04,
+        0x00,
+        0x01, 0x00,
+        0x01,
+    ])
+    completed_event = bytes([
+        HCI_EVENT_PACKET,
+        EventCode.NUM_COMPLETED_PACKETS,
+        0x05,
+        0x01,
+        0x01, 0x00,
+        0x01, 0x00,
+    ])
+
+    await asyncio.wait_for(transport.inject(enc_event), timeout=0.05)
+    await transport.inject(completed_event)
+
+    await asyncio.wait_for(listener_done.wait(), timeout=0.2)
+
+
 async def test_send_command_timeout():
     """send_command should raise CommandTimeoutError when no response arrives."""
     transport = FakeTransport()

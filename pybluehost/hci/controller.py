@@ -25,6 +25,24 @@ logger = logging.getLogger(__name__)
 # `pybluehost.hci` level propagates to children unless overridden).
 connection_logger = logging.getLogger("pybluehost.hci.connection")
 
+
+def _schedule_listener_result(result: object) -> None:
+    """Run async upper-layer event listeners without blocking HCI RX dispatch."""
+    if not asyncio.iscoroutine(result):
+        return
+    task = asyncio.create_task(result)
+
+    def _log_failure(done: asyncio.Task) -> None:
+        if done.cancelled():
+            return
+        try:
+            done.result()
+        except Exception:  # noqa: BLE001
+            logger.exception("HCI event listener task failed")
+
+    task.add_done_callback(_log_failure)
+
+
 from pybluehost.core.errors import CommandTimeoutError, TransportError
 from pybluehost.core.trace import Direction, TraceEvent, TraceSystem
 from pybluehost.hci.flow import ACLFlowController, CommandFlowController
@@ -763,8 +781,7 @@ class HCIController:
             enabled = event.parameters[3]
             for listener in list(self._encryption_change_listeners):
                 result = listener(handle, status, enabled)
-                if asyncio.iscoroutine(result):
-                    await result
+                _schedule_listener_result(result)
 
         if isinstance(event, HCI_LE_Meta_Event) and event.subevent_code == LEMetaSubEvent.LE_LONG_TERM_KEY_REQUEST:
             params = event.subevent_parameters
@@ -774,8 +791,7 @@ class HCIController:
                 ediv = int.from_bytes(params[10:12], "little")
                 for listener in list(self._le_ltk_request_listeners):
                     result = listener(handle, rand_b, ediv)
-                    if asyncio.iscoroutine(result):
-                        await result
+                    _schedule_listener_result(result)
 
         # SC (SSP) event listeners
         from pybluehost.core.address import BDAddress
@@ -784,24 +800,21 @@ class HCIController:
             addr = BDAddress.from_hci(event.parameters[:6])
             for listener in list(self._io_capability_request_listeners):
                 result = listener(addr)
-                if asyncio.iscoroutine(result):
-                    await result
+                _schedule_listener_result(result)
 
         if event.event_code == EventCode.USER_CONFIRMATION_REQUEST and len(event.parameters) >= 10:
             addr = BDAddress.from_hci(event.parameters[:6])
             numeric = int.from_bytes(event.parameters[6:10], "little")
             for listener in list(self._user_confirmation_request_listeners):
                 result = listener(addr, numeric)
-                if asyncio.iscoroutine(result):
-                    await result
+                _schedule_listener_result(result)
 
         if event.event_code == EventCode.SIMPLE_PAIRING_COMPLETE and len(event.parameters) >= 7:
             status = event.parameters[0]
             addr = BDAddress.from_hci(event.parameters[1:7])
             for listener in list(self._simple_pairing_complete_listeners):
                 result = listener(status, addr)
-                if asyncio.iscoroutine(result):
-                    await result
+                _schedule_listener_result(result)
 
         if event.event_code == EventCode.LINK_KEY_NOTIFICATION and len(event.parameters) >= 23:
             addr = BDAddress.from_hci(event.parameters[:6])
@@ -809,15 +822,13 @@ class HCIController:
             key_type = event.parameters[22]
             for listener in list(self._link_key_notification_listeners):
                 result = listener(addr, key, key_type)
-                if asyncio.iscoroutine(result):
-                    await result
+                _schedule_listener_result(result)
 
         if event.event_code == EventCode.LINK_KEY_REQUEST and len(event.parameters) >= 6:
             addr = BDAddress.from_hci(event.parameters[:6])
             for listener in list(self._link_key_request_listeners):
                 result = listener(addr)
-                if asyncio.iscoroutine(result):
-                    await result
+                _schedule_listener_result(result)
 
         # Synchronous_Connection_Complete (0x2C) — resolve any pending
         # setup_synchronous_connection() futures.

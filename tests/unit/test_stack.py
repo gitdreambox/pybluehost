@@ -395,6 +395,32 @@ async def test_stack_reports_disconnection_events():
     await stack.close()
 
 
+async def test_stack_reports_le_connection_peer_address():
+    stack = await Stack.virtual()
+    events = []
+    stack.on_connection_event(lambda event: events.append(event))
+
+    await stack._on_hci_event(
+        HCI_LE_Meta_Event(
+            subevent_code=LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+            subevent_parameters=(
+                b"\x00"
+                + struct.pack("<H", 0x0045)
+                + b"\x01"  # peripheral role
+                + b"\x00"  # public peer address
+                + bytes.fromhex("20e8a56b6f38")
+                + bytes(8)
+            ),
+        )
+    )
+
+    assert events[-1].state == "connected"
+    assert events[-1].handle == 0x0045
+    assert str(events[-1].peer_address) == "38:6F:6B:A5:E8:20"
+    assert events[-1].peer_address.type.name == "PUBLIC"
+    await stack.close()
+
+
 async def test_stack_routes_classic_ssp_events(monkeypatch):
     from pybluehost.hci.constants import EventCode
     from pybluehost.hci.packets import HCIEvent

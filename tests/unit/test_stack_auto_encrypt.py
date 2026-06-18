@@ -7,7 +7,7 @@ import struct
 import pytest
 
 from pybluehost.ble.smp import BondInfo, JsonBondStorage
-from pybluehost.core.address import BDAddress
+from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.stack import Stack, StackConfig
 
 
@@ -64,6 +64,62 @@ async def test_le_connection_complete_triggers_start_encryption_when_bonded(tmp_
         assert any(isinstance(c, HCI_LE_Start_Encryption_Command) for c in sent), (
             "expected auto Start_Encryption command on LE_Connection_Complete with bonded peer"
         )
+    finally:
+        await stack.close()
+
+
+async def test_le_connection_complete_resolves_rpa_bond_for_auto_encrypt(tmp_path, monkeypatch):
+    storage = JsonBondStorage(tmp_path / "bonds.json")
+    identity = BDAddress.from_string("01:02:03:04:05:06")
+    irk = bytes.fromhex("00112233445566778899aabbccddeeff")
+
+    from pybluehost.ble.smp import SMPCrypto
+
+    prand = bytes.fromhex("412345")
+    rpa = BDAddress(
+        SMPCrypto.ah(irk, prand) + prand,
+        type=AddressType.RANDOM,
+    )
+    await storage.save_bond(BondInfo(
+        peer_address=identity,
+        address_type=int(identity.type),
+        ltk=b"\xCC" * 16,
+        irk=irk,
+        ediv=0,
+        rand=b"\x00" * 8,
+        sc=True,
+    ))
+    stack = await Stack.virtual(config=StackConfig(bond_storage=storage))
+    try:
+        sent: list = []
+        original = stack._hci.send_command
+
+        async def _capture(cmd):
+            sent.append(cmd)
+            return await original(cmd)
+
+        monkeypatch.setattr(stack._hci, "send_command", _capture)
+
+        from pybluehost.hci.constants import LEMetaSubEvent
+        from pybluehost.hci.packets import HCI_LE_Meta_Event, HCI_LE_Start_Encryption_Command
+
+        subevent_params = (
+            bytes([0x00])
+            + struct.pack("<H", 0x0040)
+            + bytes([0x00])
+            + bytes([int(AddressType.RANDOM)])
+            + rpa.to_hci()
+            + struct.pack("<HHH", 0x0028, 0, 0x0048)
+            + bytes([0])
+        )
+        evt = HCI_LE_Meta_Event(
+            subevent_code=int(LEMetaSubEvent.LE_CONNECTION_COMPLETE),
+            subevent_parameters=subevent_params,
+        )
+        await stack._on_hci_event(evt)
+        await asyncio.sleep(0.05)
+
+        assert any(isinstance(c, HCI_LE_Start_Encryption_Command) for c in sent)
     finally:
         await stack.close()
 

@@ -62,7 +62,7 @@ from pybluehost.ble.smp import (
     SMPState,
     _log_pairing_complete,
 )
-from pybluehost.core.address import BDAddress
+from pybluehost.core.address import AddressType, BDAddress
 
 if TYPE_CHECKING:
     from pybluehost.ble.smp import SMPPairingContext
@@ -417,13 +417,14 @@ async def _responder_recv_pairing_request(ctx: "SMPPairingContext", *, pdu: SMPP
         resp_auth_req |= 0x08  # SC bit
     if ctx.security_config is not None and getattr(ctx.security_config, "mitm_required", False):
         resp_auth_req |= 0x04  # MITM bit
+    supported_key_dist = 0x07  # EncKey | IdKey | Sign
     rsp = SMPPairingResponse(
         io_capability=ctx.local_io_caps,
         oob_data_flag=0,
         auth_req=resp_auth_req,
         max_key_size=16,
-        init_key_dist=0x07,
-        resp_key_dist=0x07,
+        init_key_dist=pdu.init_key_dist & supported_key_dist,
+        resp_key_dist=pdu.resp_key_dist & supported_key_dist,
     )
     raw = rsp.to_bytes()
     ctx.saved_pairing_response = raw
@@ -798,6 +799,20 @@ async def _sc_responder_recv_peer_dhkey_check(ctx: "SMPPairingContext", *, pdu, 
     await ctx.send(SMPPairingDHKeyCheck(dhkey_check=eb).to_bytes())
 
 
+def _local_key_distribution_mask(ctx: "SMPPairingContext") -> int:
+    """Keys this device should distribute after Phase 1 negotiation."""
+    if ctx.role == PairingRole.INITIATOR:
+        return ctx.local_init_key_dist & ctx.peer_init_key_dist
+    return ctx.local_resp_key_dist & ctx.peer_resp_key_dist
+
+
+def _peer_key_distribution_mask(ctx: "SMPPairingContext") -> int:
+    """Keys the peer should distribute after Phase 1 negotiation."""
+    if ctx.role == PairingRole.INITIATOR:
+        return ctx.local_resp_key_dist & ctx.peer_resp_key_dist
+    return ctx.local_init_key_dist & ctx.peer_init_key_dist
+
+
 async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
     """Phase 3 entry: distribute our keys per the negotiated mask, then await peer keys."""
     from pybluehost.ble.smp import (
@@ -805,7 +820,7 @@ async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
         SMPIdentityInformation, SMPMasterIdentification, SMPSigningInformation,
     )
     logger.debug("entered KEY_DISTRIBUTION on handle=0x%04X", ctx.connection_handle)
-    mask = ctx.local_init_key_dist if ctx.role == PairingRole.INITIATOR else ctx.local_resp_key_dist
+    mask = _local_key_distribution_mask(ctx)
     sc_mode = _sc_negotiated(ctx)
 
     if mask & 0x01 and not sc_mode:  # EncKey: LTK + EDIV + RAND (Legacy only; SC derives LTK via f5)
@@ -843,7 +858,7 @@ async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
 
     # If we expect no keys from peer, finalize immediately.
     # In SC mode, strip out the EncKey bit (0x01) since we will never receive a peer LTK.
-    expected = ctx.peer_resp_key_dist if ctx.role == PairingRole.INITIATOR else ctx.peer_init_key_dist
+    expected = _peer_key_distribution_mask(ctx)
     if sc_mode:
         expected &= ~0x01
     if expected == 0:
@@ -884,7 +899,7 @@ async def _recv_signing_info(ctx: "SMPPairingContext", *, pdu, **_kw) -> None:
 
 async def _check_phase3_complete(ctx: "SMPPairingContext") -> None:
     """Fire KEYS_RECEIVED if every expected peer key has arrived."""
-    expected = ctx.peer_resp_key_dist if ctx.role == PairingRole.INITIATOR else ctx.peer_init_key_dist
+    expected = _peer_key_distribution_mask(ctx)
     sc_mode = _sc_negotiated(ctx)
     if sc_mode:
         # In SC mode the peer will not send a LTK/EDIV/RAND — both sides already
@@ -917,6 +932,12 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
     from pybluehost.ble.smp import BondInfo, PairingRole
     storage = getattr(ctx, "_bond_storage", None)
     sc_mode = _sc_negotiated(ctx)
+    identity_type, identity_addr = ctx.received_identity_address
+    if len(identity_addr) == 6 and any(identity_addr):
+        bond_peer_address = BDAddress.from_hci(identity_addr, type=AddressType(identity_type))
+    else:
+        bond_peer_address = ctx.peer_address
+    bond_address_type = int(getattr(bond_peer_address, "type", identity_type))
     if storage is None:
         logger.debug("no bond storage configured; not persisting bond")
     else:
@@ -925,8 +946,8 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
             # NC and Passkey Entry provide MITM authentication; Just Works does not.
             authenticated = _association_model(ctx) in {"numeric_comparison", "passkey_entry"}
             bond = BondInfo(
-                peer_address=ctx.peer_address,
-                address_type=ctx.received_identity_address[0],
+                peer_address=bond_peer_address,
+                address_type=bond_address_type,
                 ltk=ctx.ltk_sc if ctx.ltk_sc else None,
                 irk=ctx.received_irk if ctx.received_irk else None,
                 csrk=ctx.received_csrk if ctx.received_csrk else None,
@@ -951,8 +972,8 @@ async def _persist_bond(ctx: "SMPPairingContext", **_kw) -> None:
             # Sub-Plan 3b-1: Passkey provides MITM authentication; Just Works does not.
             authenticated = _association_model(ctx) == "passkey_entry"
             bond = BondInfo(
-                peer_address=ctx.peer_address,
-                address_type=ctx.received_identity_address[0],
+                peer_address=bond_peer_address,
+                address_type=bond_address_type,
                 ltk=ltk_for_bond,
                 irk=ctx.received_irk if ctx.received_irk else None,
                 csrk=ctx.received_csrk if ctx.received_csrk else None,
@@ -1362,15 +1383,31 @@ def _build_c1_params(
     """
     preq = ctx.saved_pairing_request[:7]
     pres = ctx.saved_pairing_response[:7]
-    iat = 0x00  # address type public
-    rat = 0x00
     if ctx.role == PairingRole.INITIATOR:
         ia = _local_address_bytes(ctx)
         ra = _peer_address_bytes(ctx)
+        iat = _local_address_type(ctx)
+        rat = _peer_address_type(ctx)
     else:
         ia = _peer_address_bytes(ctx)   # peer is Initiator
         ra = _local_address_bytes(ctx)  # local is Responder
+        iat = _peer_address_type(ctx)
+        rat = _local_address_type(ctx)
     return preq, pres, iat, rat, ia, ra
+
+
+def _c1_address_type(addr: object | None) -> int:
+    if addr is None or not hasattr(addr, "type"):
+        return 0
+    return int(addr.type) & 0x01
+
+
+def _local_address_type(ctx: "SMPPairingContext") -> int:
+    return _c1_address_type(ctx.local_address)
+
+
+def _peer_address_type(ctx: "SMPPairingContext") -> int:
+    return _c1_address_type(ctx.peer_address)
 
 
 def _local_address_bytes(ctx: "SMPPairingContext") -> bytes:

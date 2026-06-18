@@ -92,7 +92,7 @@ async def test_phase3_initiator_sends_keys_then_collects_and_bonds(tmp_path, mon
                      connection_handle=0x0040)
     # Note: SMPIdentityAddressInformation uses addr_type and bd_addr (raw bytes)
     await mgr.on_pdu(SMPIdentityAddressInformation(
-        addr_type=0, bd_addr=bytes(b"\x01\x02\x03\x04\x05\x06")
+        addr_type=0, bd_addr=BDAddress(b"\x01\x02\x03\x04\x05\x06").to_hci()
     ).to_bytes(), connection_handle=0x0040)
 
     # CSRK is part of peer_resp_key_dist (0x04 bit); mask=0x07 includes it
@@ -176,7 +176,7 @@ async def test_phase3_defers_peer_keys_until_encryption_change(tmp_path, monkeyp
     )
     await mgr.on_pdu(
         SMPIdentityAddressInformation(
-            addr_type=0, bd_addr=bytes(peer_addr.address),
+            addr_type=0, bd_addr=peer_addr.to_hci(),
         ).to_bytes(),
         connection_handle=0x0040,
     )
@@ -280,7 +280,7 @@ async def test_sc_initiator_phase3_skips_ltk_distribution(tmp_path, monkeypatch)
     )
     await mgr.on_pdu(
         SMPIdentityAddressInformation(
-            addr_type=0, bd_addr=bytes(BDAddress(b"\x01\x02\x03\x04\x05\x06").address)
+            addr_type=0, bd_addr=BDAddress(b"\x01\x02\x03\x04\x05\x06").to_hci()
         ).to_bytes(),
         connection_handle=0x0040,
     )
@@ -299,3 +299,87 @@ async def test_sc_initiator_phase3_skips_ltk_distribution(tmp_path, monkeypatch)
     assert bond.irk == peer_irk
     assert bond.csrk == peer_csrk
     assert ctx.state_machine.state == SMPState.BONDED
+
+
+async def test_sc_bond_persists_distributed_identity_address_when_it_differs(
+    tmp_path, monkeypatch
+):
+    """Directed advertising should target the peer identity address, not an RPA."""
+    monkeypatch.setattr(os, "urandom", lambda n: b"\xAB" * n)
+
+    from pybluehost.ble._smp_state import register_transitions
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import (
+        PairingRole,
+        SMPIdentityAddressInformation,
+        SMPIdentityInformation,
+        SMPPairingContext,
+        SMPSigningInformation,
+    )
+
+    sent: list[bytes] = []
+
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    storage = JsonBondStorage(tmp_path / "bonds.json")
+    connection_peer_addr = BDAddress.from_string("01:02:03:04:05:06")
+    distributed_identity_addr = BDAddress.from_string("A1:A2:A3:A4:A5:A6")
+    mgr = SMPManager(
+        local_io_caps=IOCapability.NO_INPUT_NO_OUTPUT,
+        bondable=True,
+        security_config=SecurityConfig(enable_secure_connections=True),
+        local_address=BDAddress.from_string("0A:0B:0C:0D:0E:0F"),
+        bond_storage=storage,
+    )
+    mgr.bind_channel(0x0040, send=send, peer_address=connection_peer_addr)
+
+    ctx = SMPPairingContext.create(
+        connection_handle=0x0040,
+        peer_address=connection_peer_addr,
+        role=PairingRole.INITIATOR,
+        send=send,
+    )
+    ctx.local_io_caps = IOCapability.NO_INPUT_NO_OUTPUT
+    ctx.bondable = True
+    ctx.local_address = BDAddress.from_string("0A:0B:0C:0D:0E:0F")
+    ctx.security_config = SecurityConfig(enable_secure_connections=True)
+    ctx._bond_storage = storage
+    ctx.local_init_key_dist = 0x06
+    ctx.local_resp_key_dist = 0x06
+    ctx.peer_init_key_dist = 0x06
+    ctx.peer_resp_key_dist = 0x06
+    ctx.local_auth_req = 0x09
+    ctx.peer_auth_req = 0x09
+    ctx.ltk_sc = b"\xDE" * 16
+    ctx.mac_key = b"\xCC" * 16
+    ctx.pairing_complete = asyncio.get_running_loop().create_future()
+    register_transitions(ctx)
+    mgr._contexts[0x0040] = ctx
+    ctx.state_machine._state = SMPState.STK_ENCRYPTING
+
+    await ctx.state_machine.fire(SMPEvent.ENCRYPTION_CHANGE_SUCCESS)
+    sent.clear()
+
+    await mgr.on_pdu(
+        SMPIdentityInformation(irk=b"\xF0" * 16).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(
+        SMPIdentityAddressInformation(
+            addr_type=0,
+            bd_addr=distributed_identity_addr.to_hci(),
+        ).to_bytes(),
+        connection_handle=0x0040,
+    )
+    await mgr.on_pdu(
+        SMPSigningInformation(signature_key=b"\xCD" * 16).to_bytes(),
+        connection_handle=0x0040,
+    )
+
+    await asyncio.wait_for(ctx.pairing_complete, timeout=1.0)
+
+    bond = await storage.load_bond(distributed_identity_addr)
+    assert bond is not None
+    assert bond.peer_address == distributed_identity_addr
+    assert bond.ltk == b"\xDE" * 16

@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 from pybluehost.ble.smp import (
+    PairingRole,
     SMPCode,
+    SMPPairingContext,
     SMPManager,
     SMPPairingRequest,
+    SMPPairingResponse,
     SMPState,
     decode_smp_pdu,
 )
-from pybluehost.core.address import BDAddress
+from pybluehost.ble._smp_state import _build_c1_params
+from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.types import IOCapability
 
 
@@ -46,6 +50,34 @@ async def test_responder_acks_pairing_request_with_pairing_response():
     ctx = mgr.get_context(0x0040)
     assert ctx is not None
     assert ctx.state_machine.state == SMPState.CONFIRMING
+
+
+async def test_responder_masks_key_distribution_to_initiator_request():
+    sent: list[bytes] = []
+
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    mgr = SMPManager(local_io_caps=IOCapability.NO_INPUT_NO_OUTPUT, bondable=True)
+    mgr.bind_channel(
+        connection_handle=0x0040,
+        send=send,
+        peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"),
+    )
+
+    req = SMPPairingRequest(
+        io_capability=IOCapability.NO_INPUT_NO_OUTPUT,
+        oob_data_flag=0,
+        auth_req=0x01,
+        max_key_size=16,
+        init_key_dist=0x03,
+        resp_key_dist=0x03,
+    )
+    await mgr.on_pdu(req.to_bytes(), connection_handle=0x0040)
+
+    rsp = decode_smp_pdu(sent[0])
+    assert rsp.init_key_dist == 0x03
+    assert rsp.resp_key_dist == 0x03
 
 
 async def test_responder_completes_phase2(monkeypatch):
@@ -93,3 +125,40 @@ async def test_responder_completes_phase2(monkeypatch):
     ctx = mgr.get_context(0x0040)
     assert ctx.state_machine.state == SMPState.RANDOM_EXCHANGE
     assert ctx.stk == b"\x77" * 16
+
+
+def test_responder_c1_params_use_initiator_random_address_type():
+    ctx = SMPPairingContext.create(
+        connection_handle=0x0044,
+        peer_address=BDAddress.from_string(
+            "5E:0B:6A:A9:56:68",
+            type=AddressType.RANDOM,
+        ),
+        role=PairingRole.RESPONDER,
+    )
+    ctx.local_address = BDAddress.from_string("00:1A:7D:DA:71:11")
+    ctx.saved_pairing_request = SMPPairingRequest(
+        io_capability=IOCapability.KEYBOARD_DISPLAY,
+        oob_data_flag=0,
+        auth_req=0x2D,
+        max_key_size=16,
+        init_key_dist=0x0F,
+        resp_key_dist=0x0F,
+    ).to_bytes()
+    ctx.saved_pairing_response = SMPPairingResponse(
+        io_capability=IOCapability.NO_INPUT_NO_OUTPUT,
+        oob_data_flag=0,
+        auth_req=0x01,
+        max_key_size=16,
+        init_key_dist=0x07,
+        resp_key_dist=0x07,
+    ).to_bytes()
+
+    preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
+
+    assert preq == bytes.fromhex("0104002d100f0f")
+    assert pres == bytes.fromhex("02030001100707")
+    assert iat == AddressType.RANDOM
+    assert rat == AddressType.PUBLIC
+    assert ia == bytes.fromhex("5e0b6aa95668")
+    assert ra == bytes.fromhex("001a7dda7111")

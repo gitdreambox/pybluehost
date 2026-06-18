@@ -60,6 +60,7 @@ async def run_app_command(
     transport_arg: str,
     main_coro: Callable[[Stack, asyncio.Event], Awaitable[None]],
     *,
+    config: StackConfig | None = None,
     hci_log: bool = False,
     btsnoop: str | Path | None = None,
     trace_spec: Any = None,
@@ -90,7 +91,7 @@ async def run_app_command(
         transport = await parse_transport_arg(transport_arg)
         if not transport.is_open:
             await transport.open()
-        config = StackConfig()
+        config = config or StackConfig()
         if hci_log:
             config.trace_sinks.append(CallbackSink(_print_hci_trace))
         if btsnoop is not None:
