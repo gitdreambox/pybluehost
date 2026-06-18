@@ -304,7 +304,12 @@ def test_csr_transport_is_usb_transport():
 
 class TestUSBTransportDiagnostics:
     def test_open_access_denied_raises_diagnostic_error(self):
-        """When get_active_configuration raises errno=13, we get USBAccessDeniedError."""
+        """When get_active_configuration raises errno=13, we get USBAccessDeniedError.
+
+        Exercises the win32 path (DRIVER_CONFLICT classification) so sys.platform
+        is patched — host CI may be Linux/macOS, where errno=13 classifies as
+        PERMISSION_DENIED instead.
+        """
         import usb.core
         from pybluehost.core.errors import USBAccessDeniedError
 
@@ -318,7 +323,8 @@ class TestUSBTransportDiagnostics:
         )
 
         transport = USBTransport(device=device)
-        with pytest.raises(USBAccessDeniedError) as exc_info:
+        with pytest.raises(USBAccessDeniedError) as exc_info, \
+             patch("pybluehost.transport.usb.base.sys.platform", "win32"):
             import asyncio
             asyncio.run(transport.open())
 

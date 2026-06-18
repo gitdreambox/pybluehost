@@ -88,7 +88,11 @@ class TestCmdUSBDiagnose:
         assert "HCI Reset status: 0x00" in captured.out
 
     def test_device_bthusb_driver(self, capsys):
-        """Device bound to Windows BT driver raises NotImplementedError (errno=-12)."""
+        """Device bound to Windows BT driver raises NotImplementedError (errno=-12).
+
+        Exercises the win32 BTHUSB driver-conflict path, so sys.platform is
+        patched — the host OS test runs on may be Linux/macOS.
+        """
         import usb.core
         dev = MagicMock()
         dev.idVendor = 0x0A12
@@ -98,7 +102,9 @@ class TestCmdUSBDiagnose:
         dev.bDeviceProtocol = 0x01
         dev.get_active_configuration.side_effect = NotImplementedError("LIBUSB_ERROR_NOT_SUPPORTED")
 
-        with self._patch_libusb(), patch("pybluehost.transport.usb.usb") as mock_usb:
+        with self._patch_libusb(), \
+             patch("pybluehost.transport.usb.usb") as mock_usb, \
+             patch("pybluehost.transport.usb.base.sys.platform", "win32"):
             mock_usb.core.find.return_value = [dev]
             mock_usb.core.USBError = usb.core.USBError
             args = MagicMock()
@@ -110,7 +116,7 @@ class TestCmdUSBDiagnose:
         assert "bthusb" in captured.out.lower() or "Zadig" in captured.out
 
     def test_device_access_denied(self, capsys):
-        """Device access denied by another process (errno=13)."""
+        """Device access denied (errno=13) on Windows: DRIVER_CONFLICT path."""
         import usb.core
         dev = MagicMock()
         dev.idVendor = 0x0A12
@@ -121,7 +127,9 @@ class TestCmdUSBDiagnose:
         err = usb.core.USBError("Access denied", errno=13)
         dev.get_active_configuration.side_effect = err
 
-        with self._patch_libusb(), patch("pybluehost.transport.usb.usb") as mock_usb:
+        with self._patch_libusb(), \
+             patch("pybluehost.transport.usb.usb") as mock_usb, \
+             patch("pybluehost.transport.usb.base.sys.platform", "win32"):
             mock_usb.core.find.return_value = [dev]
             mock_usb.core.USBError = usb.core.USBError
             args = MagicMock()
