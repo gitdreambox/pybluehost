@@ -68,6 +68,7 @@
 | v2.1 Plan B.1 | USB SCO Alt-Setting + vendor quirks（Intel Alt 1/6、Realtek 0xFC8B、真 iso IN/OUT、prepare_for_sco hook） | ✅ 完成（mock-based 单测；真机 E2E 待 adapter） | [b.1](plans/2026-06-13-v2.1-plan-B.1-usb-sco-alt-setting.md) | `pybluehost/transport/{base.py,usb/{base,intel,realtek}.py}`, `pybluehost/hci/controller.py` |
 | v2.1 Plan B.2 | 实时 PCM ↔ OS 音频（sounddevice）：MicToScoSender + ScoToSpeakerReceiver + hfp/hsp-test --mic-device/--speaker-device + tools audio list-devices | ✅ 完成（mock-based 单测；live verify 需 PortAudio 设备） | [b.2](plans/2026-06-13-v2.1-plan-B.2-realtime-pcm-os-audio.md) | `pybluehost/profiles/classic/_sco_realtime.py`, `pybluehost/cli/app/{hfp,hsp}_test.py`, `pybluehost/cli/tools/audio.py` |
 | v1.1 Virtual Sniffer | live HCI 注入 Ellisys/WPS 分析仪 UI（新 TraceSink + 两后端 + `--virtual-sniffer` CLI flag） | ✅ 完成 + 真机实测（CSR8510 + 真 Ellisys/WPS：注入管线全程无错）；分析仪 UI 视觉确认由操作者完成 | [v1.1-virtual-sniffer](plans/2026-05-31-v1.1-virtual-sniffer.md) | `pybluehost/sniffer/`, `pybluehost/cli/_sniffer_arg.py`, `pybluehost/cli/_lifecycle.py`, `docs/VIRTUAL_SNIFFER_VERIFY.md` |
+| Plan C.1 | 源码树清理：删除死代码 transport/usb.py + 把 test_at_parser.py 搬到 tests/ + dev 脚本 gen_btsnoop_fixture.py 搬到 scripts/ | ✅ 完成 | [c.1](plans/2026-06-18-plan-C.1-source-tree-cleanup.md) | `pybluehost/transport/usb.py` 删；`pybluehost/profiles/classic/test_at_parser.py` → `tests/`；`pybluehost/tools/` → `scripts/` |
 
 > **MITM 透传应用（独立应用，4 Plan）✅ 全部完成（2026-06-02）**：授权安全测试用中间人，双 radio、B 式 HCI-ACL 透传，仅复用 `transport`+`hci`，**协议栈+hci 层零改动**，89 个 mitm 单元测试全 PASS。spec：[`specs/2026-06-01-mitm-passthrough-design.md`](specs/2026-06-01-mitm-passthrough-design.md)。v1 = BLE+BR 透传+抓包（btsnoop）；**改写（规则/hook）为后续**。**待真机验证**：recon/impersonate/连接/逐链路加密的 HCI 时序、虚拟三角 e2e（虚拟控制器不支持真实广播/SSP 桥接，故 Task 7/MITM-3 Task 5 取范围 C：编排+fake 单测）、`--clone-address`、both 模式并发接线。
 
@@ -75,7 +76,7 @@
 
 > **v2.1 Plan B.2 ✅（2026-06-13）**：v2.0 deferred 的实时 PCM↔OS 音频适配。6 Task（MicToScoSender + ScoToSpeakerReceiver + profiles.classic 重导出 + hfp/hsp-test `--mic-device`/`--speaker-device` 互斥参数 + `tools audio list-devices` + 文档更新）。复用 v2.0 A.6 的 sounddevice 懒加载层；CVSD/mSBC 共用 240/120 sample/帧缓冲；underrun 发静音帧不丢 SCO 时钟。全部 mock-based 单测覆盖，live 验证需 PortAudio 设备到货后手动执行。Out-of-scope：自定义重采样、AEC/降噪、Windows WASAPI 独占模式。
 
-**总计：34 个 Plan（原 33 个 + v1.1 Virtual Sniffer）**
+**总计：35 个 Plan（原 34 个 + Plan C.1）**
 
 ---
 
