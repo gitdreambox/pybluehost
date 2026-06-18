@@ -6,10 +6,10 @@
 
 ## 快速定位
 
-**当前状态**：v1.0 完结（31 Plans，Hardware E2E Readiness ✅）；**v2.0 Classic Audio ✅ 全部交付 + v2.1 Plan B.1（USB SCO quirk 适配）✅ + v2.1 Plan B.2（实时 PCM↔OS 音频）✅**；v1.1 Virtual Sniffer / v1.2 PTS IUT PRD 草案就绪，待动工
+**当前状态**：v1.0 完结（31 Plans，Hardware E2E Readiness ✅）；**v2.0 Classic Audio ✅ 全部交付 + v2.1 Plan B.1（USB SCO quirk 适配）✅ + v2.1 Plan B.2（实时 PCM↔OS 音频）✅ + v1.1 Virtual Sniffer ✅（含真机实测）**；v1.2 PTS IUT PRD 草案就绪，待动工
 **下一步候选**：
-1. **v1.1 Virtual Sniffer**——PRD 草案就绪（[`docs/PRD-v1.1.md`](../PRD-v1.1.md)）。把 PyBlueHost live HCI 注入 Ellisys/WPS 分析仪软件显示。4 个 Plan、~5 周、Windows-only。design spec + Plan **未编写**。
-2. **v1.2 PTS IUT**——PRD 草案就绪（[`docs/PRD-v1.2.md`](../PRD-v1.2.md)）。PyBlueHost 当 IUT 跑 SIG PTS 一致性。Phase 1 = Fluoride 式 PTS mode + 交互式控制台手动驱动，4 个 Plan、~7.5-8.5 周；Phase 2 = auto-pts BTP 自动化（后续）。design spec + Plan **未编写**。
+1. **v1.2 PTS IUT**——PRD 草案就绪（[`docs/PRD-v1.2.md`](../PRD-v1.2.md)）。PyBlueHost 当 IUT 跑 SIG PTS 一致性。Phase 1 = Fluoride 式 PTS mode + 交互式控制台手动驱动，4 个 Plan、~7.5-8.5 周；Phase 2 = auto-pts BTP 自动化（后续）。design spec + Plan **未编写**。
+2. **v1.1 Virtual Sniffer ✅ 完成**——live HCI 注入 Ellisys/WPS 真机实测通过，详见 [plan 文档](plans/2026-05-31-v1.1-virtual-sniffer.md)。仅留分析仪 UI 视觉确认由操作者完成。
 3. **v2.0 Classic Audio**——PRD + design spec 已就绪（[`docs/PRD-v2.0.md`](../PRD-v2.0.md) + [`docs/superpowers/specs/2026-05-27-prd-v2.0-classic-audio-design.md`](specs/2026-05-27-prd-v2.0-classic-audio-design.md)）。6 个 Plan、14-17 周、SBC+CVSD+mSBC（无 AAC）。**Plan A.1（codec 层）✅**（11 个 Task + libsbc backend；53 codec 单测；与 BlueZ libsbc 字节级一致；真音频 PSNR 80-87 dB）+ **Plan A.2（AVDTP + A2DP）✅**（11 个 Task + 53 单测 + 1 e2e；AVDTP signaling 完整、A2DPSource/Sink 注册到 PSM 0x0019、双 L2CAP 信道路由按 ACL handle 区分 signaling/media；端到端 source→sink PCM round-trip **PSNR 81.2 dB**）+ **Plan A.3（AVRCP + AVCTP）✅**（11 个 Task；46 单测 + 1 e2e；PASS_THROUGH 全套 + REGISTER_NOTIFICATION + INTERIM 响应；UUIDs 0x110E/0x110F/0x110C）+ **Plan A.4（HFP + SCO file loopback）✅**（11 个 Task；~48 单测 + 1 e2e；SLC 三阶段建立 + SCO link setup + CVSD/mSBC WAV 文件 loopback；HCI SCO Data Packet 类型 0x03；UUIDs 0x111E/0x111F）+ **Plan A.5（HSP + CVSD SCO loopback）✅**（6 个 Task；21 单测 + 1 e2e；复用 A.4 基础设施；UUIDs 0x1131/0x1112；RFCOMM HS=5/AG=12；CVSD-only，no SLC handshake）+ **Plan A.6（CLI + sounddevice + runbook）✅**（6 个 Task；28 单测；6 个新 `app` CLI 命令（a2dp-source/sink、avrcp-control/target、hfp-test/hsp-test）+ sounddevice 懒加载（`[audio]` extras）+ `docs/CLASSIC_AUDIO_E2E.md` 真机 runbook + USB SCO Alt-Setting deferred 到 v2.1）。**v2.0 ✅ 全部交付**。
 4. 自托管硬件 CI runner / 真机首批 adapter survey / 断线重连闭环（v1.0 运营改进，可并行）
 **版本互不依赖**：v1.1 / v1.2 / v2.0 可任意顺序或并行推进
@@ -67,7 +67,6 @@
 | MITM-4 | CLI（le/bredr/both）+ Numeric Comparison 交互 + runbook | ✅ 完成 | [mitm-4](plans/2026-06-01-mitm-4-cli-numeric-docs.md) | `pybluehost/cli/app/mitm/cli.py`, `pybluehost/cli/app/mitm/pairing/delegate.py`, `docs/MITM.md` |
 | v2.1 Plan B.1 | USB SCO Alt-Setting + vendor quirks（Intel Alt 1/6、Realtek 0xFC8B、真 iso IN/OUT、prepare_for_sco hook） | ✅ 完成（mock-based 单测；真机 E2E 待 adapter） | [b.1](plans/2026-06-13-v2.1-plan-B.1-usb-sco-alt-setting.md) | `pybluehost/transport/{base.py,usb/{base,intel,realtek}.py}`, `pybluehost/hci/controller.py` |
 | v2.1 Plan B.2 | 实时 PCM ↔ OS 音频（sounddevice）：MicToScoSender + ScoToSpeakerReceiver + hfp/hsp-test --mic-device/--speaker-device + tools audio list-devices | ✅ 完成（mock-based 单测；live verify 需 PortAudio 设备） | [b.2](plans/2026-06-13-v2.1-plan-B.2-realtime-pcm-os-audio.md) | `pybluehost/profiles/classic/_sco_realtime.py`, `pybluehost/cli/app/{hfp,hsp}_test.py`, `pybluehost/cli/tools/audio.py` |
-| v1.1 Virtual Sniffer | live HCI 注入 Ellisys/WPS 分析仪 UI（新 TraceSink + 两后端 + `--virtual-sniffer` CLI flag） | ✅ 完成（纯软件单测全绿；真机注入显示待 Windows+分析仪手动验收） | [v1.1-virtual-sniffer](plans/2026-05-31-v1.1-virtual-sniffer.md) | `pybluehost/sniffer/`, `pybluehost/cli/_sniffer_arg.py`, `pybluehost/cli/_lifecycle.py`, `docs/VIRTUAL_SNIFFER_VERIFY.md` |
 | v1.1 Virtual Sniffer | live HCI 注入 Ellisys/WPS 分析仪 UI（新 TraceSink + 两后端 + `--virtual-sniffer` CLI flag） | ✅ 完成 + 真机实测（CSR8510 + 真 Ellisys/WPS：注入管线全程无错）；分析仪 UI 视觉确认由操作者完成 | [v1.1-virtual-sniffer](plans/2026-05-31-v1.1-virtual-sniffer.md) | `pybluehost/sniffer/`, `pybluehost/cli/_sniffer_arg.py`, `pybluehost/cli/_lifecycle.py`, `docs/VIRTUAL_SNIFFER_VERIFY.md` |
 
 > **MITM 透传应用（独立应用，4 Plan）✅ 全部完成（2026-06-02）**：授权安全测试用中间人，双 radio、B 式 HCI-ACL 透传，仅复用 `transport`+`hci`，**协议栈+hci 层零改动**，89 个 mitm 单元测试全 PASS。spec：[`specs/2026-06-01-mitm-passthrough-design.md`](specs/2026-06-01-mitm-passthrough-design.md)。v1 = BLE+BR 透传+抓包（btsnoop）；**改写（规则/hook）为后续**。**待真机验证**：recon/impersonate/连接/逐链路加密的 HCI 时序、虚拟三角 e2e（虚拟控制器不支持真实广播/SSP 桥接，故 Task 7/MITM-3 Task 5 取范围 C：编排+fake 单测）、`--clone-address`、both 模式并发接线。
@@ -76,7 +75,7 @@
 
 > **v2.1 Plan B.2 ✅（2026-06-13）**：v2.0 deferred 的实时 PCM↔OS 音频适配。6 Task（MicToScoSender + ScoToSpeakerReceiver + profiles.classic 重导出 + hfp/hsp-test `--mic-device`/`--speaker-device` 互斥参数 + `tools audio list-devices` + 文档更新）。复用 v2.0 A.6 的 sounddevice 懒加载层；CVSD/mSBC 共用 240/120 sample/帧缓冲；underrun 发静音帧不丢 SCO 时钟。全部 mock-based 单测覆盖，live 验证需 PortAudio 设备到货后手动执行。Out-of-scope：自定义重采样、AEC/降噪、Windows WASAPI 独占模式。
 
-**总计：33 个 Plan（原 32 个 + v2.1 Plan B.2）**
+**总计：34 个 Plan（原 33 个 + v1.1 Virtual Sniffer）**
 
 ---
 
