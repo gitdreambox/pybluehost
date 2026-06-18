@@ -31,10 +31,11 @@ PyBlueHost 服务三类不同需求的用户。先确定自己属于哪类，直
 | RTL8852BE    | `0x0BDA` | `0x4853` | USB  | 5.2 | BR/EDR + BLE | `rtl8852bu_fw.bin` |
 | CSR8510      | `0x0A12` | `0x0001` | USB  | 4.0 | BR/EDR + BLE | 只支持BT 4.0 |
 | Intel BE200  | `0x8087` | `0x0036` | USB  | 5.4 | BR/EDR + BLE | `ibt-0291-0291.sfi` |
+| Intel AX201  | `0x8087` | `0x0026` | USB  | 5.2 | BR/EDR + BLE | `ibt-19-0-4.sfi` |
 | BARROT BT6.0 | `0x33FA` | `0x0012` | USB  | 6.0 | BR/EDR + BLE | UGREEN BT6.0 Adapter |
 | nRF52840     | `0x1915` | `0x521F` | UART | 5.4 | BLE          | PTS FW |
 
-CSR、Intel 系列芯片在代码中已支持但未在本仓库做完整回归。欢迎提 PR 补 hardware 矩阵。
+CSR、其他 Intel 系列芯片在代码中已支持但未在本仓库做完整回归。欢迎提 PR 补 hardware 矩阵。
 
 ---
 

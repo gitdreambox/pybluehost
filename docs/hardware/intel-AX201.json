@@ -1,0 +1,751 @@
+﻿{
+  "transport": "usb:8087:0026#1",
+  "bd_addr": "D4:54:8B:BA:70:A1",
+  "manufacturer_id": 2,
+  "manufacturer_name": "Intel Corp.",
+  "hci_version": 11,
+  "hci_version_name": "Bluetooth 5.2",
+  "hci_revision": 8787,
+  "hci_revision_hex": "0x2253",
+  "lmp_version": 11,
+  "lmp_version_name": "Bluetooth 5.2",
+  "lmp_subversion": 8787,
+  "lmp_subversion_hex": "0x2253",
+  "capability_summary": {
+    "le_secure_connections": true,
+    "le_privacy_rpa": true,
+    "le_extended_advertising": true,
+    "le_2m_phy": true,
+    "le_coded_phy": true,
+    "bredr_encryption": true,
+    "bredr_ssp": true,
+    "bredr_sc_controller": true,
+    "bredr_sc_host_support": false,
+    "extended_inquiry_response": true
+  },
+  "acl_buffers": {
+    "bredr_packet_length": 1021,
+    "bredr_total_packets": 4,
+    "le_packet_length": 251,
+    "le_total_packets": 3
+  },
+  "le_features": {
+    "0/0": {
+      "name": "LE Encryption",
+      "supported": true
+    },
+    "0/1": {
+      "name": "Connection Parameters Request Procedure",
+      "supported": true
+    },
+    "0/2": {
+      "name": "Extended Reject Indication",
+      "supported": true
+    },
+    "0/3": {
+      "name": "Peripheral-initiated Features Exchange",
+      "supported": true
+    },
+    "0/4": {
+      "name": "LE Ping",
+      "supported": true
+    },
+    "0/5": {
+      "name": "LE Data Packet Length Extension",
+      "supported": true
+    },
+    "0/6": {
+      "name": "LL Privacy",
+      "supported": true
+    },
+    "0/7": {
+      "name": "Extended Scanning Filter Policies",
+      "supported": true
+    },
+    "1/0": {
+      "name": "LE 2M PHY",
+      "supported": true
+    },
+    "1/1": {
+      "name": "Stable Modulation Index - Transmitter",
+      "supported": false
+    },
+    "1/2": {
+      "name": "Stable Modulation Index - Receiver",
+      "supported": false
+    },
+    "1/3": {
+      "name": "LE Coded PHY",
+      "supported": true
+    },
+    "1/4": {
+      "name": "LE Extended Advertising",
+      "supported": true
+    },
+    "1/5": {
+      "name": "LE Periodic Advertising",
+      "supported": false
+    },
+    "1/6": {
+      "name": "Channel Selection Algorithm #2",
+      "supported": true
+    },
+    "1/7": {
+      "name": "LE Power Class 1",
+      "supported": false
+    },
+    "2/0": {
+      "name": "Minimum Number of Used Channels Procedure",
+      "supported": false
+    },
+    "2/1": {
+      "name": "Connection CTE Request",
+      "supported": false
+    },
+    "2/2": {
+      "name": "Connection CTE Response",
+      "supported": false
+    },
+    "2/3": {
+      "name": "Connectionless CTE Transmitter",
+      "supported": false
+    },
+    "2/4": {
+      "name": "Connectionless CTE Receiver",
+      "supported": false
+    },
+    "2/5": {
+      "name": "Antenna Switching During CTE Transmission (AoD)",
+      "supported": false
+    },
+    "2/6": {
+      "name": "Antenna Switching During CTE Reception (AoA)",
+      "supported": false
+    },
+    "2/7": {
+      "name": "Receiving Constant Tone Extensions",
+      "supported": false
+    },
+    "3/0": {
+      "name": "Periodic Advertising Sync Transfer - Sender",
+      "supported": false
+    },
+    "3/1": {
+      "name": "Periodic Advertising Sync Transfer - Recipient",
+      "supported": false
+    },
+    "3/2": {
+      "name": "Sleep Clock Accuracy Updates",
+      "supported": false
+    },
+    "3/3": {
+      "name": "Remote Public Key Validation",
+      "supported": true
+    },
+    "3/4": {
+      "name": "Connected Isochronous Stream - Central",
+      "supported": false
+    },
+    "3/5": {
+      "name": "Connected Isochronous Stream - Peripheral",
+      "supported": false
+    },
+    "3/6": {
+      "name": "Isochronous Broadcaster",
+      "supported": false
+    },
+    "3/7": {
+      "name": "Synchronized Receiver",
+      "supported": false
+    },
+    "4/0": {
+      "name": "Connected Isochronous Stream (Host Support)",
+      "supported": false
+    },
+    "4/1": {
+      "name": "LE Power Control Request",
+      "supported": false
+    },
+    "4/2": {
+      "name": "LE Power Change Indication",
+      "supported": false
+    },
+    "4/3": {
+      "name": "LE Path Loss Monitoring",
+      "supported": false
+    },
+    "4/4": {
+      "name": "Periodic Advertising ADI Support",
+      "supported": false
+    },
+    "4/5": {
+      "name": "Connection Subrating",
+      "supported": false
+    },
+    "4/6": {
+      "name": "Connection Subrating (Host Support)",
+      "supported": false
+    },
+    "4/7": {
+      "name": "Channel Classification",
+      "supported": false
+    },
+    "5/0": {
+      "name": "Advertising Coding Selection",
+      "supported": false
+    },
+    "5/1": {
+      "name": "Advertising Coding Selection (Host Support)",
+      "supported": false
+    },
+    "5/2": {
+      "name": "Decision-Based Advertising Filtering",
+      "supported": false
+    },
+    "5/3": {
+      "name": "Periodic Advertising with Responses - Advertiser",
+      "supported": false
+    },
+    "5/4": {
+      "name": "Periodic Advertising with Responses - Scanner",
+      "supported": false
+    },
+    "5/5": {
+      "name": "Unsegmented Framed Mode",
+      "supported": false
+    },
+    "5/6": {
+      "name": "Channel Sounding",
+      "supported": false
+    },
+    "5/7": {
+      "name": "Channel Sounding (Host Support)",
+      "supported": false
+    },
+    "6/0": {
+      "name": "Channel Sounding Tone Quality Indication",
+      "supported": false
+    },
+    "7/7": {
+      "name": "LL Extended Feature Set",
+      "supported": false
+    }
+  },
+  "bredr_features": {
+    "0/0": {
+      "name": "3-slot packets",
+      "supported": true
+    },
+    "0/1": {
+      "name": "5-slot packets",
+      "supported": true
+    },
+    "0/2": {
+      "name": "Encryption",
+      "supported": true
+    },
+    "0/3": {
+      "name": "Slot offset",
+      "supported": true
+    },
+    "0/4": {
+      "name": "Timing accuracy",
+      "supported": true
+    },
+    "0/5": {
+      "name": "Role switch",
+      "supported": true
+    },
+    "0/6": {
+      "name": "Hold mode",
+      "supported": false
+    },
+    "0/7": {
+      "name": "Sniff mode",
+      "supported": true
+    },
+    "1/0": {
+      "name": "Previously used (was Park state)",
+      "supported": false
+    },
+    "1/1": {
+      "name": "Power control requests",
+      "supported": true
+    },
+    "1/2": {
+      "name": "Channel quality driven data rate (CQDDR)",
+      "supported": true
+    },
+    "1/3": {
+      "name": "SCO link",
+      "supported": true
+    },
+    "1/4": {
+      "name": "HV2 packets",
+      "supported": true
+    },
+    "1/5": {
+      "name": "HV3 packets",
+      "supported": true
+    },
+    "1/6": {
+      "name": "u-law log synchronous data",
+      "supported": true
+    },
+    "1/7": {
+      "name": "A-law log synchronous data",
+      "supported": true
+    },
+    "2/0": {
+      "name": "CVSD synchronous data",
+      "supported": true
+    },
+    "2/1": {
+      "name": "Paging parameter negotiation",
+      "supported": true
+    },
+    "2/2": {
+      "name": "Power control",
+      "supported": true
+    },
+    "2/3": {
+      "name": "Transparent synchronous data",
+      "supported": true
+    },
+    "2/4": {
+      "name": "Flow control lag (LSB)",
+      "supported": false
+    },
+    "2/5": {
+      "name": "Flow control lag (Middle)",
+      "supported": false
+    },
+    "2/6": {
+      "name": "Flow control lag (MSB)",
+      "supported": false
+    },
+    "2/7": {
+      "name": "Broadcast Encryption",
+      "supported": false
+    },
+    "3/1": {
+      "name": "EDR ACL 2 Mbps mode",
+      "supported": true
+    },
+    "3/2": {
+      "name": "EDR ACL 3 Mbps mode",
+      "supported": true
+    },
+    "3/3": {
+      "name": "Enhanced inquiry scan",
+      "supported": true
+    },
+    "3/4": {
+      "name": "Interlaced inquiry scan",
+      "supported": true
+    },
+    "3/5": {
+      "name": "Interlaced page scan",
+      "supported": true
+    },
+    "3/6": {
+      "name": "RSSI with inquiry results",
+      "supported": true
+    },
+    "3/7": {
+      "name": "EV3 packets",
+      "supported": true
+    },
+    "4/0": {
+      "name": "EV4 packets",
+      "supported": true
+    },
+    "4/1": {
+      "name": "EV5 packets",
+      "supported": true
+    },
+    "4/3": {
+      "name": "AFH capable peripheral",
+      "supported": true
+    },
+    "4/4": {
+      "name": "AFH classification peripheral",
+      "supported": true
+    },
+    "4/5": {
+      "name": "Previously used",
+      "supported": false
+    },
+    "4/6": {
+      "name": "LE Supported (Controller)",
+      "supported": true
+    },
+    "4/7": {
+      "name": "3-slot EDR ACL packets",
+      "supported": true
+    },
+    "5/0": {
+      "name": "5-slot EDR ACL packets",
+      "supported": true
+    },
+    "5/1": {
+      "name": "Sniff subrating",
+      "supported": true
+    },
+    "5/2": {
+      "name": "Pause Encryption",
+      "supported": true
+    },
+    "5/3": {
+      "name": "AFH capable central",
+      "supported": true
+    },
+    "5/4": {
+      "name": "AFH classification central",
+      "supported": true
+    },
+    "5/5": {
+      "name": "EDR eSCO 2 Mbps mode",
+      "supported": true
+    },
+    "5/6": {
+      "name": "EDR eSCO 3 Mbps mode",
+      "supported": true
+    },
+    "5/7": {
+      "name": "3-slot EDR eSCO packets",
+      "supported": true
+    },
+    "6/0": {
+      "name": "Extended Inquiry Response",
+      "supported": true
+    },
+    "6/1": {
+      "name": "Simultaneous LE and BR/EDR to Same Device Capable (Controller)",
+      "supported": true
+    },
+    "6/3": {
+      "name": "Secure Simple Pairing (Controller Support)",
+      "supported": true
+    },
+    "6/4": {
+      "name": "Encapsulated PDU",
+      "supported": true
+    },
+    "6/5": {
+      "name": "Erroneous Data Reporting",
+      "supported": true
+    },
+    "6/6": {
+      "name": "Non-flushable Packet Boundary Flag",
+      "supported": true
+    },
+    "7/0": {
+      "name": "HCI_Link_Supervision_Timeout_Changed Event",
+      "supported": true
+    },
+    "7/1": {
+      "name": "Variable Inquiry TX Power Level",
+      "supported": true
+    },
+    "7/2": {
+      "name": "Enhanced Power Control",
+      "supported": true
+    },
+    "7/7": {
+      "name": "Extended features",
+      "supported": true
+    }
+  },
+  "bredr_features_page1": {
+    "0/0": {
+      "name": "Secure Simple Pairing (Host Support)",
+      "supported": true
+    },
+    "0/1": {
+      "name": "LE Supported (Host)",
+      "supported": true
+    },
+    "0/2": {
+      "name": "Previously used (was Simultaneous LE and BR/EDR Host)",
+      "supported": false
+    },
+    "0/3": {
+      "name": "Secure Connections (Host Support)",
+      "supported": false
+    }
+  },
+  "bredr_features_page2": {
+    "0/0": {
+      "name": "Connectionless Peripheral Broadcast - Transmitter Operation",
+      "supported": false
+    },
+    "0/1": {
+      "name": "Connectionless Peripheral Broadcast - Receiver Operation",
+      "supported": false
+    },
+    "0/2": {
+      "name": "Synchronization Train",
+      "supported": false
+    },
+    "0/3": {
+      "name": "Synchronization Scan",
+      "supported": false
+    },
+    "0/4": {
+      "name": "HCI_Inquiry_Response_Notification Event",
+      "supported": false
+    },
+    "0/5": {
+      "name": "Generalized interlaced scan",
+      "supported": true
+    },
+    "0/6": {
+      "name": "Coarse Clock Adjustment",
+      "supported": false
+    },
+    "1/0": {
+      "name": "Secure Connections (Controller Support)",
+      "supported": true
+    },
+    "1/1": {
+      "name": "Ping",
+      "supported": true
+    },
+    "1/2": {
+      "name": "Slot Availability Mask",
+      "supported": false
+    },
+    "1/3": {
+      "name": "Train Nudging",
+      "supported": true
+    }
+  },
+  "le_features_pages": {},
+  "le_features_max_page": null,
+  "supported_commands": {
+    "decoded": {
+      "0/0": "Inquiry",
+      "0/1": "Inquiry_Cancel",
+      "0/2": "Periodic_Inquiry_Mode",
+      "0/3": "Exit_Periodic_Inquiry_Mode",
+      "0/4": "Create_Connection",
+      "0/5": "Disconnect",
+      "0/7": "Create_Connection_Cancel",
+      "1/0": "Accept_Connection_Request",
+      "1/1": "Reject_Connection_Request",
+      "1/2": "Link_Key_Request_Reply",
+      "1/3": "Link_Key_Request_Negative_Reply",
+      "1/4": "PIN_Code_Request_Reply",
+      "1/5": "PIN_Code_Request_Negative_Reply",
+      "1/6": "Change_Connection_Packet_Type",
+      "1/7": "Authentication_Requested",
+      "2/0": "Set_Connection_Encryption",
+      "2/1": "Change_Connection_Link_Key",
+      "2/3": "Remote_Name_Request",
+      "2/4": "Remote_Name_Request_Cancel",
+      "2/5": "Read_Remote_Supported_Features",
+      "2/6": "Read_Remote_Extended_Features",
+      "2/7": "Read_Remote_Version_Information",
+      "3/0": "Read_Clock_Offset",
+      "3/1": "Read_LMP_Handle",
+      "4/2": "Sniff_Mode",
+      "4/3": "Exit_Sniff_Mode",
+      "4/6": "QoS_Setup",
+      "4/7": "Role_Discovery",
+      "5/0": "Switch_Role",
+      "5/1": "Read_Link_Policy_Settings",
+      "5/2": "Write_Link_Policy_Settings",
+      "5/3": "Read_Default_Link_Policy_Settings",
+      "5/4": "Write_Default_Link_Policy_Settings",
+      "5/5": "Flow_Specification",
+      "5/6": "Set_Event_Mask",
+      "5/7": "Reset",
+      "6/0": "Set_Event_Filter",
+      "6/1": "Flush",
+      "6/2": "Read_PIN_Type",
+      "6/3": "Write_PIN_Type",
+      "6/5": "Read_Stored_Link_Key",
+      "6/6": "Write_Stored_Link_Key",
+      "6/7": "Delete_Stored_Link_Key",
+      "7/0": "Write_Local_Name",
+      "7/1": "Read_Local_Name",
+      "7/2": "Read_Connection_Accept_Timeout",
+      "7/3": "Write_Connection_Accept_Timeout",
+      "7/4": "Read_Page_Timeout",
+      "7/5": "Write_Page_Timeout",
+      "7/6": "Read_Scan_Enable",
+      "7/7": "Write_Scan_Enable",
+      "8/0": "Read_Page_Scan_Activity",
+      "8/1": "Write_Page_Scan_Activity",
+      "8/2": "Read_Inquiry_Scan_Activity",
+      "8/3": "Write_Inquiry_Scan_Activity",
+      "8/4": "Read_Authentication_Enable",
+      "8/5": "Write_Authentication_Enable",
+      "9/0": "Read_Class_Of_Device",
+      "9/1": "Write_Class_Of_Device",
+      "9/2": "Read_Voice_Setting",
+      "9/3": "Write_Voice_Setting",
+      "9/4": "Read_Automatic_Flush_Timeout",
+      "9/5": "Write_Automatic_Flush_Timeout",
+      "10/2": "Read_Transmit_Power_Level",
+      "10/3": "Read_Synchronous_Flow_Control_Enable",
+      "10/4": "Write_Synchronous_Flow_Control_Enable",
+      "10/5": "Set_Controller_To_Host_Flow_Control",
+      "10/6": "Host_Buffer_Size",
+      "10/7": "Host_Number_Of_Completed_Packets",
+      "11/0": "Read_Link_Supervision_Timeout",
+      "11/1": "Write_Link_Supervision_Timeout",
+      "11/2": "Read_Number_Of_Supported_IAC",
+      "11/3": "Read_Current_IAC_LAP",
+      "11/4": "Write_Current_IAC_LAP",
+      "12/1": "Set_AFH_Host_Channel_Classification",
+      "12/4": "Read_Inquiry_Scan_Type",
+      "12/5": "Write_Inquiry_Scan_Type",
+      "12/6": "Read_Inquiry_Mode",
+      "12/7": "Write_Inquiry_Mode",
+      "13/0": "Read_Page_Scan_Type",
+      "13/1": "Write_Page_Scan_Type",
+      "13/2": "Read_AFH_Channel_Assessment_Mode",
+      "13/3": "Write_AFH_Channel_Assessment_Mode",
+      "14/3": "Read_Local_Version_Information",
+      "14/5": "Read_Local_Supported_Features",
+      "14/6": "Read_Local_Extended_Features",
+      "14/7": "Read_Buffer_Size",
+      "15/1": "Read_BD_ADDR",
+      "15/2": "Read_Failed_Contact_Counter",
+      "15/3": "Reset_Failed_Contact_Counter",
+      "15/4": "Read_Link_Quality",
+      "15/5": "Read_RSSI",
+      "15/6": "Read_AFH_Channel_Map",
+      "15/7": "Read_Clock",
+      "16/0": "Read_Loopback_Mode",
+      "16/1": "Write_Loopback_Mode",
+      "16/2": "Enable_Implementation_Under_Test_Mode",
+      "16/3": "Setup_Synchronous_Connection_Request",
+      "16/4": "Accept_Synchronous_Connection_Request",
+      "16/5": "Reject_Synchronous_Connection_Request",
+      "17/0": "Read_Extended_Inquiry_Response",
+      "17/1": "Write_Extended_Inquiry_Response",
+      "17/2": "Refresh_Encryption_Key",
+      "17/4": "Sniff_Subrating",
+      "17/5": "Read_Simple_Pairing_Mode",
+      "17/6": "Write_Simple_Pairing_Mode",
+      "17/7": "Read_Local_OOB_Data",
+      "18/0": "Read_Inquiry_Response_Transmit_Power_Level",
+      "18/1": "Write_Inquiry_Transmit_Power_Level",
+      "18/2": "Read_Default_Erroneous_Data_Reporting",
+      "18/3": "Write_Default_Erroneous_Data_Reporting",
+      "18/7": "IO_Capability_Request_Reply",
+      "19/0": "User_Confirmation_Request_Reply",
+      "19/1": "User_Confirmation_Request_Negative_Reply",
+      "19/2": "User_Passkey_Request_Reply",
+      "19/3": "User_Passkey_Request_Negative_Reply",
+      "19/4": "Remote_OOB_Data_Request_Reply",
+      "19/5": "Write_Simple_Pairing_Debug_Mode",
+      "19/6": "Enhanced_Flush",
+      "19/7": "Remote_OOB_Data_Request_Negative_Reply",
+      "20/2": "Send_Keypress_Notification",
+      "20/3": "IO_Capability_Request_Negative_Reply",
+      "20/4": "Read_Encryption_Key_Size",
+      "22/2": "Set_Event_Mask_Page_2",
+      "24/0": "Read_Enhanced_Transmit_Power_Level",
+      "24/5": "Read_LE_Host_Support",
+      "24/6": "Write_LE_Host_Support",
+      "25/0": "LE_Set_Event_Mask",
+      "25/1": "LE_Read_Buffer_Size_V1",
+      "25/2": "LE_Read_Local_Supported_Features_Page",
+      "25/4": "LE_Set_Random_Address",
+      "25/5": "LE_Set_Advertising_Parameters",
+      "25/6": "LE_Read_Advertising_Physical_Channel_Tx_Power",
+      "25/7": "LE_Set_Advertising_Data",
+      "26/0": "LE_Set_Scan_Response_Data",
+      "26/1": "LE_Set_Advertising_Enable",
+      "26/2": "LE_Set_Scan_Parameters",
+      "26/3": "LE_Set_Scan_Enable",
+      "26/4": "LE_Create_Connection",
+      "26/5": "LE_Create_Connection_Cancel",
+      "26/6": "LE_Read_Filter_Accept_List_Size",
+      "26/7": "LE_Clear_Filter_Accept_List",
+      "27/0": "LE_Add_Device_To_Filter_Accept_List",
+      "27/1": "LE_Remove_Device_From_Filter_Accept_List",
+      "27/2": "LE_Connection_Update",
+      "27/3": "LE_Set_Host_Channel_Classification",
+      "27/4": "LE_Read_Channel_Map",
+      "27/5": "LE_Read_Remote_Features_Page_0",
+      "27/6": "LE_Encrypt",
+      "27/7": "LE_Rand",
+      "28/0": "LE_Enable_Encryption",
+      "28/1": "LE_Long_Term_Key_Request_Reply",
+      "28/2": "LE_Long_Term_Key_Request_Negative_Reply",
+      "28/3": "LE_Read_Supported_States",
+      "28/4": "LE_Receiver_Test_V1",
+      "28/5": "LE_Transmitter_Test_V1",
+      "28/6": "LE_Test_End",
+      "29/3": "Enhanced_Setup_Synchronous_Connection",
+      "29/4": "Enhanced_Accept_Synchronous_Connection",
+      "29/5": "Read_Local_Supported_Codecs_V1",
+      "29/7": "Set_External_Frame_Configuration",
+      "32/1": "Remote_OOB_Extended_Data_Request_Reply",
+      "32/2": "Read_Secure_Connections_Host_Support",
+      "32/3": "Write_Secure_Connections_Host_Support",
+      "32/4": "Read_Authenticated_Payload_Timeout",
+      "32/5": "Write_Authenticated_Payload_Timeout",
+      "32/6": "Read_Local_OOB_Extended_Data",
+      "32/7": "Write_Secure_Connections_Test_Mode",
+      "33/0": "Read_Extended_Page_Timeout",
+      "33/1": "Write_Extended_Page_Timeout",
+      "33/2": "Read_Extended_Inquiry_Length",
+      "33/3": "Write_Extended_Inquiry_Length",
+      "33/4": "LE_Remote_Connection_Parameter_Request_Reply",
+      "33/5": "LE_Remote_Connection_Parameter_Request_Negative_Reply",
+      "33/6": "LE_Set_Data_Length",
+      "33/7": "LE_Read_Suggested_Default_Data_Length",
+      "34/0": "LE_Write_Suggested_Default_Data_Length",
+      "34/1": "LE_Read_Local_P-256_Public_Key",
+      "34/2": "LE_Generate_DHKey_V1",
+      "34/3": "LE_Add_Device_To_Resolving_List",
+      "34/4": "LE_Remove_Device_From_Resolving_List",
+      "34/5": "LE_Clear_Resolving_List",
+      "34/6": "LE_Read_Resolving_List_Size",
+      "34/7": "LE_Read_Peer_Resolvable_Address",
+      "35/0": "LE_Read_Local_Resolvable_Address",
+      "35/1": "LE_Set_Address_Resolution_Enable",
+      "35/2": "LE_Set_Resolvable_Private_Address_Timeout",
+      "35/3": "LE_Read_Maximum_Data_Length",
+      "35/4": "LE_Read_PHY",
+      "35/5": "LE_Set_Default_PHY",
+      "35/6": "LE_Set_PHY",
+      "35/7": "LE_Receiver_Test_V2",
+      "36/0": "LE_Transmitter_Test_V2",
+      "36/1": "LE_Set_Advertising_Set_Random_Address",
+      "36/2": "LE_Set_Extended_Advertising_Parameters_V1",
+      "36/3": "LE_Set_Extended_Advertising_Data",
+      "36/4": "LE_Set_Extended_Scan_Response_Data",
+      "36/5": "LE_Set_Extended_Advertising_Enable",
+      "36/6": "LE_Read_Maximum_Advertising_Data_Length",
+      "36/7": "LE_Read_Number_of_Supported_Advertising_Sets",
+      "37/0": "LE_Remove_Advertising_Set",
+      "37/1": "LE_Clear_Advertising_Sets",
+      "37/5": "LE_Set_Extended_Scan_Parameters",
+      "37/6": "LE_Set_Extended_Scan_Enable",
+      "37/7": "LE_Extended_Create_Connection_V1",
+      "38/7": "LE_Read_Transmit_Power",
+      "39/0": "LE_Read_RF_Path_Compensation",
+      "39/1": "LE_Write_RF_Path_Compensation",
+      "39/2": "LE_Set_Privacy_Mode",
+      "41/3": "Read_Local_Simple_Pairing_Options",
+      "45/1": "Set_Ecosystem_Base_Interval",
+      "45/2": "Read_Local_Supported_Codecs_V2",
+      "45/3": "Read_Local_Supported_Codec_Capabilities",
+      "45/4": "Read_Local_Supported_Controller_Delay",
+      "45/5": "Configure_Data_Path"
+    },
+    "unknown_bits_set": [
+      {
+        "octet": 8,
+        "bit": 7
+      }
+    ]
+  }
+}
