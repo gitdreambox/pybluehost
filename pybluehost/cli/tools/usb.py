@@ -362,7 +362,11 @@ def _diagnosis_needs_firmware_load(diagnosis: Any) -> bool:
 def _confirm_firmware_load(diagnosis: Any) -> bool:
     chip = diagnosis.chip_info
     vendor = chip.vendor if chip else "USB"
-    answer = input(f"Load {vendor.capitalize()} firmware now? [y/N] ")
+    try:
+        answer = input(f"Load {vendor.capitalize()} firmware now? [y/N] ")
+    except EOFError:
+        logger.info("[INFO] Firmware load skipped: no interactive input available")
+        return False
     if answer.strip().lower() not in {"y", "yes"}:
         logger.info("[INFO] Firmware load skipped by user")
         return False

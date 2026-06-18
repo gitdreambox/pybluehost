@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from pybluehost.cli.tools.usb import _cmd_usb_diagnose
+from pybluehost.cli.tools.usb import _cmd_usb_diagnose, _confirm_firmware_load
 from pybluehost.transport.usb import (
     USBDeviceDiagnostics,
     FailureType,
@@ -139,3 +139,13 @@ class TestCmdUSBDiagnose:
         assert "0a12:0001" in captured.out
         assert "DRIVER_CONFLICT" in captured.out
         assert "errno=13" in captured.out
+
+    def test_confirm_firmware_load_eof_skips_without_traceback(self, capsys):
+        diagnosis = MagicMock()
+        diagnosis.chip_info.vendor = "intel"
+
+        with patch("builtins.input", side_effect=EOFError):
+            assert _confirm_firmware_load(diagnosis) is False
+
+        captured = capsys.readouterr()
+        assert "Firmware load skipped" in captured.out

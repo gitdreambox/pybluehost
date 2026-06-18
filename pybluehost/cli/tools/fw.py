@@ -78,6 +78,14 @@ def _download_firmware_files(vendor: str, fw_dir: Path) -> list[Path]:
             "ibt-0291-0291.ddc",
             "ibt-0040-0041.sfi",
             "ibt-0040-0041.ddc",
+            "ibt-19-0-4.sfi",
+            "ibt-19-0-4.ddc",
+            "ibt-20-0-3.sfi",
+            "ibt-20-0-3.ddc",
+            "ibt-20-1-3.sfi",
+            "ibt-20-1-3.ddc",
+            "ibt-20-1-4.sfi",
+            "ibt-20-1-4.ddc",
         ]
     elif vendor == "realtek":
         files = [

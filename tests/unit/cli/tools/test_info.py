@@ -234,6 +234,33 @@ async def test_info_json_stdout_is_pure_json_even_when_logs_emit(capsys):
 
 
 @pytest.mark.asyncio
+async def test_info_init_error_prints_message_without_traceback(capsys):
+    from pybluehost.cli.tools import info as info_module
+    import tests._transport_resolve as resolve_mod
+
+    class _Args:
+        transport = "usb:8087:0026#1"
+        json = False
+
+    saved = resolve_mod.build_stack_from_spec
+
+    async def _raise_init_error(spec, *, config=None):
+        raise RuntimeError("Intel: Read Version V2 returned an invalid TLV response")
+
+    resolve_mod.build_stack_from_spec = _raise_init_error
+    try:
+        rc = await info_module._cmd_info_async(_Args())
+    finally:
+        resolve_mod.build_stack_from_spec = saved
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "Intel: Read Version V2 returned an invalid TLV response" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.asyncio
 async def test_info_decoded_commands_use_supported_command_names(capsys):
     """supported_commands.decoded uses SUPPORTED_COMMAND_NAMES for naming,
     so common commands like Inquiry / Reset / LE_Set_Event_Mask appear by

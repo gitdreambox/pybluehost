@@ -68,6 +68,29 @@ class TestFirmwareDownloader:
         call_url = mock_urlopen.call_args[0][0]
         assert "linux-firmware.git/plain/intel/ibt-0291-0291.sfi" in call_url
 
+    def test_intel_falls_back_to_gitlab_mirror(self, tmp_path: Path):
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"intel fw"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = lambda *args: None
+        mock_response.headers = {}
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = [
+                urllib.error.URLError("forbidden"),
+                urllib.error.URLError("forbidden"),
+                urllib.error.URLError("forbidden"),
+                mock_response,
+            ]
+            with patch("time.sleep"):
+                path = FirmwareDownloader.download("ibt-19-0-4.sfi", "intel", tmp_path)
+
+        assert path.read_bytes() == b"intel fw"
+        urls = [call.args[0] for call in mock_urlopen.call_args_list]
+        assert all("git.kernel.org" in url for url in urls[:3])
+        assert "gitlab.com/kernel-firmware/linux-firmware" in urls[3]
+        assert "intel/ibt-19-0-4.sfi" in urls[3]
+
     def test_realtek_url(self, tmp_path: Path):
         mock_response = MagicMock()
         mock_response.read.return_value = b"rtk fw"

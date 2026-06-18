@@ -52,6 +52,18 @@ _LEGACY_BOOTLOADER = bytes([
     0x01, 0x00,
 ])
 
+_AX201_BOOTLOADER = bytes([
+    0x0E, 0x0D, 0x20,
+    0x05, 0xFC,
+    0x00,        # status
+    0x37,        # hw_platform
+    0x13,        # hw_variant (HrP / 19)
+    0x00,        # hw_revision
+    0x06,        # fw_variant (bootloader)
+    0x04,        # fw_revision
+    0x00, 0x1E, 0x12, 0x00,
+])
+
 _HCI_RESET_OK = bytes([
     0x0E, 0x04, 0x01,
     0x03, 0x0C,
@@ -127,19 +139,33 @@ async def test_intel_initialize_skips_fw_load_if_operational():
 
 
 @pytest.mark.asyncio
+async def test_intel_initialize_treats_fixed_format_v2_as_legacy():
+    """AX201 may accept FC05+FF but still return fixed-format legacy version data."""
+    transport = _make_intel_transport()
+    transport._control_out = AsyncMock()
+
+    transport._wait_for_event = _make_response_sequence(
+        _HCI_RESET_OK, _LEGACY_OPERATIONAL, _LEGACY_OPERATIONAL
+    )
+
+    await transport._initialize()
+    assert transport._control_out.call_count == 3
+
+
+@pytest.mark.asyncio
 async def test_intel_initialize_loads_fw_when_bootloader(tmp_path):
-    """If fw_variant=0x06 (bootloader), perform full firmware loading sequence."""
+    """If fw_variant=0x06 (bootloader), download firmware via Intel Secure Send."""
     fw_dir = tmp_path / "intel"
     fw_dir.mkdir()
     fw_file = fw_dir / "ibt-0040-0032.sfi"
-    fw_file.write_bytes(b"\x00" * 128 + b"\xAA" * 252 * 3)
+    fw_file.write_bytes(b"\x00" * 644 + b"\x0e\xfc\x04\x78\x56\x34\x12")
 
     transport = _make_intel_transport(tmp_path=fw_dir)
-    call_count = [0]
-
-    async def mock_control(data):
-        call_count[0] += 1
-    transport._control_out = mock_control
+    transport._secure_send_firmware = AsyncMock(return_value=0x12345678)
+    transport._intel_reset_newgen = AsyncMock()
+    transport._wait_for_vendor_event = AsyncMock(
+        side_effect=[b"\xff\x01\x06", b"\xff\x01\x02"]
+    )
 
     # Reset OK, V2 → rejected, V1 → bootloader, then all subsequent → operational
     transport._wait_for_event = _make_response_sequence(
@@ -151,8 +177,74 @@ async def test_intel_initialize_loads_fw_when_bootloader(tmp_path):
     ):
         await transport._initialize()
 
-    # V2 + V1 + Enter Mfg + chunks + Reset + verify = many calls
-    assert call_count[0] > 2
+    transport._secure_send_firmware.assert_awaited_once_with(
+        fw_file.read_bytes(),
+        transport._BOOT_PARAMS_LEGACY_RSA,
+    )
+    transport._intel_reset_newgen.assert_awaited_once_with(0x12345678)
+    assert transport._wait_for_vendor_event.await_args_list[0].kwargs == {
+        "expected_type": 0x06,
+        "timeout": 10.0,
+    }
+    assert transport._wait_for_vendor_event.await_args_list[1].kwargs == {
+        "expected_type": 0x02,
+        "timeout": 10.0,
+    }
+
+
+def test_intel_find_firmware_uses_firmware_manager(tmp_path):
+    fw_dir = tmp_path / "intel"
+    fw_dir.mkdir()
+    fw_file = fw_dir / "ibt-0040-0032.sfi"
+    fw_file.write_bytes(b"\x00")
+
+    transport = _make_intel_transport(tmp_path=fw_dir)
+
+    assert transport._find_firmware() == fw_file
+
+
+def test_intel_find_firmware_prefers_exact_legacy_version_name(tmp_path):
+    fw_dir = tmp_path / "intel"
+    fw_dir.mkdir()
+    exact_fw = fw_dir / "ibt-19-0-4.sfi"
+    fallback_fw = fw_dir / "ibt-20-0-3.sfi"
+    exact_fw.write_bytes(b"\x19")
+    fallback_fw.write_bytes(b"\x20")
+
+    chip = ChipInfo("intel", "AX201", 0x8087, 0x0026, "ibt-20-*", IntelUSBTransport)
+    transport = IntelUSBTransport(
+        device=MagicMock(),
+        chip_info=chip,
+        firmware_policy=FirmwarePolicy.ERROR,
+        extra_fw_dirs=[fw_dir],
+    )
+
+    assert transport._find_firmware(_AX201_BOOTLOADER) == exact_fw
+
+
+def test_intel_legacy_fw_variant_0x23_is_operational():
+    transport = _make_intel_transport()
+
+    assert transport._is_operational(0x13, 0x23) is True
+
+
+@pytest.mark.asyncio
+async def test_intel_secure_send_pipeline_drains_final_command_complete():
+    transport = _make_intel_transport()
+    transport._control_out = AsyncMock()
+    complete = bytes([0x0E, 0x04, 0x01, 0x09, 0xFC, 0x00])
+    transport._wait_for_intel_firmware_command_complete = AsyncMock(return_value=complete)
+
+    commands = [
+        (b"\x09\xfc\x01\x00", "chunk 1"),
+        (b"\x09\xfc\x01\x00", "chunk 2"),
+        (b"\x09\xfc\x01\x00", "chunk 3"),
+    ]
+
+    await transport._send_intel_secure_send_commands(commands)
+
+    assert transport._control_out.await_count == 3
+    assert transport._wait_for_intel_firmware_command_complete.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -171,3 +263,20 @@ def test_intel_transport_inherits_usb():
     chip = ChipInfo("intel", "AX210", 0x8087, 0x0032, "ibt-0040-*", IntelUSBTransport)
     t = IntelUSBTransport(device=MagicMock(), chip_info=chip)
     assert isinstance(t, USBTransport)
+
+
+@pytest.mark.asyncio
+async def test_intel_newgen_empty_tlv_has_recovery_guidance():
+    """Invalid TLV responses should explain hardware recovery, not just say image_type=0xFF."""
+    transport = _make_intel_transport()
+
+    with pytest.raises(RuntimeError) as excinfo:
+        await transport._initialize_newgen({})
+
+    message = str(excinfo.value)
+    assert "missing required TLV fields" in message
+    assert "0x10" in message
+    assert "0x11" in message
+    assert "0x1C" in message
+    assert "pybluehost tools usb diagnose" in message
+    assert "power-cycle" in message

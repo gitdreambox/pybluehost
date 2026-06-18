@@ -104,16 +104,32 @@ class TestDownloadFirmwareFiles:
                 tmp_path / "ibt-0291-0291.ddc",
                 tmp_path / "ibt-0040-0041.sfi",
                 tmp_path / "ibt-0040-0041.ddc",
+                tmp_path / "ibt-19-0-4.sfi",
+                tmp_path / "ibt-19-0-4.ddc",
+                tmp_path / "ibt-20-0-3.sfi",
+                tmp_path / "ibt-20-0-3.ddc",
+                tmp_path / "ibt-20-1-3.sfi",
+                tmp_path / "ibt-20-1-3.ddc",
+                tmp_path / "ibt-20-1-4.sfi",
+                tmp_path / "ibt-20-1-4.ddc",
             ]
             downloaded = _download_firmware_files("intel", tmp_path)
 
-        assert len(downloaded) == 4
-        assert mock_dl.call_count == 4
+        assert len(downloaded) == 12
+        assert mock_dl.call_count == 12
         calls = [c.args[0] for c in mock_dl.call_args_list]
         assert "ibt-0291-0291.sfi" in calls
         assert "ibt-0291-0291.ddc" in calls
         assert "ibt-0040-0041.sfi" in calls
         assert "ibt-0040-0041.ddc" in calls
+        assert "ibt-19-0-4.sfi" in calls
+        assert "ibt-19-0-4.ddc" in calls
+        assert "ibt-20-0-3.sfi" in calls
+        assert "ibt-20-0-3.ddc" in calls
+        assert "ibt-20-1-3.sfi" in calls
+        assert "ibt-20-1-3.ddc" in calls
+        assert "ibt-20-1-4.sfi" in calls
+        assert "ibt-20-1-4.ddc" in calls
 
     def test_download_realtek_files(self, tmp_path: Path):
         with patch(

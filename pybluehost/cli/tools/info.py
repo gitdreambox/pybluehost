@@ -60,12 +60,16 @@ async def _cmd_info_async(args: argparse.Namespace) -> int:
         else contextlib.nullcontext()
     )
 
-    with json_stdout_redirect:
-        stack = await build_stack_from_spec(args.transport)
-        try:
-            data = _collect_capability_data(stack, transport=args.transport)
-        finally:
-            await stack.close()
+    try:
+        with json_stdout_redirect:
+            stack = await build_stack_from_spec(args.transport)
+            try:
+                data = _collect_capability_data(stack, transport=args.transport)
+            finally:
+                await stack.close()
+    except Exception as exc:
+        print(f"pybluehost tools info: {exc}", file=sys.stderr)
+        return 1
 
     if args.json:
         print(json.dumps(data, indent=2))
