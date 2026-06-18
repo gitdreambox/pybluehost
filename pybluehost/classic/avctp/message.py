@@ -2,7 +2,7 @@
 
 This module handles per-packet wire format. Reassembling fragmented messages
 (stashing START + CONTINUEs and emitting a unified payload on END) is the
-session-layer concern; see `pybluehost.avctp.session` (Task 3+)."""
+session-layer concern; see `pybluehost.classic.avctp.session` (Task 3+)."""
 from __future__ import annotations
 
 import struct

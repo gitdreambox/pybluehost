@@ -1,6 +1,6 @@
 """AVRCP v1.6 — Audio/Video Remote Control Profile.
 
-Rides AVCTP (pybluehost.avctp). PSM 0x0017. Two roles:
+Rides AVCTP (pybluehost.classic.avctp). PSM 0x0017. Two roles:
 - AVRCPController — issues PASS_THROUGH commands, subscribes to notifications.
 - AVRCPTarget — accepts commands, emits notifications.
 """
