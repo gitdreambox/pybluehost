@@ -51,7 +51,7 @@ class VirtualSnifferSink:
 
 import sys  # noqa: E402
 
-from pybluehost.cli._sniffer_arg import SnifferSpec  # noqa: E402
+from pybluehost.sniffer.spec import SnifferSpec  # noqa: E402
 from pybluehost.core.errors import SnifferUnavailableError  # noqa: E402
 
 
