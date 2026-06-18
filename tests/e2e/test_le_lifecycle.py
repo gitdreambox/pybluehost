@@ -47,6 +47,47 @@ async def test_wait_for_notifications_raises_on_timeout():
         await wait_for_notifications(events, n=1, timeout=0.05)
 
 
+@pytest.mark.asyncio
+async def test_central_discover_peripheral_restarts_scan_until_deadline():
+    from types import SimpleNamespace
+
+    from pybluehost.ble.gap import ScanResult
+    from tests.e2e._helpers import central_discover_peripheral
+
+    expected = "AA:BB:CC:DD:EE:FF"
+
+    class _Scanner:
+        def __init__(self):
+            self.handlers = []
+            self.starts = 0
+            self.stops = 0
+
+        def on_result(self, handler):
+            self.handlers.append(handler)
+
+        async def start(self, _config):
+            self.starts += 1
+            if self.starts == 2:
+                result = ScanResult(
+                    address=expected,
+                    rssi=-20,
+                    advertising_data=AdvertisingData(),
+                )
+                for handler in self.handlers:
+                    handler(result)
+
+        async def stop(self):
+            self.stops += 1
+
+    scanner = _Scanner()
+    stack = SimpleNamespace(gap=SimpleNamespace(ble_scanner=scanner))
+
+    await central_discover_peripheral(stack, expected, timeout=0.5)
+
+    assert scanner.starts == 2
+    assert scanner.stops == 2
+
+
 def test_resolve_handles_returns_per_uuid_value_handles():
     """Given a discovered-characteristics list, returns a dict keyed by UUID
     that maps to the value_handle."""
@@ -69,6 +110,17 @@ def test_resolve_handles_returns_per_uuid_value_handles():
         "notify": TEST_NOTIFY_CHAR_UUID,
     })
     assert handles == {"read": 0x11, "write": 0x13, "notify": 0x15}
+
+
+def test_ax201_barrot_does_not_swap_le_roles():
+    """Hardware e2e must exercise the requested central/peripheral roles."""
+    from tests.e2e._helpers import le_role_swap_required, select_le_role_specs
+
+    primary = "usb:8087:0026#1"
+    peer = "usb:33FA:0012#1"
+
+    assert le_role_swap_required(primary, peer, "usb") is False
+    assert select_le_role_specs(primary, peer, "usb") == (primary, peer)
 
 
 def _build_test_ad_data() -> AdvertisingData:
@@ -149,6 +201,7 @@ async def test_e2e_scan_connect_pair_read(
                 stack_c, stack_p._local_address,
                 scan_timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
                 pair_timeout=e2e_timeout(transport_mode, virtual=20.0, usb=40.0),
+                expected_name="PBH-E2E",
             )
 
         # Discover services
@@ -225,13 +278,14 @@ async def test_e2e_gatt_write_and_notify(
             await link.connect()
             client = await connect_task
         else:
-            await central_discover_peripheral(
+            discovered_addr = await central_discover_peripheral(
                 stack_c,
                 stack_p._local_address,
                 timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+                expected_name="PBH-E2E",
             )
             client = await stack_c.connect_gatt(
-                stack_p._local_address,
+                discovered_addr,
                 timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
             )
         handle = client._connection_handle
@@ -390,13 +444,14 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
             await link.connect()
             client = await connect_task
         else:
-            await central_discover_peripheral(
+            discovered_addr = await central_discover_peripheral(
                 stack_c,
                 peripheral_addr,
                 timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+                expected_name="PBH-E2E",
             )
             client = await stack_c.connect_gatt(
-                peripheral_addr,
+                discovered_addr,
                 timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
             )
         handle = client._connection_handle
@@ -452,13 +507,14 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
             await link.connect()
             client = await connect_task
         else:
-            await central_discover_peripheral(
+            discovered_addr = await central_discover_peripheral(
                 stack_c,
                 peripheral_addr,
                 timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+                expected_name="PBH-E2E",
             )
             client = await stack_c.connect_gatt(
-                peripheral_addr,
+                discovered_addr,
                 timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
             )
         handle = client._connection_handle
@@ -588,13 +644,14 @@ async def test_e2e_pair_failure_disconnects_cleanly(
             await link.connect()
             client = await connect_task
         else:
-            await central_discover_peripheral(
+            discovered_addr = await central_discover_peripheral(
                 stack_c,
                 peripheral_addr,
                 timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+                expected_name="PBH-E2E",
             )
             client = await stack_c.connect_gatt(
-                peripheral_addr,
+                discovered_addr,
                 timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
             )
         handle = client._connection_handle

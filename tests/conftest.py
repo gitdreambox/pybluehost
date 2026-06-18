@@ -247,7 +247,7 @@ async def stack(selected_transport_spec: str, request: pytest.FixtureRequest):
 
 
 @pytest.fixture
-async def peer_stack(selected_peer_spec: str | None):
+async def peer_stack(selected_peer_spec: str | None, request: pytest.FixtureRequest):
     """Second Stack. Skips the test when no peer transport is available."""
     if selected_peer_spec is None:
         pytest.skip(
@@ -257,6 +257,10 @@ async def peer_stack(selected_peer_spec: str | None):
         s = await build_stack_from_spec(selected_peer_spec)
     except Exception as exc:
         pytest.skip(f"peer_stack: transport {selected_peer_spec!r} unavailable: {exc}")
+    spec = getattr(request.config, "_pybluehost_trace_spec", None)
+    if spec is not None and not spec.is_empty():
+        from pybluehost.core.trace_control import attach_console_sink
+        attach_console_sink(spec, s.trace)
     try:
         yield s
     finally:

@@ -32,8 +32,10 @@ PyBlueHost 服务三类不同需求的用户。先确定自己属于哪类，直
 | CSR8510      | `0x0A12` | `0x0001` | USB  | 4.0 | BR/EDR + BLE | 只支持BT 4.0 |
 | Intel BE200  | `0x8087` | `0x0036` | USB  | 5.4 | BR/EDR + BLE | `ibt-0291-0291.sfi` |
 | Intel AX201  | `0x8087` | `0x0026` | USB  | 5.2 | BR/EDR + BLE | `ibt-19-0-4.sfi` |
-| BARROT BT6.0 | `0x33FA` | `0x0012` | USB  | 6.0 | BR/EDR + BLE | UGREEN BT6.0 Adapter |
+| BARROT BT6.0 | `0x33FA` | `0x0012` | USB  | 6.0 | BR/EDR + BLE | UGREEN BT6.0 Adapter；当前仅验证 USB/HCI 基础访问，LE RF e2e 不通过 |
 | nRF52840     | `0x1915` | `0x521F` | UART | 5.4 | BLE          | PTS FW |
+
+> 2026-06-18 Windows + WinUSB 实测：Barrot BR8654A02 (`usb:33FA:0012#1`) 可以枚举、打开、执行 `HCI_Reset`、读取能力信息，且 `LE_Set_Advertising_*` / `LE_Set_Scan_*` 命令返回 Success。但交叉验证中，Intel AX201 和 CSR8510 都无法扫描到 Barrot 发出的 `PBH-E2E` legacy advertising；Barrot 作为 central 也无法扫描到近距离 Intel AX201 发出的同名测试广告。因此当前不要把 Barrot 用作 LE e2e 的 central 或 peripheral 基准设备；它的问题应作为硬件/厂商初始化兼容问题暴露，而不是通过 role swap 规避。
 
 CSR、其他 Intel 系列芯片在代码中已支持但未在本仓库做完整回归。欢迎提 PR 补 hardware 矩阵。
 

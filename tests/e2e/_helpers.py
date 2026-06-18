@@ -61,22 +61,13 @@ def le_role_swap_required(
     peer_spec: str | None,
     transport_mode: str,
 ) -> bool:
-    """Return True for real-hardware LE role pairs that need role reversal.
+    """Return whether an LE role pair should be reversed.
 
-    Intel BE200 as central can scan other advertisers, and Barrot BR8654A02
-    accepts HCI_LE_Set_Advertising_* successfully, but the Intel central never
-    observes Barrot's legacy advertising in this role. The reverse role is
-    observable and completes pairing/GATT, so keep this narrowly scoped to the
-    proven pair/direction.
+    Real-hardware coverage must exercise the roles requested by the test
+    parameters, so this deliberately never swaps roles. Role-specific failures
+    should surface as test failures and be fixed in the stack/transport path.
     """
-    if transport_mode != "usb":
-        return False
-    if peer_spec is None:
-        return False
-    return (
-        transport_spec.lower().startswith("usb:8087:0036")
-        and peer_spec.lower().startswith("usb:33fa:0012")
-    )
+    return False
 
 
 def select_le_role_specs(
@@ -95,38 +86,70 @@ def select_le_role_specs(
 # ---------------------------------------------------------------------------
 
 async def central_discover_peripheral(
-    stack_c, expected_addr: BDAddress, timeout: float = 5.0,
-) -> None:
+    stack_c,
+    expected_addr: BDAddress,
+    timeout: float = 5.0,
+    *,
+    expected_name: str | None = None,
+) -> BDAddress:
     """Start scanning, wait for an advertising report matching ``expected_addr``,
     then stop scanning.
 
     Raises asyncio.TimeoutError if no matching report arrives in time.
     """
     seen_event = asyncio.Event()
+    discovered_addr: BDAddress | None = None
+    seen_reports: list[str] = []
 
     def _on_result(result):
-        if result.address == expected_addr:
+        nonlocal discovered_addr
+        if len(seen_reports) < 8:
+            seen_reports.append(
+                f"{result.address} name={result.local_name!r} rssi={result.rssi}"
+            )
+        if result.address == expected_addr or (
+            expected_name is not None and result.local_name == expected_name
+        ):
+            discovered_addr = result.address
             seen_event.set()
 
     gap = stack_c.gap
     gap.ble_scanner.on_result(_on_result)
-    await gap.ble_scanner.start(ScanConfig())
-    try:
-        await asyncio.wait_for(seen_event.wait(), timeout=timeout)
-    finally:
-        await gap.ble_scanner.stop()
+    await asyncio.sleep(0.1)
+
+    deadline = time.monotonic() + timeout
+    scan_slice = min(2.0, max(0.1, timeout / 3.0))
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise asyncio.TimeoutError(
+                f"did not discover {expected_addr}; seen={seen_reports!r}"
+            )
+        await gap.ble_scanner.start(ScanConfig())
+        try:
+            await asyncio.wait_for(seen_event.wait(), timeout=min(scan_slice, remaining))
+            return discovered_addr or expected_addr
+        except asyncio.TimeoutError:
+            pass
+        finally:
+            await gap.ble_scanner.stop()
 
 
 async def central_discover_and_pair_sc_jw(
     stack_c, expected_addr: BDAddress, *, scan_timeout: float = 5.0,
-    pair_timeout: float = 20.0,
+    pair_timeout: float = 20.0, expected_name: str | None = None,
 ) -> tuple[object, int]:
     """Convenience composition: scan -> connect_gatt -> pair (SC Just Works).
 
     Returns (gatt_client, connection_handle).
     """
-    await central_discover_peripheral(stack_c, expected_addr, timeout=scan_timeout)
-    client = await stack_c.connect_gatt(expected_addr, timeout=scan_timeout)
+    discovered_addr = await central_discover_peripheral(
+        stack_c,
+        expected_addr,
+        timeout=scan_timeout,
+        expected_name=expected_name,
+    )
+    client = await stack_c.connect_gatt(discovered_addr, timeout=scan_timeout)
     handle = client._connection_handle
     await stack_c.pair(handle, timeout=pair_timeout)
     return client, handle
