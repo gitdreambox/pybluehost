@@ -9,5 +9,5 @@ Binary btsnoop capture files used by replay tests.
 ## Generating fixtures
 
 ```bash
-uv run python pybluehost/tools/gen_btsnoop_fixture.py
+uv run python scripts/gen_btsnoop_fixture.py
 ```
