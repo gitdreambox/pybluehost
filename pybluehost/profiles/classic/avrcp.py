@@ -10,17 +10,17 @@ from pybluehost.classic.avctp.constants import (
     AVRCP_CONTROLLER_UUID, AVRCP_PROFILE_UUID, AVRCP_TARGET_UUID, PSM_AVCTP,
 )
 from pybluehost.classic.avctp.session import AVCTPSession
-from pybluehost.avrcp.constants import (
+from pybluehost.classic.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType,
     AVRCPEventID, AVRCPOperationID,
 )
-from pybluehost.avrcp.frame import AVCFrame
-from pybluehost.avrcp.notification import (
+from pybluehost.classic.avrcp.frame import AVCFrame
+from pybluehost.classic.avrcp.notification import (
     build_notification_interim_response,
     build_register_notification_command,
     parse_notification_response,
 )
-from pybluehost.avrcp.passthrough import PassThroughCommand, PassThroughResponse
+from pybluehost.classic.avrcp.passthrough import PassThroughCommand, PassThroughResponse
 from pybluehost.classic.sdp import DataElement, ServiceRecord
 from pybluehost.profiles.classic._common import ClassicProfile
 

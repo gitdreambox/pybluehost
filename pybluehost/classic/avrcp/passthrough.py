@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pybluehost.avrcp.constants import (
+from pybluehost.classic.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType, AVRCPOperationID,
 )
-from pybluehost.avrcp.frame import AVCFrame
+from pybluehost.classic.avrcp.frame import AVCFrame
 
 
 _STATE_RELEASED_BIT = 0x80   # AV/C spec: 1 = Released, 0 = Pressed

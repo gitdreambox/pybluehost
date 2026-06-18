@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pybluehost.avrcp.constants import AVCCtype, AVCOpCode, AVCSubunitType
+from pybluehost.classic.avrcp.constants import AVCCtype, AVCOpCode, AVCSubunitType
 
 
 @dataclass

@@ -1,10 +1,10 @@
 import pytest
 
-from pybluehost.avrcp.constants import (
+from pybluehost.classic.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType, AVRCPOperationID,
 )
-from pybluehost.avrcp.frame import AVCFrame
-from pybluehost.avrcp.passthrough import (
+from pybluehost.classic.avrcp.frame import AVCFrame
+from pybluehost.classic.avrcp.passthrough import (
     PassThroughCommand, PassThroughResponse,
 )
 

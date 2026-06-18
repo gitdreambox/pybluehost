@@ -1,10 +1,10 @@
 import pytest
 
-from pybluehost.avrcp.constants import (
+from pybluehost.classic.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType, AVRCP_BT_SIG_COMPANY_ID,
 )
-from pybluehost.avrcp.frame import AVCFrame
-from pybluehost.avrcp.unit_info import (
+from pybluehost.classic.avrcp.frame import AVCFrame
+from pybluehost.classic.avrcp.unit_info import (
     build_unit_info_command, build_unit_info_response,
     parse_unit_info_response,
     build_subunit_info_command, build_subunit_info_response,

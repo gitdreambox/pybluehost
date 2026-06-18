@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import struct
 
-from pybluehost.avrcp.constants import (
+from pybluehost.classic.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType,
 )
-from pybluehost.avrcp.frame import AVCFrame
+from pybluehost.classic.avrcp.frame import AVCFrame
 
 
 def build_unit_info_command() -> AVCFrame:

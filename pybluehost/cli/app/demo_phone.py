@@ -16,7 +16,7 @@ import asyncio
 import logging
 import wave
 
-from pybluehost.avrcp.constants import AVRCPEventID, AVRCPOperationID, AVRCPPlayStatus
+from pybluehost.classic.avrcp.constants import AVRCPEventID, AVRCPOperationID, AVRCPPlayStatus
 from pybluehost.cli._lifecycle import (
     add_common_arguments, run_app_command, trace_kwargs_from_args,
 )

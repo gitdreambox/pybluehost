@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import struct
 
-from pybluehost.avrcp.constants import (
+from pybluehost.classic.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType,
     AVRCPEventID, AVRCPMetadataPDU,
     AVRCP_BT_SIG_COMPANY_ID,
 )
-from pybluehost.avrcp.frame import AVCFrame
+from pybluehost.classic.avrcp.frame import AVCFrame
 
 
 def _bt_sig_company_bytes() -> bytes:

@@ -19,7 +19,7 @@ import wave
 import pytest
 import pytest_asyncio
 
-from pybluehost.avrcp.constants import AVRCPOperationID
+from pybluehost.classic.avrcp.constants import AVRCPOperationID
 from pybluehost.hci.virtual_classic_link import VirtualClassicLink
 from pybluehost.profiles.classic import (
     A2DPSink, A2DPSource, AVRCPController, AVRCPTarget,

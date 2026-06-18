@@ -1,9 +1,9 @@
 import pytest
 
-from pybluehost.avrcp.constants import (
+from pybluehost.classic.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType,
 )
-from pybluehost.avrcp.frame import AVCFrame
+from pybluehost.classic.avrcp.frame import AVCFrame
 
 
 def test_avc_frame_to_bytes_control_panel_passthrough():

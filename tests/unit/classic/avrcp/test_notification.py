@@ -1,12 +1,12 @@
 import pytest
 
-from pybluehost.avrcp.constants import (
+from pybluehost.classic.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType,
     AVRCPEventID, AVRCPMetadataPDU, AVRCPPlayStatus,
     AVRCP_BT_SIG_COMPANY_ID,
 )
-from pybluehost.avrcp.frame import AVCFrame
-from pybluehost.avrcp.notification import (
+from pybluehost.classic.avrcp.frame import AVCFrame
+from pybluehost.classic.avrcp.notification import (
     build_register_notification_command,
     build_notification_interim_response,
     build_notification_changed_response,

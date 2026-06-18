@@ -6,7 +6,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 
-from pybluehost.avrcp.constants import AVRCPEventID, AVRCPOperationID, AVRCPPlayStatus
+from pybluehost.classic.avrcp.constants import AVRCPEventID, AVRCPOperationID, AVRCPPlayStatus
 from pybluehost.hci.virtual_classic_link import VirtualClassicLink
 from pybluehost.profiles.classic import AVRCPController, AVRCPTarget
 

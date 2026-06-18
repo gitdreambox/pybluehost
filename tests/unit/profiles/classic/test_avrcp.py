@@ -6,7 +6,7 @@ import pytest_asyncio
 from pybluehost.classic.avctp.constants import (
     AVRCP_CONTROLLER_UUID, AVRCP_TARGET_UUID, PSM_AVCTP,
 )
-from pybluehost.avrcp.constants import AVRCPOperationID
+from pybluehost.classic.avrcp.constants import AVRCPOperationID
 from pybluehost.classic.sdp import DataElement, DataElementType
 from pybluehost.profiles.classic import AVRCPController, AVRCPTarget
 
@@ -101,17 +101,17 @@ def test_public_api_imports():
     )
     from pybluehost.classic.avctp.message import AVCTPMessage, AVCTPReassembler
     from pybluehost.classic.avctp.session import AVCTPSession
-    from pybluehost.avrcp import (
+    from pybluehost.classic.avrcp import (
         AVCFrame, AVCCtype, AVCOpCode, AVCSubunitType,
         AVRCPEventID, AVRCPMetadataPDU, AVRCPOperationID, AVRCPPlayStatus,
     )
-    from pybluehost.avrcp.passthrough import PassThroughCommand, PassThroughResponse
-    from pybluehost.avrcp.notification import (
+    from pybluehost.classic.avrcp.passthrough import PassThroughCommand, PassThroughResponse
+    from pybluehost.classic.avrcp.notification import (
         build_notification_changed_response,
         build_notification_interim_response,
         build_register_notification_command,
     )
-    from pybluehost.avrcp.unit_info import (
+    from pybluehost.classic.avrcp.unit_info import (
         build_unit_info_command, build_unit_info_response,
         build_subunit_info_command, build_subunit_info_response,
     )
