@@ -6,10 +6,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
-from pybluehost.avctp.constants import (
+from pybluehost.classic.avctp.constants import (
     AVRCP_CONTROLLER_UUID, AVRCP_PROFILE_UUID, AVRCP_TARGET_UUID, PSM_AVCTP,
 )
-from pybluehost.avctp.session import AVCTPSession
+from pybluehost.classic.avctp.session import AVCTPSession
 from pybluehost.avrcp.constants import (
     AVCCtype, AVCOpCode, AVCSubunitType,
     AVRCPEventID, AVRCPOperationID,

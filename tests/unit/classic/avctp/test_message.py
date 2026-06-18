@@ -1,9 +1,9 @@
 import pytest
 
-from pybluehost.avctp.constants import (
+from pybluehost.classic.avctp.constants import (
     AVCTPMessageDirection, AVCTPPacketType, AVRCP_PROFILE_UUID,
 )
-from pybluehost.avctp.message import AVCTPMessage, AVCTPReassembler
+from pybluehost.classic.avctp.message import AVCTPMessage, AVCTPReassembler
 
 
 def test_single_command_to_bytes():

@@ -9,7 +9,7 @@ import struct
 from dataclasses import dataclass, field
 from typing import Optional
 
-from pybluehost.avctp.constants import (
+from pybluehost.classic.avctp.constants import (
     AVCTPMessageDirection, AVCTPPacketType,
 )
 

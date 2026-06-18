@@ -11,10 +11,10 @@ import asyncio
 import logging
 from typing import Awaitable, Callable, Optional
 
-from pybluehost.avctp.constants import (
+from pybluehost.classic.avctp.constants import (
     AVCTPMessageDirection, AVCTPPacketType,
 )
-from pybluehost.avctp.message import AVCTPMessage, AVCTPReassembler
+from pybluehost.classic.avctp.message import AVCTPMessage, AVCTPReassembler
 
 
 _log = logging.getLogger(__name__)

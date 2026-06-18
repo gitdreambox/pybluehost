@@ -3,7 +3,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 
-from pybluehost.avctp.constants import (
+from pybluehost.classic.avctp.constants import (
     AVRCP_CONTROLLER_UUID, AVRCP_TARGET_UUID, PSM_AVCTP,
 )
 from pybluehost.avrcp.constants import AVRCPOperationID
@@ -94,13 +94,13 @@ def test_public_api_imports():
     from pybluehost.profiles.classic import (
         AVRCPController, AVRCPSession, AVRCPTarget,
     )
-    from pybluehost.avctp import (
+    from pybluehost.classic.avctp import (
         AVCTPPacketType, AVCTPMessageDirection,
         PSM_AVCTP, AVRCP_PROFILE_UUID,
         AVRCP_CONTROLLER_UUID, AVRCP_TARGET_UUID,
     )
-    from pybluehost.avctp.message import AVCTPMessage, AVCTPReassembler
-    from pybluehost.avctp.session import AVCTPSession
+    from pybluehost.classic.avctp.message import AVCTPMessage, AVCTPReassembler
+    from pybluehost.classic.avctp.session import AVCTPSession
     from pybluehost.avrcp import (
         AVCFrame, AVCCtype, AVCOpCode, AVCSubunitType,
         AVRCPEventID, AVRCPMetadataPDU, AVRCPOperationID, AVRCPPlayStatus,

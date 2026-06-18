@@ -4,8 +4,8 @@ import asyncio
 import pytest
 import pytest_asyncio
 
-from pybluehost.avctp.constants import AVRCP_PROFILE_UUID
-from pybluehost.avctp.session import AVCTPSession
+from pybluehost.classic.avctp.constants import AVRCP_PROFILE_UUID
+from pybluehost.classic.avctp.session import AVCTPSession
 
 
 class _FakeChannel:

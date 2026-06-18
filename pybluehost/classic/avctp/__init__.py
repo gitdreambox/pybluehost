@@ -2,7 +2,7 @@
 
 PSM 0x0017. Single signaling channel per peer. Used by AVRCP.
 """
-from pybluehost.avctp.constants import (
+from pybluehost.classic.avctp.constants import (
     AVCTPPacketType, AVCTPMessageDirection,
     PSM_AVCTP, PSM_AVCTP_BROWSING,
     AVRCP_PROFILE_UUID, AVRCP_CONTROLLER_UUID, AVRCP_TARGET_UUID,
