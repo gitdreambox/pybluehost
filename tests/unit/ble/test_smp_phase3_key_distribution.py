@@ -15,7 +15,7 @@ from pybluehost.ble.smp import (
     SMPState,
     decode_smp_pdu,
 )
-from pybluehost.core.address import BDAddress
+from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.types import IOCapability
 
 
@@ -71,6 +71,11 @@ async def test_phase3_initiator_sends_keys_then_collects_and_bonds(tmp_path, mon
     assert SMPCode.MASTER_IDENTIFICATION in sent_codes
     assert SMPCode.IDENTITY_INFORMATION in sent_codes
     assert SMPCode.IDENTITY_ADDRESS_INFORMATION in sent_codes
+    identity_addr_pdu = next(
+        pdu for pdu in sent
+        if pdu[0] == SMPCode.IDENTITY_ADDRESS_INFORMATION
+    )
+    assert identity_addr_pdu[2:8] == BDAddress(b"\x0A\x0B\x0C\x0D\x0E\x0F").to_hci()
     sent.clear()
 
     # Now feed peer's keys
@@ -109,6 +114,49 @@ async def test_phase3_initiator_sends_keys_then_collects_and_bonds(tmp_path, mon
     assert bond.rand == peer_rand
     assert bond.irk == peer_irk
     assert ctx.state_machine.state == SMPState.BONDED
+
+
+async def test_phase3_identity_address_uses_local_address_type(tmp_path, monkeypatch):
+    """Identity Address Information preserves public/random identity type."""
+    monkeypatch.setattr(os, "urandom", lambda n: b"\xAB" * n)
+
+    from pybluehost.ble._smp_state import register_transitions
+    from pybluehost.ble.smp import PairingRole, SMPPairingContext
+
+    sent: list[bytes] = []
+
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    local_addr = BDAddress.from_string(
+        "C0:0B:0C:0D:0E:0F", type=AddressType.RANDOM,
+    )
+    ctx = SMPPairingContext.create(
+        connection_handle=0x0040,
+        peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"),
+        role=PairingRole.INITIATOR,
+        send=send,
+    )
+    ctx.local_io_caps = IOCapability.NO_INPUT_NO_OUTPUT
+    ctx.bondable = True
+    ctx.local_address = local_addr
+    ctx._bond_storage = JsonBondStorage(tmp_path / "bonds.json")
+    ctx.local_init_key_dist = 0x02
+    ctx.local_resp_key_dist = 0x00
+    ctx.peer_init_key_dist = 0x02
+    ctx.peer_resp_key_dist = 0x00
+    ctx.pairing_complete = asyncio.get_running_loop().create_future()
+    register_transitions(ctx)
+    ctx.state_machine._state = SMPState.STK_ENCRYPTING
+
+    await ctx.state_machine.fire(SMPEvent.ENCRYPTION_CHANGE_SUCCESS)
+
+    identity_addr_pdu = next(
+        pdu for pdu in sent
+        if pdu[0] == SMPCode.IDENTITY_ADDRESS_INFORMATION
+    )
+    assert identity_addr_pdu[1] == AddressType.RANDOM
+    assert identity_addr_pdu[2:8] == local_addr.to_hci()
 
 
 async def test_phase3_defers_peer_keys_until_encryption_change(tmp_path, monkeypatch):

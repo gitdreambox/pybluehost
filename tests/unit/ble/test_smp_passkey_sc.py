@@ -114,7 +114,7 @@ async def test_sc_passkey_send_round_confirm_initiator_round_1(monkeypatch):
         captured_args.append((U, V, X, Z))
         return b"\xa1" * 16
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+    monkeypatch.setattr(state_mod, "_sc_f4", _stub_f4)
 
     sent: list[bytes] = []
     async def _send(data):
@@ -131,12 +131,12 @@ async def test_sc_passkey_send_round_confirm_initiator_round_1(monkeypatch):
         send=_send,
     )
     await state_mod._sc_passkey_send_round_confirm(ctx)
-    # f4 called with (PKax, PKbx, Na_1, 0x80 | 1) = (pkax, pkbx, 16B random, 0x81)
+    # f4 called with SMP wire-order byte arrays.
     assert len(captured_args) == 1
     U, V, X, Z = captured_args[0]
     assert U == pkax
     assert V == pkbx
-    assert len(X) == 16  # 16-byte random
+    assert X == ctx.passkey_local_random
     assert Z == 0x81
     # Pairing_Confirm sent (opcode 0x03)
     assert len(sent) == 1 and sent[0][0] == 0x03
@@ -157,7 +157,7 @@ async def test_sc_passkey_send_round_confirm_initiator_round_20(monkeypatch):
         captured_args.append((U, V, X, Z))
         return b"\xa2" * 16
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+    monkeypatch.setattr(state_mod, "_sc_f4", _stub_f4)
 
     async def _send(data):
         pass
@@ -187,7 +187,7 @@ async def test_sc_passkey_send_round_confirm_passkey_zero_uses_0x80(monkeypatch)
         captured_args.append((U, V, X, Z))
         return b"\xa3" * 16
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+    monkeypatch.setattr(state_mod, "_sc_f4", _stub_f4)
 
     async def _send(data): pass
 
@@ -235,7 +235,7 @@ async def test_sc_passkey_recv_peer_confirm_initiator_sends_random(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sc_passkey_recv_peer_confirm_responder_computes_and_sends_confirm(monkeypatch):
-    """Responder receives Ca_i → computes Cb_i = f4(PKbx, PKax, Nb_i, 0x80|bit_i) → sends."""
+    """Responder receives Ca_i -> computes Cb_i = f4(PKbx, PKax, Nb_i, 0x80|bit_i) -> sends."""
     from pybluehost.ble import _smp_state as state_mod
     from pybluehost.ble.smp import PairingRole
 
@@ -245,7 +245,7 @@ async def test_sc_passkey_recv_peer_confirm_responder_computes_and_sends_confirm
         captured_args.append((U, V, X, Z))
         return b"\xcb" * 16
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+    monkeypatch.setattr(state_mod, "_sc_f4", _stub_f4)
 
     sent: list[bytes] = []
     async def _send(data):
@@ -264,7 +264,7 @@ async def test_sc_passkey_recv_peer_confirm_responder_computes_and_sends_confirm
     )
     pdu = SimpleNamespace(confirm_value=b"\xaa" * 16)
     await state_mod._sc_passkey_recv_peer_confirm(ctx, pdu=pdu)
-    # f4 called with (PKbx, PKax, Nb, 0x81)
+    # f4 called with local X first, then peer X, in SMP wire order.
     assert captured_args[0][0] == pkbx
     assert captured_args[0][1] == pkax
     assert len(captured_args[0][2]) == 16
@@ -318,7 +318,7 @@ async def test_sc_passkey_recv_peer_random_initiator_advances_round(monkeypatch)
         # return whatever we stashed as peer_confirm.
         return b"\xcc" * 16
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+    monkeypatch.setattr(state_mod, "_sc_f4", _stub_f4)
 
     sent: list[bytes] = []
     async def _send(data):
@@ -352,7 +352,7 @@ async def test_sc_passkey_recv_peer_random_responder_advances_round(monkeypatch)
     def _stub_f4(U, V, X, Z):
         return b"\xaa" * 16
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(_stub_f4))
+    monkeypatch.setattr(state_mod, "_sc_f4", _stub_f4)
 
     sent: list[bytes] = []
     async def _send(data):
@@ -384,8 +384,7 @@ async def test_sc_passkey_recv_peer_random_initiator_mismatch_fails(monkeypatch)
     from pybluehost.ble import _smp_state as state_mod
     from pybluehost.ble.smp import PairingRole
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
-                        staticmethod(lambda *a, **k: b"\xff" * 16))   # not what's stashed
+    monkeypatch.setattr(state_mod, "_sc_f4", lambda *a, **k: b"\xff" * 16)  # not what's stashed
 
     failed: list = []
     async def _stub_on_failed(ctx, **kw):
@@ -415,8 +414,7 @@ async def test_sc_passkey_recv_peer_random_initiator_round_20_exits_to_dhkey_che
     from pybluehost.ble import _smp_state as state_mod
     from pybluehost.ble.smp import PairingRole, SMPState
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
-                        staticmethod(lambda *a, **k: b"\xcc" * 16))
+    monkeypatch.setattr(state_mod, "_sc_f4", lambda *a, **k: b"\xcc" * 16)
 
     exit_called: list = []
     async def _stub_exit(ctx):
@@ -454,8 +452,7 @@ async def test_sc_passkey_recv_peer_random_responder_round_20_exits_to_random_ex
     from pybluehost.ble import _smp_state as state_mod
     from pybluehost.ble.smp import PairingRole, SMPState
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
-                        staticmethod(lambda *a, **k: b"\xaa" * 16))
+    monkeypatch.setattr(state_mod, "_sc_f4", lambda *a, **k: b"\xaa" * 16)
 
     exit_called: list = []
     async def _stub_exit(ctx):
@@ -505,8 +502,7 @@ async def test_sc_initiator_pubkey_passkey_display_role_enters_round(monkeypatch
     async def _stub_resolve(ctx):
         return 555_555
     monkeypatch.setattr(state_mod, "_passkey_resolve_display_value", _stub_resolve)
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
-                        staticmethod(lambda *a, **k: b"\xaa" * 16))
+    monkeypatch.setattr(state_mod, "_sc_f4", lambda *a, **k: b"\xaa" * 16)
 
     # Stub DHKey computation
     monkeypatch.setattr(
@@ -659,8 +655,7 @@ async def test_passkey_user_entered_sc_initiator_sends_round1_confirm(monkeypatc
     from pybluehost.ble.smp import PairingRole, SMPState
 
     monkeypatch.setattr(state_mod, "_sc_negotiated", lambda _ctx: True)
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4",
-                        staticmethod(lambda *a, **k: b"\xaa" * 16))
+    monkeypatch.setattr(state_mod, "_sc_f4", lambda *a, **k: b"\xaa" * 16)
 
     class _SM:
         def __init__(self): self._state = SMPState.PASSKEY_INPUT_PENDING

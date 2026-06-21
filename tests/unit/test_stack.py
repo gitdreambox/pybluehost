@@ -118,6 +118,16 @@ async def test_stack_gap_has_subsystems():
     await stack.close()
 
 
+async def test_stack_applies_classic_io_capability_to_ssp_manager():
+    stack = await Stack.virtual(
+        config=StackConfig(classic_io_capability=IOCapability.DISPLAY_YES_NO)
+    )
+    try:
+        assert stack.gap.classic_ssp._io_capability == IOCapability.DISPLAY_YES_NO
+    finally:
+        await stack.close()
+
+
 async def test_stack_registers_default_classic_sdp_listener():
     stack = await Stack.virtual()
 

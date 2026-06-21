@@ -300,6 +300,10 @@ class SSPManager:
         """Set local IO capability (0x00=Display+Yes/No, 0x03=NoInputNoOutput, etc.)."""
         self._io_capability = cap
 
+    def set_delegate(self, delegate: object) -> None:
+        """Set the async pairing delegate used for SSP user confirmation."""
+        self._delegate = delegate
+
     def on_user_confirmation(
         self, handler: Callable[[BDAddress, int], bool]
     ) -> None:
@@ -312,6 +316,11 @@ class SSPManager:
         """Reply to an IO Capability Request event."""
         if auth_req is None:
             if (
+                self._security_config is not None
+                and getattr(self._security_config, "mitm_required", False)
+            ):
+                auth_req = 0x05
+            elif (
                 self._security_config is not None
                 and self._security_config.enable_secure_connections
             ):

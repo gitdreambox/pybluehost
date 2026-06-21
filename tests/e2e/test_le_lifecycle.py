@@ -138,6 +138,243 @@ def _build_test_ad_data() -> AdvertisingData:
     return ad
 
 
+class _ScriptedPairingDelegate:
+    def __init__(self, *, passkey: int = 123456, confirm_numeric: bool = True) -> None:
+        self.passkey = passkey
+        self.confirm_numeric_calls: list[tuple[object, int]] = []
+        self.displayed_passkeys: list[tuple[object, int]] = []
+        self._confirm_numeric = confirm_numeric
+
+    async def confirm_pairing(self, handle: int, io_cap: int) -> bool:
+        return True
+
+    async def confirm_numeric(self, peer_addr, value: int) -> bool:
+        self.confirm_numeric_calls.append((peer_addr, value))
+        return self._confirm_numeric
+
+    async def confirm_passkey(self, peer_addr, passkey: int) -> bool:
+        return True
+
+    async def get_passkey(self, peer_addr) -> int:
+        return self.passkey
+
+    async def display_passkey(self, peer_addr, passkey: int) -> None:
+        self.displayed_passkeys.append((peer_addr, passkey))
+
+
+_BLE_PAIRING_CASES = [
+    pytest.param(
+        "legacy_jw",
+        {
+            "enable_sc": False,
+            "mitm": False,
+            "central_io": "NO_INPUT_NO_OUTPUT",
+            "peripheral_io": "NO_INPUT_NO_OUTPUT",
+            "expect_sc": False,
+            "expect_authenticated": False,
+            "expect_numeric": False,
+            "expect_passkey": False,
+        },
+        id="legacy-jw",
+    ),
+    pytest.param(
+        "legacy_passkey",
+        {
+            "enable_sc": False,
+            "mitm": True,
+            "central_io": "KEYBOARD_ONLY",
+            "peripheral_io": "DISPLAY_ONLY",
+            "expect_sc": False,
+            "expect_authenticated": True,
+            "expect_numeric": False,
+            "expect_passkey": True,
+        },
+        id="legacy-passkey",
+    ),
+    pytest.param(
+        "sc_jw",
+        {
+            "enable_sc": True,
+            "mitm": False,
+            "central_io": "NO_INPUT_NO_OUTPUT",
+            "peripheral_io": "NO_INPUT_NO_OUTPUT",
+            "expect_sc": True,
+            "expect_authenticated": False,
+            "expect_numeric": False,
+            "expect_passkey": False,
+        },
+        id="sc-jw",
+    ),
+    pytest.param(
+        "sc_numeric",
+        {
+            "enable_sc": True,
+            "mitm": True,
+            "central_io": "DISPLAY_YES_NO",
+            "peripheral_io": "DISPLAY_YES_NO",
+            "expect_sc": True,
+            "expect_authenticated": True,
+            "expect_numeric": True,
+            "expect_passkey": False,
+        },
+        id="sc-numeric",
+    ),
+    pytest.param(
+        "sc_passkey",
+        {
+            "enable_sc": True,
+            "mitm": True,
+            "central_io": "KEYBOARD_ONLY",
+            "peripheral_io": "DISPLAY_ONLY",
+            "expect_sc": True,
+            "expect_authenticated": True,
+            "expect_numeric": False,
+            "expect_passkey": True,
+        },
+        id="sc-passkey",
+    ),
+]
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("case_name", "case"), _BLE_PAIRING_CASES)
+async def test_e2e_ble_pairing_method_persists_expected_bond(
+    tmp_path, selected_transport_spec, selected_peer_spec, transport_mode,
+    case_name, case,
+):
+    """Pairing-method matrix: pair once and verify the persisted bond shape.
+
+    This intentionally verifies the exact bond key used by reconnect paths:
+    loading by the peer's canonical BD_ADDR must succeed for every method.
+    """
+    import contextlib
+
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import JsonBondStorage
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.types import IOCapability
+    from pybluehost.hci.virtual_link import VirtualLELink
+    from pybluehost.stack import Stack, StackConfig
+    from tests._transport_resolve import build_stack_from_spec
+    from tests.e2e._helpers import (
+        _supports_le_sc, central_discover_peripheral, disconnect_le_and_wait,
+        e2e_timeout, select_le_role_specs,
+    )
+
+    central_delegate = _ScriptedPairingDelegate()
+    peripheral_delegate = _ScriptedPairingDelegate()
+    cfg_c = StackConfig(
+        bond_storage=JsonBondStorage(tmp_path / f"{case_name}_bonds_c.json"),
+        security=SecurityConfig(
+            enable_secure_connections=case["enable_sc"],
+            mitm_required=case["mitm"],
+        ),
+        le_io_capability=getattr(IOCapability, case["central_io"]),
+    )
+    cfg_p = StackConfig(
+        bond_storage=JsonBondStorage(tmp_path / f"{case_name}_bonds_p.json"),
+        security=SecurityConfig(
+            enable_secure_connections=case["enable_sc"],
+            mitm_required=case["mitm"],
+        ),
+        le_io_capability=getattr(IOCapability, case["peripheral_io"]),
+    )
+
+    central_addr = BDAddress(b"\x0A\x0A\x0A\x0A\x0A\x0A")
+    peripheral_addr = BDAddress(b"\x0B\x0B\x0B\x0B\x0B\x0B")
+    stack_c = None
+    stack_p = None
+    link = None
+    handle = None
+    try:
+        if transport_mode == "virtual":
+            stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
+            stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
+            link = VirtualLELink(
+                central=stack_c._virtual_controller,
+                peripheral=stack_p._virtual_controller,
+                central_address=central_addr,
+                peripheral_address=peripheral_addr,
+            )
+        else:
+            central_spec, peripheral_spec = select_le_role_specs(
+                selected_transport_spec, selected_peer_spec, transport_mode,
+            )
+            stack_c = await build_stack_from_spec(central_spec, config=cfg_c)
+            stack_p = await build_stack_from_spec(peripheral_spec, config=cfg_p)
+            central_addr = stack_c._local_address
+            peripheral_addr = stack_p._local_address
+
+        if case["enable_sc"] and not _supports_le_sc(stack_c):
+            pytest.skip("central adapter does not support LE Secure Connections")
+
+        stack_c.smp.set_delegate(central_delegate)
+        stack_p.smp.set_delegate(peripheral_delegate)
+
+        await stack_p.gap.ble_advertiser.start(ad_data=_build_test_ad_data())
+        if link is not None:
+            connect_task = asyncio.create_task(
+                stack_c.connect_gatt(
+                    peripheral_addr,
+                    timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+                )
+            )
+            await asyncio.sleep(0.1)
+            await link.connect()
+            client = await connect_task
+        else:
+            discovered_addr = await central_discover_peripheral(
+                stack_c,
+                peripheral_addr,
+                timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+                expected_name="PBH-E2E",
+            )
+            client = await stack_c.connect_gatt(
+                discovered_addr,
+                timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+            )
+        handle = client._connection_handle
+        await stack_c.pair(
+            handle,
+            timeout=e2e_timeout(transport_mode, virtual=30.0, usb=70.0),
+        )
+
+        bond = await cfg_c.bond_storage.load_bond(peripheral_addr)
+        assert bond is not None, f"{case_name}: central bond not persisted"
+        assert bond.ltk, f"{case_name}: persisted bond has no LTK"
+        assert bond.sc is case["expect_sc"]
+        assert bond.authenticated is case["expect_authenticated"]
+        if case["expect_numeric"]:
+            assert central_delegate.confirm_numeric_calls
+            assert peripheral_delegate.confirm_numeric_calls
+        if case["expect_passkey"]:
+            assert (
+                central_delegate.displayed_passkeys
+                or peripheral_delegate.displayed_passkeys
+            )
+    finally:
+        if stack_p is not None:
+            with contextlib.suppress(Exception):
+                await stack_p.gap.ble_advertiser.stop()
+        if handle is not None and stack_c is not None:
+            with contextlib.suppress(Exception):
+                await disconnect_le_and_wait(
+                    stack_c,
+                    handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
+        if link is not None:
+            with contextlib.suppress(Exception):
+                await link.disconnect()
+        if stack_c is not None:
+            with contextlib.suppress(Exception):
+                await stack_c.close()
+        if stack_p is not None:
+            with contextlib.suppress(Exception):
+                await stack_p.close()
+
+
 @pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_e2e_scan_connect_pair_read(
@@ -344,6 +581,80 @@ async def test_e2e_gatt_write_and_notify(
             with contextlib.suppress(Exception):
                 await disconnect_le_and_wait(
                     stack_c, handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
+        with contextlib.suppress(Exception):
+            await stack_p.gap.ble_advertiser.stop()
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_e2e_low_duty_directed_advertising_reconnects_two_usb_adapters(
+    central_peripheral_pair, transport_mode,
+):
+    """USB-only check: ordinary ADV connects, then directed ADV reconnects."""
+    import contextlib
+
+    from pybluehost.cli.app._ble_peripheral import start_directed_advertising
+    from tests.e2e._helpers import (
+        central_discover_peripheral, disconnect_le_and_wait, e2e_timeout,
+    )
+
+    if transport_mode != "usb":
+        pytest.skip("directed advertising RF reconnect test requires two USB adapters")
+
+    stack_c, stack_p = central_peripheral_pair
+    central_addr = stack_c._local_address
+    peripheral_addr = stack_p._local_address
+    central_addr_type = "random" if int(central_addr.type) == 0x01 else "public"
+    peripheral_addr_type = "random" if int(peripheral_addr.type) == 0x01 else "public"
+
+    handle = None
+    await stack_p.gap.ble_advertiser.start(ad_data=_build_test_ad_data())
+    try:
+        discovered_addr = await central_discover_peripheral(
+            stack_c,
+            peripheral_addr,
+            timeout=e2e_timeout(transport_mode, virtual=5.0, usb=15.0),
+            expected_name="PBH-E2E",
+        )
+        client = await stack_c.connect_gatt(
+            discovered_addr,
+            timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+        )
+        handle = client._connection_handle
+        await disconnect_le_and_wait(
+            stack_c,
+            handle,
+            timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+        )
+        handle = None
+    finally:
+        with contextlib.suppress(Exception):
+            await stack_p.gap.ble_advertiser.stop()
+
+    await asyncio.sleep(e2e_timeout(transport_mode, virtual=0.1, usb=0.5))
+    await start_directed_advertising(
+        stack_p.hci,
+        peer_address=central_addr,
+        peer_address_type=central_addr_type,
+        own_address_type=peripheral_addr_type,
+        duty="low",
+        interval_ms=100.0,
+    )
+    try:
+        client = await stack_c.connect_gatt(
+            peripheral_addr,
+            timeout=e2e_timeout(transport_mode, virtual=10.0, usb=20.0),
+        )
+        handle = client._connection_handle
+        assert handle is not None
+    finally:
+        if handle is not None:
+            with contextlib.suppress(Exception):
+                await disconnect_le_and_wait(
+                    stack_c,
+                    handle,
                     timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
                 )
         with contextlib.suppress(Exception):

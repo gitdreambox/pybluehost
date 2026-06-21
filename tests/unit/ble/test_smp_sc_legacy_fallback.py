@@ -3,14 +3,51 @@ from __future__ import annotations
 
 from pybluehost.ble.security import SecurityConfig
 from pybluehost.ble.smp import (
+    PairingRole,
     SMPCode,
+    SMPPairingContext,
     SMPManager,
     SMPPairingRequest,
     SMPPairingResponse,
     decode_smp_pdu,
 )
-from pybluehost.core.address import BDAddress
+from pybluehost.ble._smp_state import (
+    _local_sc_address,
+    _peer_sc_address,
+    _sc_f5,
+    _sc_f6,
+)
+from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.types import IOCapability
+
+
+def test_sc_address_params_include_address_type_and_canonical_order():
+    ctx = SMPPairingContext.create(
+        connection_handle=0x0040,
+        peer_address=BDAddress.from_string("41:88:86:B6:3B:A1", type=AddressType.RANDOM),
+        role=PairingRole.RESPONDER,
+    )
+    ctx.local_address = BDAddress.from_string("D4:54:8B:BA:70:A1", type=AddressType.PUBLIC)
+
+    assert _local_sc_address(ctx) == bytes.fromhex("a170ba8b54d400")
+    assert _peer_sc_address(ctx) == bytes.fromhex("a13bb686884101")
+
+
+def test_sc_wire_order_f5_f6_matches_android_dhkey_check_vector():
+    dhkey = bytes.fromhex("016816840c377ac746cb3bc5844e1dc056cc5d0dd22dd8265528c81fb57300fb")
+    na = bytes.fromhex("b3b639ba6f3dbb327f0f79ab1721a905")
+    nb = bytes.fromhex("88edf1d8e2838fe642c8015afe54b103")
+    a1 = bytes.fromhex("54169241ae4001")
+    a2 = bytes.fromhex("a170ba8b54d400")
+    io_cap_a = bytes.fromhex("04002d")
+
+    mac_key, ltk = _sc_f5(dhkey, na, nb, a1, a2)
+
+    assert mac_key == bytes.fromhex("05c7949e486fe8e3f6f2c33893e7b5b2")
+    assert ltk == bytes.fromhex("e63df6496d34a1e28771bc55cd24fe75")
+    assert _sc_f6(mac_key, na, nb, bytes(16), io_cap_a, a1, a2) == bytes.fromhex(
+        "ee252fc7529f42c3435d1064a0317130"
+    )
 
 
 async def test_initiator_sets_sc_bit_when_enabled():
@@ -202,6 +239,60 @@ async def test_sc_responder_handles_initiator_public_key():
     assert ctx.state_machine.state == SMPState.CONFIRMING
 
 
+async def test_sc_responder_confirm_uses_core_order_and_sends_wire_order(monkeypatch):
+    """Regression for Android SMP_CONFIRM_VALUE_ERR at SC Just Works confirm check."""
+    from pybluehost.ble import _smp_state as state_mod
+    from pybluehost.ble.smp import SMPPairingPublicKey, SMPState
+
+    sent: list[bytes] = []
+    async def send(data: bytes) -> None:
+        sent.append(data)
+
+    local_pub = bytes(range(64))
+    peer_pub = bytes(range(64, 128))
+    local_random = bytes(range(16))
+    confirm = bytes.fromhex("00112233445566778899aabbccddeeff")
+    captured: list[tuple[bytes, bytes, bytes, int]] = []
+
+    monkeypatch.setattr(state_mod.os, "urandom", lambda n: local_random)
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.generate_p256_keypair",
+        lambda: (b"\x01" * 32, local_pub),
+    )
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.compute_dhkey",
+        lambda *_args: b"\x02" * 32,
+    )
+
+    def fake_f4(u: bytes, v: bytes, x: bytes, z: int) -> bytes:
+        captured.append((u, v, x, z))
+        return confirm
+
+    monkeypatch.setattr(state_mod, "_sc_f4", fake_f4)
+
+    ctx = SMPPairingContext.create(
+        connection_handle=0x0040,
+        peer_address=BDAddress(bytes.fromhex("010203040506")),
+        role=PairingRole.RESPONDER,
+        send=send,
+    )
+    ctx.saved_pairing_request = SMPPairingRequest(auth_req=0x09).to_bytes()
+    ctx.saved_pairing_response = SMPPairingResponse(auth_req=0x09).to_bytes()
+    ctx.local_auth_req = 0x09
+    ctx.peer_auth_req = 0x09
+    ctx.local_io_caps = IOCapability.NO_INPUT_NO_OUTPUT
+    ctx.peer_io_caps = IOCapability.NO_INPUT_NO_OUTPUT
+    ctx.state_machine._state = SMPState.PUBLIC_KEY_EXCHANGE
+
+    await state_mod._sc_responder_recv_peer_public_key(
+        ctx,
+        pdu=SMPPairingPublicKey(public_key_x=peer_pub[:32], public_key_y=peer_pub[32:]),
+    )
+
+    assert captured == [(local_pub[:32], peer_pub[:32], local_random, 0)]
+    assert sent[1] == bytes([SMPCode.PAIRING_CONFIRM]) + confirm
+
+
 async def test_sc_initiator_completes_phase2_with_f5_ltk(monkeypatch):
     """Initiator: peer Confirm + peer Random → f4 verify pass → f5 derive (MacKey, LTK_sc).
 
@@ -243,9 +334,9 @@ async def test_sc_initiator_completes_phase2_with_f5_ltk(monkeypatch):
     sent.clear()
 
     # Patch f4 so peer-Confirm verification passes deterministically
-    monkeypatch.setattr(SMPCrypto, "f4", staticmethod(lambda *a, **kw: b"\x44" * 16))
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f4", lambda *a, **kw: b"\x44" * 16)
     # Patch f5 to return a deterministic (MacKey, LTK) tuple
-    monkeypatch.setattr(SMPCrypto, "f5", staticmethod(lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16)))
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f5", lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16))
 
     # Peer sends its Confirm
     await mgr.on_pdu(SMPPairingConfirm(confirm_value=b"\x44" * 16).to_bytes(),
@@ -300,8 +391,8 @@ async def test_sc_responder_completes_phase2_with_f5_ltk(monkeypatch):
     )
     await mgr.on_pdu(req.to_bytes(), connection_handle=0x0040)
     _, peer_pub = generate_p256_keypair()
-    monkeypatch.setattr(SMPCrypto, "f4", staticmethod(lambda *a, **kw: b"\x44" * 16))
-    monkeypatch.setattr(SMPCrypto, "f5", staticmethod(lambda *a, **kw: (b"\x33" * 16, b"\x77" * 16)))
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f4", lambda *a, **kw: b"\x44" * 16)
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f5", lambda *a, **kw: (b"\x33" * 16, b"\x77" * 16))
     await mgr.on_pdu(
         SMPPairingPublicKey(public_key_x=peer_pub[:32], public_key_y=peer_pub[32:]).to_bytes(),
         connection_handle=0x0040,
@@ -352,9 +443,9 @@ async def test_sc_initiator_sends_dhkey_check_and_starts_encryption(monkeypatch)
     )
     mgr.bind_channel(0x0040, send=send, peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"))
 
-    monkeypatch.setattr(SMPCrypto, "f4", staticmethod(lambda *a, **kw: b"\x44" * 16))
-    monkeypatch.setattr(SMPCrypto, "f5", staticmethod(lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16)))
-    monkeypatch.setattr(SMPCrypto, "f6", staticmethod(lambda *a, **kw: b"\x66" * 16))
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f4", lambda *a, **kw: b"\x44" * 16)
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f5", lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16))
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f6", lambda *a, **kw: b"\x66" * 16)
 
     await mgr.start_initiator(0x0040)
     rsp = SMPPairingResponse(
@@ -423,8 +514,8 @@ async def test_sc_dhkey_check_mismatch_fails(monkeypatch):
     )
     mgr.bind_channel(0x0040, send=send, peer_address=BDAddress(b"\x01\x02\x03\x04\x05\x06"))
 
-    monkeypatch.setattr(SMPCrypto, "f4", staticmethod(lambda *a, **kw: b"\x44" * 16))
-    monkeypatch.setattr(SMPCrypto, "f5", staticmethod(lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16)))
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f4", lambda *a, **kw: b"\x44" * 16)
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f5", lambda *a, **kw: (b"\x11" * 16, b"\x22" * 16))
     # f6 returns 0x66*16 for Ea (first call), 0x99*16 for expected Eb (second call)
     call_count = {"n": 0}
 
@@ -432,7 +523,7 @@ async def test_sc_dhkey_check_mismatch_fails(monkeypatch):
         call_count["n"] += 1
         return b"\x66" * 16 if call_count["n"] == 1 else b"\x99" * 16
 
-    monkeypatch.setattr(SMPCrypto, "f6", staticmethod(fake_f6))
+    monkeypatch.setattr("pybluehost.ble._smp_state._sc_f6", fake_f6)
 
     await mgr.start_initiator(0x0040)
     rsp = SMPPairingResponse(

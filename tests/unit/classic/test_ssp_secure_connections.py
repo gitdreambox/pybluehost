@@ -39,6 +39,25 @@ async def test_ssp_io_capability_reply_sets_sc_bit_when_enabled():
     assert auth_req_byte == 0x04, f"expected 0x04, got 0x{auth_req_byte:02x}"
 
 
+async def test_ssp_io_capability_reply_requests_mitm_when_required():
+    hci = FakeHCI()
+    mgr = SSPManager(
+        hci=hci,
+        security_config=SecurityConfig(mitm_required=True),
+    )
+    addr = BDAddress(b"\x01\x02\x03\x04\x05\x06")
+    params = bytes(reversed(addr.address))
+    evt = HCIEvent(event_code=int(EventCode.IO_CAPABILITY_REQUEST), parameters=params)
+    await mgr.on_hci_event(evt)
+    await asyncio.sleep(0.05)
+
+    assert hci.sent, "SSPManager must reply to IO_Capability_Request"
+    reply = hci.sent[0]
+    raw = reply.to_bytes() if hasattr(reply, "to_bytes") else reply
+    auth_req_byte = raw[4 + 6 + 2]
+    assert auth_req_byte == 0x05, f"expected 0x05, got 0x{auth_req_byte:02x}"
+
+
 async def test_ssp_link_key_notification_p256_key_type_sets_sc_true(tmp_path):
     """key_type 0x07 = SC Unauthenticated → sc=True, authenticated=False."""
     hci = FakeHCI()

@@ -4,11 +4,14 @@ from __future__ import annotations
 from pybluehost.ble.smp import (
     PairingRole,
     SMPCode,
+    SMPPairingContext,
+    SMPPairingRequest,
     SMPManager,
     SMPPairingResponse,
     SMPState,
 )
-from pybluehost.core.address import BDAddress
+from pybluehost.ble._smp_state import _build_c1_params
+from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.types import IOCapability
 
 
@@ -127,3 +130,40 @@ async def test_initiator_completes_phase2_and_starts_encryption(monkeypatch):
     assert enc_starts[0].long_term_key == b"\x88" * 16
     ctx = mgr.get_context(0x0040)
     assert ctx.state_machine.state == SMPState.STK_ENCRYPTING
+
+
+def test_initiator_c1_params_use_hci_address_order_and_types():
+    ctx = SMPPairingContext.create(
+        connection_handle=0x0044,
+        peer_address=BDAddress.from_string("D4:54:8B:BA:70:A1"),
+        role=PairingRole.INITIATOR,
+    )
+    ctx.local_address = BDAddress.from_string(
+        "6E:03:9A:3C:E2:96",
+        type=AddressType.RANDOM,
+    )
+    ctx.saved_pairing_request = SMPPairingRequest(
+        io_capability=IOCapability.NO_INPUT_NO_OUTPUT,
+        oob_data_flag=0,
+        auth_req=0x01,
+        max_key_size=16,
+        init_key_dist=0x07,
+        resp_key_dist=0x07,
+    ).to_bytes()
+    ctx.saved_pairing_response = SMPPairingResponse(
+        io_capability=IOCapability.KEYBOARD_DISPLAY,
+        oob_data_flag=0,
+        auth_req=0x2D,
+        max_key_size=16,
+        init_key_dist=0x0F,
+        resp_key_dist=0x0F,
+    ).to_bytes()
+
+    preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
+
+    assert preq == bytes.fromhex("01030001100707")
+    assert pres == bytes.fromhex("0204002d100f0f")
+    assert iat == AddressType.RANDOM
+    assert rat == AddressType.PUBLIC
+    assert ia == bytes.fromhex("96e23c9a036e")
+    assert ra == bytes.fromhex("a170ba8b54d4")

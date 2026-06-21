@@ -60,6 +60,7 @@ from pybluehost.ble.smp import (
     SMPPairingRequest,
     SMPPairingResponse,
     SMPState,
+    _aes_cmac,
     _log_pairing_complete,
 )
 from pybluehost.core.address import AddressType, BDAddress
@@ -395,12 +396,7 @@ async def _initiator_recv_pairing_response(ctx: "SMPPairingContext", *, pdu: SMP
     # Compute c1 confirm value
     # SMPCrypto.c1(k, r, preq, pres, iat, rat, ia, ra)
     # preq/pres are the full 7-byte PDUs (opcode included) per BT Spec Vol 3 Part H §2.2.3
-    preq = ctx.saved_pairing_request[:7]
-    pres = ctx.saved_pairing_response[:7]
-    iat = 0x00  # initiator address type (public)
-    rat = 0x00  # responder address type (public)
-    ia = _local_address_bytes(ctx)
-    ra = _peer_address_bytes(ctx)
+    preq, pres, iat, rat, ia, ra = _build_c1_params(ctx)
     ctx.local_confirm = SMPCrypto.c1(ctx.tk, ctx.local_random, preq, pres, iat, rat, ia, ra)
     await ctx.send(SMPPairingConfirm(confirm_value=ctx.local_confirm).to_bytes())
 
@@ -626,11 +622,9 @@ async def _sc_responder_recv_peer_public_key(ctx: "SMPPairingContext", *, pdu, *
             await _passkey_await_user_input(ctx)
         return
 
-    # Just Works / NC: generate Nb, send Cb (existing behavior)
+    # Just Works / NC: generate Nb, send Cb.
     ctx.local_random = os.urandom(16)
-    pkbx = ctx.local_public_key[:32]
-    pkax = ctx.peer_public_key[:32]
-    ctx.local_confirm = SMPCrypto.f4(pkbx, pkax, ctx.local_random, 0)
+    ctx.local_confirm = _sc_f4(ctx.local_public_key[:32], ctx.peer_public_key[:32], ctx.local_random, 0)
     await ctx.send(SMPPairingConfirm(confirm_value=ctx.local_confirm).to_bytes())
 
 
@@ -649,12 +643,10 @@ async def _sc_send_dhkey_check_initiator(ctx: "SMPPairingContext") -> None:
     this until the user confirms the numeric value.
     """
     from pybluehost.ble.smp import SMPPairingDHKeyCheck
-    local_addr = _local_address_bytes(ctx)
-    peer_addr = _peer_address_bytes(ctx)
-    a1 = b"\x00" + local_addr
-    a2 = b"\x00" + peer_addr
-    io_cap_a = bytes([ctx.local_auth_req, 0x00, int(ctx.local_io_caps)])
-    ea = SMPCrypto.f6(ctx.mac_key, ctx.local_random, ctx.peer_random, b"\x00" * 16, io_cap_a, a1, a2)
+    a1 = _local_sc_address(ctx)
+    a2 = _peer_sc_address(ctx)
+    io_cap_a = bytes([int(ctx.local_io_caps), 0x00, ctx.local_auth_req])
+    ea = _sc_f6(ctx.mac_key, ctx.local_random, ctx.peer_random, b"\x00" * 16, io_cap_a, a1, a2)
     ctx.local_dhkey_check = ea
     await ctx.send(SMPPairingDHKeyCheck(dhkey_check=ea).to_bytes())
     ctx.state_machine._state = SMPState.DHKEY_CHECK
@@ -664,10 +656,7 @@ async def _sc_initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
     """SC Initiator: Responder's Random Nb arrived. Verify Cb, derive f5,
     then branch on association model (NC -> NUMERIC_COMPARE_PENDING, JW -> send Ea)."""
     ctx.peer_random = pdu.random_value
-    # Verify Cb = f4(PKbx, PKax, Nb, 0)
-    pkbx = ctx.peer_public_key[:32]
-    pkax = ctx.local_public_key[:32]
-    expected = SMPCrypto.f4(pkbx, pkax, ctx.peer_random, 0)
+    expected = _sc_f4(ctx.peer_public_key[:32], ctx.local_public_key[:32], ctx.peer_random, 0)
     if expected != ctx.peer_confirm:
         await _on_failed(ctx, reason=0x04)  # CONFIRM_VALUE_FAILED
         return
@@ -675,11 +664,9 @@ async def _sc_initiator_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
     ctx.state_machine._state = SMPState.RANDOM_EXCHANGE
     # Derive (MacKey, LTK_sc) = f5(DHKey, Na, Nb, A1, A2)
     # A1 = Initiator (local) addr; A2 = Responder (peer) addr
-    local_addr = _local_address_bytes(ctx)
-    peer_addr = _peer_address_bytes(ctx)
-    a1 = b"\x00" + local_addr  # type 0 = public
-    a2 = b"\x00" + peer_addr
-    mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.local_random, ctx.peer_random, a1, a2)
+    a1 = _local_sc_address(ctx)
+    a2 = _peer_sc_address(ctx)
+    mac_key, ltk = _sc_f5(ctx.dhkey, ctx.local_random, ctx.peer_random, a1, a2)
     ctx.mac_key = mac_key
     ctx.ltk_sc = ltk
 
@@ -699,12 +686,10 @@ async def _sc_responder_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw
     await ctx.send(SMPPairingRandom(random_value=ctx.local_random).to_bytes())
     # Derive (MacKey, LTK_sc) = f5(DHKey, Na, Nb, A1, A2)
     # In SC: A1 = Initiator (peer) addr; A2 = Responder (local) addr
-    local_addr = _local_address_bytes(ctx)
-    peer_addr = _peer_address_bytes(ctx)
-    a1 = b"\x00" + peer_addr   # Initiator = peer
-    a2 = b"\x00" + local_addr  # Responder = local
+    a1 = _peer_sc_address(ctx)   # Initiator = peer
+    a2 = _local_sc_address(ctx)  # Responder = local
     # Na = peer_random (Initiator's); Nb = local_random (Responder's)
-    mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.peer_random, ctx.local_random, a1, a2)
+    mac_key, ltk = _sc_f5(ctx.dhkey, ctx.peer_random, ctx.local_random, a1, a2)
     ctx.mac_key = mac_key
     ctx.ltk_sc = ltk
 
@@ -742,13 +727,11 @@ async def _sc_initiator_recv_peer_dhkey_check(ctx: "SMPPairingContext", *, pdu, 
 
     ctx.peer_dhkey_check = pdu.dhkey_check
     # Expected Eb = f6(MacKey, Nb, Na, rb=0, IOcapB, B, A)
-    # IOcapB = (Auth_Req || OOB_Flag || IO_Capability) of Responder (peer)
-    io_cap_b = bytes([ctx.peer_auth_req, 0x00, int(ctx.peer_io_caps)])
-    local_addr = _local_address_bytes(ctx)
-    peer_addr = _peer_address_bytes(ctx)
-    a1 = b"\x00" + local_addr  # Initiator = us
-    a2 = b"\x00" + peer_addr   # Responder = peer
-    expected_eb = SMPCrypto.f6(ctx.mac_key, ctx.peer_random, ctx.local_random, b"\x00" * 16, io_cap_b, a2, a1)
+    # IOcapB = (IO_Capability || OOB_Flag || Auth_Req) of Responder (peer)
+    io_cap_b = bytes([int(ctx.peer_io_caps), 0x00, ctx.peer_auth_req])
+    a1 = _local_sc_address(ctx)  # Initiator = us
+    a2 = _peer_sc_address(ctx)   # Responder = peer
+    expected_eb = _sc_f6(ctx.mac_key, ctx.peer_random, ctx.local_random, b"\x00" * 16, io_cap_b, a2, a1)
     if expected_eb != ctx.peer_dhkey_check:
         ctx.state_machine._state = SMPState.FAILED  # override the pre-set to_state
         await _on_failed(ctx, reason=0x0B)  # DHKEY_CHECK_FAILED
@@ -779,22 +762,20 @@ async def _sc_responder_recv_peer_dhkey_check(ctx: "SMPPairingContext", *, pdu, 
     from pybluehost.ble.smp import SMPPairingDHKeyCheck
 
     ctx.peer_dhkey_check = pdu.dhkey_check
-    # IOcapA = Initiator's (peer); IOcapB = Responder's (local)
-    io_cap_a = bytes([ctx.peer_auth_req, 0x00, int(ctx.peer_io_caps)])
-    io_cap_b = bytes([ctx.local_auth_req, 0x00, int(ctx.local_io_caps)])
-    local_addr = _local_address_bytes(ctx)
-    peer_addr = _peer_address_bytes(ctx)
-    a1 = b"\x00" + peer_addr   # Initiator = peer
-    a2 = b"\x00" + local_addr  # Responder = us
+    # IOcap = IO_Capability || OOB_Flag || Auth_Req.
+    io_cap_a = bytes([int(ctx.peer_io_caps), 0x00, ctx.peer_auth_req])
+    io_cap_b = bytes([int(ctx.local_io_caps), 0x00, ctx.local_auth_req])
+    a1 = _peer_sc_address(ctx)   # Initiator = peer
+    a2 = _local_sc_address(ctx)  # Responder = us
     # Verify Ea = f6(MacKey, Na, Nb, ra=0, IOcapA, A, B)
     # Na = peer_random; Nb = local_random
-    expected_ea = SMPCrypto.f6(ctx.mac_key, ctx.peer_random, ctx.local_random, b"\x00" * 16, io_cap_a, a1, a2)
+    expected_ea = _sc_f6(ctx.mac_key, ctx.peer_random, ctx.local_random, b"\x00" * 16, io_cap_a, a1, a2)
     if expected_ea != ctx.peer_dhkey_check:
         ctx.state_machine._state = SMPState.FAILED  # override the pre-set to_state
         await _on_failed(ctx, reason=0x0B)  # DHKEY_CHECK_FAILED
         return
     # Compute and send Eb = f6(MacKey, Nb, Na, rb=0, IOcapB, B, A)
-    eb = SMPCrypto.f6(ctx.mac_key, ctx.local_random, ctx.peer_random, b"\x00" * 16, io_cap_b, a2, a1)
+    eb = _sc_f6(ctx.mac_key, ctx.local_random, ctx.peer_random, b"\x00" * 16, io_cap_b, a2, a1)
     ctx.local_dhkey_check = eb
     await ctx.send(SMPPairingDHKeyCheck(dhkey_check=eb).to_bytes())
 
@@ -838,9 +819,10 @@ async def _start_phase3(ctx: "SMPPairingContext", **_kw) -> None:
         irk = os.urandom(16)
         await ctx.send(SMPIdentityInformation(irk=irk).to_bytes())
         local_addr = ctx.local_address if ctx.local_address is not None else BDAddress(b"\x00" * 6)
-        local_addr_bytes = bytes(local_addr.address) if hasattr(local_addr, "address") else bytes(local_addr)
+        local_addr_bytes = local_addr.to_hci() if hasattr(local_addr, "to_hci") else bytes(local_addr)
+        local_addr_type = int(getattr(local_addr, "type", AddressType.PUBLIC)) & 0x01
         await ctx.send(SMPIdentityAddressInformation(
-            addr_type=0, bd_addr=local_addr_bytes,
+            addr_type=local_addr_type, bd_addr=local_addr_bytes,
         ).to_bytes())
     if mask & 0x04:  # Sign: CSRK
         csrk = os.urandom(16)
@@ -1135,7 +1117,7 @@ async def _sc_compute_and_await_nc(ctx: "SMPPairingContext") -> None:
         na = ctx.peer_random
         nb = ctx.local_random
 
-    g2_value = SMPCrypto.g2(pkax, pkbx, na, nb)
+    g2_value = _sc_g2(pkax, pkbx, na, nb)
     numeric_value = g2_value % 1_000_000
 
     delegate = getattr(ctx, "_delegate", None) or AutoAcceptDelegate()
@@ -1212,9 +1194,9 @@ async def _sc_passkey_send_round_confirm(ctx: "SMPPairingContext") -> None:
     i = ctx.passkey_round
     bit = (ctx.passkey >> (20 - i)) & 1
     ctx.passkey_local_random = os.urandom(16)
-    pkax = ctx.local_public_key[:32]
-    pkbx = ctx.peer_public_key[:32]
-    ctx.passkey_local_confirm = SMPCrypto.f4(pkax, pkbx, ctx.passkey_local_random, 0x80 | bit)
+    ctx.passkey_local_confirm = _sc_f4(
+        ctx.local_public_key[:32], ctx.peer_public_key[:32], ctx.passkey_local_random, 0x80 | bit,
+    )
     await ctx.send(SMPPairingConfirm(confirm_value=ctx.passkey_local_confirm).to_bytes())
 
 
@@ -1238,9 +1220,9 @@ async def _sc_passkey_recv_peer_confirm(ctx: "SMPPairingContext", *, pdu, **_kw)
         i = ctx.passkey_round
         bit = (ctx.passkey >> (20 - i)) & 1
         ctx.passkey_local_random = os.urandom(16)
-        pkax = ctx.peer_public_key[:32]   # Initiator's
-        pkbx = ctx.local_public_key[:32]  # Responder's
-        ctx.passkey_local_confirm = SMPCrypto.f4(pkbx, pkax, ctx.passkey_local_random, 0x80 | bit)
+        ctx.passkey_local_confirm = _sc_f4(
+            ctx.local_public_key[:32], ctx.peer_public_key[:32], ctx.passkey_local_random, 0x80 | bit,
+        )
         await ctx.send(SMPPairingConfirm(confirm_value=ctx.passkey_local_confirm).to_bytes())
     ctx.passkey_round_phase = "AWAIT_PEER_RANDOM"
 
@@ -1261,10 +1243,10 @@ async def _sc_passkey_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) 
     bit = (ctx.passkey >> (20 - i)) & 1
 
     if ctx.role == PairingRole.INITIATOR:
-        # Verify Cb_i = f4(PKbx, PKax, Nb_i, 0x80|bit)
-        pkax = ctx.local_public_key[:32]
-        pkbx = ctx.peer_public_key[:32]
-        expected = SMPCrypto.f4(pkbx, pkax, ctx.passkey_peer_random, 0x80 | bit)
+        # Verify Cb_i = f4(PKbx, PKax, Nb_i, 0x80|bit).
+        expected = _sc_f4(
+            ctx.peer_public_key[:32], ctx.local_public_key[:32], ctx.passkey_peer_random, 0x80 | bit,
+        )
         if expected != ctx.passkey_peer_confirm:
             await _on_failed(ctx, reason=0x04)
             return
@@ -1278,9 +1260,9 @@ async def _sc_passkey_recv_peer_random(ctx: "SMPPairingContext", *, pdu, **_kw) 
             await _sc_passkey_exit_to_dhkey_check_initiator(ctx)
     else:
         # Responder: verify Ca_i = f4(PKax, PKbx, Na_i, 0x80|bit), then send Nb_i.
-        pkax = ctx.peer_public_key[:32]
-        pkbx = ctx.local_public_key[:32]
-        expected = SMPCrypto.f4(pkax, pkbx, ctx.passkey_peer_random, 0x80 | bit)
+        expected = _sc_f4(
+            ctx.peer_public_key[:32], ctx.local_public_key[:32], ctx.passkey_peer_random, 0x80 | bit,
+        )
         if expected != ctx.passkey_peer_confirm:
             await _on_failed(ctx, reason=0x04)
             return
@@ -1299,11 +1281,9 @@ async def _sc_passkey_exit_to_dhkey_check_initiator(ctx: "SMPPairingContext") ->
 
     _sc_send_dhkey_check_initiator (Sub-Plan 2) sends Ea and sets state to DHKEY_CHECK.
     """
-    local_addr = _local_address_bytes(ctx)
-    peer_addr = _peer_address_bytes(ctx)
-    a1 = b"\x00" + local_addr
-    a2 = b"\x00" + peer_addr
-    mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.local_random, ctx.peer_random, a1, a2)
+    a1 = _local_sc_address(ctx)
+    a2 = _peer_sc_address(ctx)
+    mac_key, ltk = _sc_f5(ctx.dhkey, ctx.local_random, ctx.peer_random, a1, a2)
     ctx.mac_key = mac_key
     ctx.ltk_sc = ltk
     await _sc_send_dhkey_check_initiator(ctx)
@@ -1315,11 +1295,9 @@ async def _sc_passkey_exit_to_random_exchange_responder(ctx: "SMPPairingContext"
     The existing RANDOM_EXCHANGE + PAIRING_DHKEY_CHECK_RX transition handles
     Initiator's incoming Ea. No PDU sent here.
     """
-    local_addr = _local_address_bytes(ctx)
-    peer_addr = _peer_address_bytes(ctx)
-    a1 = b"\x00" + peer_addr   # Initiator = peer
-    a2 = b"\x00" + local_addr  # Responder = local
-    mac_key, ltk = SMPCrypto.f5(ctx.dhkey, ctx.peer_random, ctx.local_random, a1, a2)
+    a1 = _peer_sc_address(ctx)   # Initiator = peer
+    a2 = _local_sc_address(ctx)  # Responder = local
+    mac_key, ltk = _sc_f5(ctx.dhkey, ctx.peer_random, ctx.local_random, a1, a2)
     ctx.mac_key = mac_key
     ctx.ltk_sc = ltk
     ctx.state_machine._state = SMPState.RANDOM_EXCHANGE
@@ -1414,6 +1392,8 @@ def _local_address_bytes(ctx: "SMPPairingContext") -> bytes:
     if ctx.local_address is None:
         return b"\x00" * 6
     addr = ctx.local_address
+    if hasattr(addr, "to_hci"):
+        return addr.to_hci()
     if hasattr(addr, "address"):
         return bytes(addr.address)
     return bytes(addr)
@@ -1421,9 +1401,65 @@ def _local_address_bytes(ctx: "SMPPairingContext") -> bytes:
 
 def _peer_address_bytes(ctx: "SMPPairingContext") -> bytes:
     addr = ctx.peer_address
+    if hasattr(addr, "to_hci"):
+        return addr.to_hci()
     if hasattr(addr, "address"):
         return bytes(addr.address)
     return bytes(addr)
+
+
+def _address_canonical_bytes(addr) -> bytes:
+    if addr is None:
+        return b"\x00" * 6
+    if hasattr(addr, "address"):
+        return bytes(addr.address)
+    if hasattr(addr, "to_hci"):
+        return addr.to_hci()[::-1]
+    return bytes(addr)
+
+
+def _local_sc_address(ctx: "SMPPairingContext") -> bytes:
+    return _local_address_bytes(ctx) + bytes([_address_type_value(ctx.local_address)])
+
+
+def _peer_sc_address(ctx: "SMPPairingContext") -> bytes:
+    return _peer_address_bytes(ctx) + bytes([_address_type_value(ctx.peer_address)])
+
+
+def _address_type_value(addr) -> int:
+    if addr is None:
+        return 0x00
+    addr_type = getattr(addr, "type", None)
+    if addr_type is None:
+        return 0x00
+    return int(addr_type)
+
+
+def _sc_aes_cmac(key: bytes, message: bytes) -> bytes:
+    """AES-CMAC for SMP SC little-endian byte arrays."""
+    return _aes_cmac(key[::-1], message[::-1])[::-1]
+
+
+def _sc_f4(u: bytes, v: bytes, x: bytes, z: int) -> bytes:
+    return _sc_aes_cmac(x, bytes([z]) + v + u)
+
+
+def _sc_f5(w: bytes, n1: bytes, n2: bytes, a1: bytes, a2: bytes) -> tuple[bytes, bytes]:
+    salt = bytes.fromhex("be83605adb0b376038a5f5aa9183886c")
+    key_id = b"eltb"
+    length = b"\x00\x01"
+    t = _sc_aes_cmac(salt, w)
+    message = length + a2 + a1 + n2 + n1 + key_id
+    return _sc_aes_cmac(t, message + b"\x00"), _sc_aes_cmac(t, message + b"\x01")
+
+
+def _sc_f6(w: bytes, n1: bytes, n2: bytes, r: bytes, io_cap: bytes, a1: bytes, a2: bytes) -> bytes:
+    return _sc_aes_cmac(w, a2 + a1 + io_cap + r + n2 + n1)
+
+
+def _sc_g2(u: bytes, v: bytes, x: bytes, y: bytes) -> int:
+    mac = _sc_aes_cmac(x, y + v + u)
+    return int.from_bytes(mac[:4], "little")
 
 
 async def _on_failed(

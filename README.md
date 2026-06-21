@@ -36,6 +36,8 @@ PyBlueHost 服务三类不同需求的用户。先确定自己属于哪类，直
 | nRF52840     | `0x1915` | `0x521F` | UART | 5.4 | BLE          | PTS FW |
 
 > 2026-06-18 Windows + WinUSB 实测：Barrot BR8654A02 (`usb:33FA:0012#1`) 可以枚举、打开、执行 `HCI_Reset`、读取能力信息，且 `LE_Set_Advertising_*` / `LE_Set_Scan_*` 命令返回 Success。但交叉验证中，Intel AX201 和 CSR8510 都无法扫描到 Barrot 发出的 `PBH-E2E` legacy advertising；Barrot 作为 central 也无法扫描到近距离 Intel AX201 发出的同名测试广告。因此当前不要把 Barrot 用作 LE e2e 的 central 或 peripheral 基准设备；它的问题应作为硬件/厂商初始化兼容问题暴露，而不是通过 role swap 规避。
+>
+> 2026-06-20 Windows + WinUSB 复测：Barrot (`usb:33FA:0012#1`) 作为 peripheral 时，low-duty directed advertising 的 HCI 参数可成功下发；但 CSR8510 (`usb:0A12:0001#1`) 作为 central 仍扫描不到 Barrot 的 `PBH-E2E` legacy advertising。反向组合中，CSR8510 作为 peripheral 可被 Barrot 扫描并连接，BLE scan/connect/pair/GATT 读写、bonded reconnect auto-encrypt 可通过；但 CSR8510 不接受 low-duty directed advertising 参数，`LE Set Advertising Parameters (0x2006)` 返回 `INVALID_PARAMETERS (0x12)`；high-duty directed advertising 参数可成功下发。CSR8510 是 BT 4.0 控制器，不支持本机 LE Secure Connections HCI 命令，作为 central 的 LE SC e2e 会按能力 skip。
 
 CSR、其他 Intel 系列芯片在代码中已支持但未在本仓库做完整回归。欢迎提 PR 补 hardware 矩阵。
 

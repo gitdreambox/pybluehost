@@ -312,6 +312,119 @@ async def test_e2e_classic_bonded_reconnect_auto_encrypt(
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
+async def test_e2e_classic_ssp_numeric_comparison_persists_bond(
+    tmp_path, selected_transport_spec, selected_peer_spec, transport_mode,
+):
+    """SSP Numeric Comparison success path persists authenticated link keys.
+
+    The delegates record User_Confirmation requests, so this test proves the
+    success case exercised SSP confirmation rather than only link setup.
+    """
+    import contextlib
+
+    from pybluehost.ble.security import SecurityConfig
+    from pybluehost.ble.smp import AutoAcceptDelegate, JsonBondStorage
+    from pybluehost.core.address import BDAddress
+    from pybluehost.core.types import IOCapability
+    from pybluehost.hci.virtual_classic_link import VirtualClassicLink
+    from pybluehost.stack import Stack, StackConfig
+    from tests._transport_resolve import build_stack_from_spec
+    from tests.e2e._classic_test_service import (
+        SPP_SERVER_CHANNEL, SPP_SERVICE_NAME, register_spp_echo_service,
+    )
+    from tests.e2e._helpers import (
+        _supports_classic_ssp, classic_discover_and_pair_jw,
+        disconnect_classic_and_wait, e2e_timeout,
+    )
+
+    class _AcceptNumeric(AutoAcceptDelegate):
+        def __init__(self) -> None:
+            self.calls: list[tuple[object, int]] = []
+
+        async def confirm_numeric(self, peer_addr, value):
+            self.calls.append((peer_addr, value))
+            return True
+
+    central_delegate = _AcceptNumeric()
+    peripheral_delegate = _AcceptNumeric()
+    central_addr = BDAddress.from_string("0A:0A:0A:0A:0A:0A")
+    peripheral_addr = BDAddress.from_string("0B:0B:0B:0B:0B:0B")
+    bonds_c_path = tmp_path / "classic_nc_bonds_c.json"
+    bonds_p_path = tmp_path / "classic_nc_bonds_p.json"
+
+    cfg_c = StackConfig(
+        bond_storage=JsonBondStorage(bonds_c_path),
+        security=SecurityConfig(enable_secure_connections=False, mitm_required=True),
+        classic_io_capability=IOCapability.DISPLAY_YES_NO,
+    )
+    cfg_p = StackConfig(
+        bond_storage=JsonBondStorage(bonds_p_path),
+        security=SecurityConfig(enable_secure_connections=False, mitm_required=True),
+        classic_io_capability=IOCapability.DISPLAY_YES_NO,
+    )
+    stack_c = None
+    stack_p = None
+    link = None
+    handle = None
+    try:
+        if transport_mode == "virtual":
+            stack_c = await Stack.virtual(config=cfg_c, address=central_addr)
+            stack_p = await Stack.virtual(config=cfg_p, address=peripheral_addr)
+            link = VirtualClassicLink(
+                central=stack_c._virtual_controller,
+                peripheral=stack_p._virtual_controller,
+                central_address=central_addr,
+                peripheral_address=peripheral_addr,
+                page_timeout_seconds=0.5,
+            )
+            link.attach()
+        else:
+            stack_c = await build_stack_from_spec(selected_transport_spec, config=cfg_c)
+            stack_p = await build_stack_from_spec(selected_peer_spec, config=cfg_p)
+            peripheral_addr = stack_p._local_address
+
+        if not _supports_classic_ssp(stack_c):
+            pytest.skip("adapter does not support BR/EDR SSP")
+
+        service = register_spp_echo_service(stack_p)
+        await service.register(channel=SPP_SERVER_CHANNEL, name=SPP_SERVICE_NAME)
+        await stack_p.gap.classic_discoverability.set_connectable(True)
+        await stack_p.gap.classic_discoverability.set_discoverable(True)
+        stack_c.gap.set_pairing_delegate(central_delegate)
+        stack_p.gap.set_pairing_delegate(peripheral_delegate)
+
+        handle = await classic_discover_and_pair_jw(
+            stack_c,
+            peripheral_addr,
+            scan_timeout=e2e_timeout(transport_mode, virtual=3.0, usb=20.0),
+            pair_timeout=e2e_timeout(transport_mode, virtual=3.0, usb=15.0),
+        )
+        bond_c = await JsonBondStorage(bonds_c_path).load_bond(peripheral_addr)
+        assert bond_c is not None, "central classic bond not persisted"
+        assert bond_c.link_key, "classic bond missing link key"
+        assert bond_c.link_key_type in {0x05, 0x07}
+        assert central_delegate.calls or peripheral_delegate.calls
+    finally:
+        if handle is not None and stack_c is not None:
+            with contextlib.suppress(Exception):
+                await disconnect_classic_and_wait(
+                    stack_c,
+                    handle,
+                    timeout=e2e_timeout(transport_mode, virtual=2.0, usb=5.0),
+                )
+        if link is not None:
+            with contextlib.suppress(Exception):
+                await link.disconnect()
+        if stack_c is not None:
+            with contextlib.suppress(Exception):
+                await stack_c.close()
+        if stack_p is not None:
+            with contextlib.suppress(Exception):
+                await stack_p.close()
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
 async def test_e2e_classic_pair_failure_disconnects_cleanly(
     classic_central_peripheral_pair, virtual_classic_link_or_real_rf, transport_mode,
 ):
@@ -342,7 +455,7 @@ async def test_e2e_classic_pair_failure_disconnects_cleanly(
         async def confirm_numeric(self, peer_addr, value):
             return False
 
-    stack_p.gap.classic_ssp._delegate = _RejectClassicConfirm()
+    stack_p.gap.set_pairing_delegate(_RejectClassicConfirm())
 
     handle = None
     try:

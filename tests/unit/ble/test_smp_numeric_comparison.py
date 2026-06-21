@@ -95,8 +95,8 @@ def test_association_model_just_works_when_io_caps_insufficient():
 
 import asyncio
 
-from pybluehost.ble._smp_state import _sc_compute_and_await_nc
-from pybluehost.ble.smp import PairingRole, SMPCrypto
+from pybluehost.ble._smp_state import _sc_compute_and_await_nc, _sc_g2
+from pybluehost.ble.smp import PairingRole
 
 
 class _RecordingSM:
@@ -126,7 +126,7 @@ async def test_sc_compute_and_await_nc_initiator_fires_confirmed_event():
     pkbx = bytes(range(32, 64))
     na = bytes(range(64, 80))
     nb = bytes(range(80, 96))
-    expected_value = SMPCrypto.g2(pkax, pkbx, na, nb) % 1_000_000
+    expected_value = _sc_g2(pkax, pkbx, na, nb) % 1_000_000
 
     captured = _CapturingDelegate()
     peer = BDAddress(bytes(reversed(bytes.fromhex("AABBCCDDEEFF"))))
@@ -155,7 +155,7 @@ async def test_sc_compute_and_await_nc_responder_uses_peer_pubkey_as_pkax():
     pkbx = bytes(range(32, 64))
     na = bytes(range(64, 80))
     nb = bytes(range(80, 96))
-    expected = SMPCrypto.g2(pkax, pkbx, na, nb) % 1_000_000
+    expected = _sc_g2(pkax, pkbx, na, nb) % 1_000_000
 
     captured = _CapturingDelegate()
     ctx = SimpleNamespace(
@@ -226,8 +226,8 @@ async def test_initiator_random_branches_to_nc_when_selected(monkeypatch):
     sent_pdus: list[bytes] = []
 
     monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "numeric_comparison")
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(lambda *a, **k: b"\x00" * 16))
-    monkeypatch.setattr(state_mod.SMPCrypto, "f5", staticmethod(lambda *a, **k: (b"\x11" * 16, b"\x22" * 16)))
+    monkeypatch.setattr(state_mod, "_sc_f4", lambda *a, **k: b"\x00" * 16)
+    monkeypatch.setattr(state_mod, "_sc_f5", lambda *a, **k: (b"\x11" * 16, b"\x22" * 16))
 
     class _FakeSM:
         def __init__(self):
@@ -276,9 +276,9 @@ async def test_initiator_random_just_works_path_still_sends_ea(monkeypatch):
     sent_pdus: list[bytes] = []
 
     monkeypatch.setattr(state_mod, "_association_model", lambda _ctx: "just_works")
-    monkeypatch.setattr(state_mod.SMPCrypto, "f4", staticmethod(lambda *a, **k: b"\x00" * 16))
-    monkeypatch.setattr(state_mod.SMPCrypto, "f5", staticmethod(lambda *a, **k: (b"\x11" * 16, b"\x22" * 16)))
-    monkeypatch.setattr(state_mod.SMPCrypto, "f6", staticmethod(lambda *a, **k: b"\xee" * 16))
+    monkeypatch.setattr(state_mod, "_sc_f4", lambda *a, **k: b"\x00" * 16)
+    monkeypatch.setattr(state_mod, "_sc_f5", lambda *a, **k: (b"\x11" * 16, b"\x22" * 16))
+    monkeypatch.setattr(state_mod, "_sc_f6", lambda *a, **k: b"\xee" * 16)
 
     class _FakeSM:
         def __init__(self):
@@ -345,7 +345,7 @@ async def test_nc_user_confirmed_initiator_sends_ea(monkeypatch):
         def __init__(self):
             self._state = SMPState.NUMERIC_COMPARE_PENDING
 
-    monkeypatch.setattr(state_mod.SMPCrypto, "f6", staticmethod(lambda *a, **k: b"\xee" * 16))
+    monkeypatch.setattr(state_mod, "_sc_f6", lambda *a, **k: b"\xee" * 16)
 
     sm = _FakeSM()
     from pybluehost.core.address import BDAddress

@@ -160,5 +160,5 @@ def test_responder_c1_params_use_initiator_random_address_type():
     assert pres == bytes.fromhex("02030001100707")
     assert iat == AddressType.RANDOM
     assert rat == AddressType.PUBLIC
-    assert ia == bytes.fromhex("5e0b6aa95668")
-    assert ra == bytes.fromhex("001a7dda7111")
+    assert ia == bytes.fromhex("6856a96a0b5e")
+    assert ra == bytes.fromhex("1171da7d1a00")

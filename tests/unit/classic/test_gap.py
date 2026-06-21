@@ -432,3 +432,20 @@ def test_unified_gap_set_pairing_delegate():
     delegate = MyDelegate()
     gap.set_pairing_delegate(delegate)
     assert gap.pairing_delegate is delegate
+
+
+def test_unified_gap_set_pairing_delegate_downstreams_to_classic_ssp():
+    from pybluehost.gap import GAP
+
+    hci = FakeHCI()
+    ssp = SSPManager(hci=hci)
+    gap = GAP(classic_ssp=ssp)
+
+    class MyDelegate:
+        pass
+
+    delegate = MyDelegate()
+    gap.set_pairing_delegate(delegate)
+
+    assert gap.pairing_delegate is delegate
+    assert ssp._delegate is delegate

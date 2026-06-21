@@ -230,6 +230,14 @@ class Stack:
         stack._rfcomm = rfcomm
 
         # 7. GAP (unified)
+        classic_ssp = SSPManager(
+            hci=hci,
+            security_config=cfg.security,
+            bond_storage=cfg.bond_storage,
+            delegate=smp._delegate,
+        )
+        classic_ssp.set_io_capability(int(cfg.classic_io_capability))
+
         gap = GAP(
             ble_advertiser=BLEAdvertiser(hci=hci),
             ble_scanner=BLEScanner(hci=hci),
@@ -238,12 +246,7 @@ class Stack:
             classic_discovery=ClassicDiscovery(hci=hci),
             classic_discoverability=ClassicDiscoverability(hci=hci),
             classic_connections=ClassicConnectionManager(hci=hci),
-            classic_ssp=SSPManager(
-                hci=hci,
-                security_config=cfg.security,
-                bond_storage=cfg.bond_storage,
-                delegate=smp._delegate,
-            ),
+            classic_ssp=classic_ssp,
             whitelist=WhiteList(hci=hci),
             ble_extended_advertiser=ExtendedAdvertiser(hci=hci),
             smp=smp,
