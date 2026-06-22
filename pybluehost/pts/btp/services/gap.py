@@ -123,3 +123,40 @@ class GapService(BtpService):
         if len(data) != 1:
             return op.BTP_STATUS_FAILED, b""
         return op.BTP_STATUS_SUCCESS, self._set_settings_bit(op.OP_GAP_SET_BONDABLE, data[0])
+
+    # ---- Start / Stop Advertising ------------------------------------------
+
+    async def _handle_op_0a(self, controller_index: int, data: bytes):
+        """START_ADVERTISING — upstream layout:
+        adv_data_len(1), scan_rsp_len(1), adv_data, scan_rsp,
+        duration(4 LE), own_addr_type(1).
+        """
+        if len(data) < 7:    # at least 2 lengths + 4 duration + 1 own_addr_type
+            return op.BTP_STATUS_FAILED, b""
+        offset = 0
+        adv_data_len = data[offset]; offset += 1
+        scan_rsp_len = data[offset]; offset += 1
+        if offset + adv_data_len + scan_rsp_len + 5 > len(data):
+            return op.BTP_STATUS_FAILED, b""
+        adv_data = data[offset:offset + adv_data_len]
+        offset += adv_data_len
+        # scan_rsp accepted but discarded — Phase 1 IutActions doesn't expose it.
+        offset += scan_rsp_len
+        # duration + own_addr_type tail present but not used in P.6.
+        try:
+            await self._actions.advertise(data=bytes(adv_data))
+        except Exception:
+            logger.exception("GAP START_ADVERTISING: actions.advertise raised")
+            return op.BTP_STATUS_FAILED, b""
+        self._current_settings |= (1 << 9)
+        return op.BTP_STATUS_SUCCESS, self._current_settings.to_bytes(4, "little")
+
+    async def _handle_op_0b(self, controller_index: int, data: bytes):
+        """STOP_ADVERTISING — no body."""
+        try:
+            await self._actions.stop_advertising()
+        except Exception:
+            logger.exception("GAP STOP_ADVERTISING: actions.stop_advertising raised")
+            return op.BTP_STATUS_FAILED, b""
+        self._current_settings &= ~(1 << 9)
+        return op.BTP_STATUS_SUCCESS, self._current_settings.to_bytes(4, "little")

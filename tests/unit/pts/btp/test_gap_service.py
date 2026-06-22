@@ -8,8 +8,17 @@ from pybluehost.pts.btp.services.gap import GapService
 
 
 class _FakeActions:
-    """Minimal stand-in for pybluehost.pts.actions.IutActions."""
+    """Records calls to async IutActions methods."""
     local_address: bytes = bytes(6)
+
+    def __init__(self):
+        self.calls: list[tuple[str, dict]] = []
+
+    async def advertise(self, *, adv_type=None, data=None):
+        self.calls.append(("advertise", {"adv_type": adv_type, "data": data}))
+
+    async def stop_advertising(self):
+        self.calls.append(("stop_advertising", {}))
 
 
 def test_gap_service_id_matches_constant():
@@ -120,4 +129,61 @@ async def test_set_command_rejects_empty_data():
     svc = GapService(actions=_FakeActions(), tester=MagicMock())
     status, _ = await svc.dispatch(opcode=op.OP_GAP_SET_POWERED,
                                     controller_index=0, data=b"")
+    assert status == op.BTP_STATUS_FAILED
+
+
+# ---------------------------------------------------------------------------
+# T4: Start / Stop Advertising
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_start_advertising_decodes_body_and_calls_actions():
+    """Upstream layout: adv_len(1), scan_len(1), adv_data, scan_rsp, duration(4), own_addr_type(1)."""
+    from unittest.mock import MagicMock
+    actions = _FakeActions()
+    svc = GapService(actions=actions, tester=MagicMock())
+    adv_data = bytes.fromhex("0201060807090A0B0C0D0E")    # 11 bytes
+    scan_rsp = bytes.fromhex("030819")                    # 3 bytes
+    body = (
+        bytes([len(adv_data), len(scan_rsp)])
+        + adv_data + scan_rsp
+        + (0).to_bytes(4, "little")
+        + bytes([op.GAP_ADDR_TYPE_PUBLIC])
+    )
+    status, data = await svc.dispatch(
+        opcode=op.OP_GAP_START_ADVERTISING, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    # Response = updated current_settings; advertising bit 9 should be set.
+    settings = int.from_bytes(data, "little")
+    assert settings & (1 << 9)
+    # IutActions.advertise was invoked with the adv_data.
+    assert actions.calls[0][0] == "advertise"
+    assert actions.calls[0][1].get("data") == adv_data
+
+
+@pytest.mark.asyncio
+async def test_stop_advertising_clears_bit_and_calls_actions():
+    from unittest.mock import MagicMock
+    actions = _FakeActions()
+    svc = GapService(actions=actions, tester=MagicMock())
+    svc._current_settings |= (1 << 9)        # pretend advertising is on
+    status, data = await svc.dispatch(
+        opcode=op.OP_GAP_STOP_ADVERTISING, controller_index=0, data=b"",
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    settings = int.from_bytes(data, "little")
+    assert not (settings & (1 << 9))
+    assert any(c[0] == "stop_advertising" for c in actions.calls)
+
+
+@pytest.mark.asyncio
+async def test_start_advertising_truncated_body_fails():
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    # Body says adv_len=10, scan_len=0, but only 3 bytes of adv_data provided.
+    body = bytes([10, 0]) + b"\x01\x02\x03"
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_START_ADVERTISING, controller_index=0, data=body,
+    )
     assert status == op.BTP_STATUS_FAILED
