@@ -79,6 +79,7 @@ CLI_APP_E2E_COVERAGE: dict[str, str] = {
     "hr-monitor": "test_hr_monitor_cli_app_updates_measurement",
     "hsp-test": "test_hsp_cli_app_hs_to_ag_wav_loopback",
     "mitm": "test_mitm_cli_app_builds_authorized_relay_specs",
+    "pts-iut": "test_pts_iut_cli_app_action_layer_drives_gap",
     "sdp-browser": "test_sdp_browser_cli_app_queries_spp_echo_record",
     "spp-echo": "test_classic_inquiry_and_spp_echo_cli_apps_exchange_rfcomm",
 }
@@ -647,6 +648,32 @@ async def test_bridge_cli_app_tcp_round_trip_e2e():
         await bridge.close()
 
     assert backend.closed is True
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_pts_iut_cli_app_action_layer_drives_gap(stack):
+    """The PTS IUT action layer drives a real virtual stack's GAP primitives.
+
+    Guards that ``IutActions`` (shared by the Phase 1 REPL and the future
+    Phase 2 BTP tester) stays wired to the current Stack/GAP API: construction
+    registers a connection-event handler, and advertise/scan/status operate
+    against the live virtual controller.
+    """
+    from pybluehost.pts.actions import IutActions
+
+    actions = IutActions(stack)
+    assert actions.status().connections == {}
+
+    await actions.advertise()
+    assert stack.gap.ble_advertiser._active is True
+    await actions.stop_advertising()
+    assert stack.gap.ble_advertiser._active is False
+
+    await actions.scan()
+    assert stack.gap.ble_scanner._active is True
+    await actions.stop_scan()
+    assert stack.gap.ble_scanner._active is False
 
 
 def test_mitm_cli_app_builds_authorized_relay_specs() -> None:
