@@ -40,6 +40,18 @@ class _DynamicService:
     attributes: list = field(default_factory=list)
 
 
+def _uuid_from_btp(uuid_bytes: bytes):
+    """Convert auto-pts BTP UUID (2 or 16 LE bytes) -> UUID16/UUID128 object."""
+    from pybluehost.core.uuid import UUID16, UUID128
+    if len(uuid_bytes) == 2:
+        return UUID16.from_bytes(uuid_bytes)
+    if len(uuid_bytes) == 16:
+        # BTP wire: 128-bit UUID in LE byte order. UUID128 stores BE internally,
+        # so reverse.
+        return UUID128(bytes(reversed(uuid_bytes)))
+    raise ValueError(f"unsupported UUID length {len(uuid_bytes)}")
+
+
 def _decode_uuid(data: bytes, *, offset: int) -> tuple[bytes, int]:
     """Read auto-pts UUID format: u8 length followed by 2 or 16 bytes.
 
@@ -183,3 +195,102 @@ class GattService(BtpService):
         )
         self._all_attrs[handle] = desc_attr
         return op.BTP_STATUS_SUCCESS, handle.to_bytes(2, "little")
+
+    # ---- Set Value -------------------------------------------------------
+
+    async def _handle_op_06(self, controller_index: int, data: bytes):
+        """SET_VALUE (0x06) — update the stored value of an attribute by handle.
+
+        BTP payload: u16 handle, u16 value_len, value_bytes.
+        """
+        if len(data) < 4:
+            return op.BTP_STATUS_FAILED, b""
+        handle = int.from_bytes(data[0:2], "little")
+        value_len = int.from_bytes(data[2:4], "little")
+        if 4 + value_len > len(data):
+            return op.BTP_STATUS_FAILED, b""
+        attr = self._all_attrs.get(handle)
+        if attr is None:
+            return op.BTP_STATUS_FAILED, b""
+        attr.value = bytes(data[4:4 + value_len])
+        return op.BTP_STATUS_SUCCESS, b""
+
+    # ---- Start Server ----------------------------------------------------
+
+    async def _handle_op_07(self, controller_index: int, data: bytes):
+        """START_SERVER (0x07) — commit pending GATT db to the stack's GATTServer.
+
+        Iterates the pending service list and translates each _DynamicService
+        into a ServiceDefinition for the real GATTServer.
+        """
+        from pybluehost.ble.gatt import (
+            CharacteristicDefinition,
+            DescriptorDefinition,
+            ServiceDefinition,
+        )
+
+        stack = getattr(self._actions, "_stack", None)
+        if stack is None or not hasattr(stack, "gatt_server"):
+            logger.warning("GATT START_SERVER: actions has no stack.gatt_server")
+            return op.BTP_STATUS_FAILED, b""
+
+        for dyn_svc in self._services:
+            chars: list[CharacteristicDefinition] = []
+            # svc.attributes contains declaration + value attrs in pairs.
+            # We build one CharacteristicDefinition per value attr (skip decl).
+            # Pattern: [decl0, val0, decl1, val1, ...] interleaved with descriptors.
+            # We collect consecutive descriptors (is_descriptor=True) after each
+            # value attr.
+            i = 0
+            attrs = dyn_svc.attributes
+            while i < len(attrs):
+                attr = attrs[i]
+                if attr.is_characteristic:
+                    # Two attrs per characteristic: declaration (i) + value (i+1)
+                    if i + 1 < len(attrs) and attrs[i + 1].is_characteristic:
+                        # i is declaration, i+1 is value handle
+                        val_attr = attrs[i + 1]
+                        i += 2
+                    else:
+                        val_attr = attr
+                        i += 1
+                    # Collect any descriptors that follow this value attr
+                    descs: list[DescriptorDefinition] = []
+                    while i < len(attrs) and attrs[i].is_descriptor:
+                        d = attrs[i]
+                        descs.append(DescriptorDefinition(
+                            uuid=_uuid_from_btp(d.uuid),
+                            permissions=d.permissions,
+                            value=d.value,
+                        ))
+                        i += 1
+                    chars.append(CharacteristicDefinition(
+                        uuid=_uuid_from_btp(val_attr.uuid),
+                        properties=val_attr.properties,
+                        permissions=val_attr.permissions,
+                        value=val_attr.value,
+                        descriptors=descs,
+                    ))
+                else:
+                    i += 1
+
+            try:
+                stack.gatt_server.add_service(ServiceDefinition(
+                    uuid=_uuid_from_btp(dyn_svc.uuid),
+                    is_primary=dyn_svc.primary,
+                    characteristics=chars,
+                ))
+            except Exception:
+                logger.exception("GATT START_SERVER: add_service raised")
+                return op.BTP_STATUS_FAILED, b""
+
+        return op.BTP_STATUS_SUCCESS, b""
+
+    # ---- Reset Server ----------------------------------------------------
+
+    async def _handle_op_08(self, controller_index: int, data: bytes):
+        """RESET_SERVER (0x08) — clear the pending GATT db and attribute state."""
+        self._services.clear()
+        self._all_attrs.clear()
+        self._next_handle = 1
+        return op.BTP_STATUS_SUCCESS, b""

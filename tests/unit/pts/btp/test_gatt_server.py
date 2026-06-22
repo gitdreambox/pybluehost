@@ -90,3 +90,82 @@ async def test_add_service_rejects_bad_uuid_length():
         opcode=op.OP_GATT_ADD_SERVICE, controller_index=0, data=body,
     )
     assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_set_value_updates_attribute():
+    svc = _make_svc()
+    svc_body = bytes([0, 2]) + bytes.fromhex("0F18")
+    _, svc_resp = await svc.dispatch(opcode=op.OP_GATT_ADD_SERVICE, controller_index=0, data=svc_body)
+    svc_h = int.from_bytes(svc_resp, "little")
+    char_body = svc_h.to_bytes(2, "little") + bytes([0x02, 0x01, 2]) + bytes.fromhex("1929")
+    _, char_resp = await svc.dispatch(opcode=op.OP_GATT_ADD_CHARACTERISTIC, controller_index=0, data=char_body)
+    char_h = int.from_bytes(char_resp, "little")
+
+    set_body = char_h.to_bytes(2, "little") + (1).to_bytes(2, "little") + b"\x55"
+    status, _ = await svc.dispatch(opcode=op.OP_GATT_SET_VALUE, controller_index=0, data=set_body)
+    assert status == op.BTP_STATUS_SUCCESS
+    assert svc._all_attrs[char_h].value == b"\x55"
+
+
+@pytest.mark.asyncio
+async def test_set_value_unknown_handle_fails():
+    svc = _make_svc()
+    body = (0xFFFF).to_bytes(2, "little") + (1).to_bytes(2, "little") + b"\x01"
+    status, _ = await svc.dispatch(opcode=op.OP_GATT_SET_VALUE, controller_index=0, data=body)
+    assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_start_server_registers_services_with_stack():
+    class _FakeGattServer:
+        def __init__(self):
+            self.added = []
+
+        def add_service(self, svc_def):
+            self.added.append(svc_def)
+            return svc_def
+
+    class _FakeStack:
+        def __init__(self):
+            self.gatt_server = _FakeGattServer()
+
+    class _StackActions:
+        def __init__(self):
+            self._stack = _FakeStack()
+            self.calls = []
+
+    actions = _StackActions()
+    svc = GattService(actions=actions, tester=MagicMock())
+    # Build a tiny service
+    body = bytes([0, 2]) + bytes.fromhex("0F18")
+    await svc.dispatch(opcode=op.OP_GATT_ADD_SERVICE, controller_index=0, data=body)
+    status, _ = await svc.dispatch(opcode=op.OP_GATT_START_SERVER, controller_index=0, data=b"")
+    assert status == op.BTP_STATUS_SUCCESS
+    assert len(actions._stack.gatt_server.added) == 1
+    added_svc = actions._stack.gatt_server.added[0]
+    # ServiceDefinition.uuid is a UUID16 object for 2-byte BTP UUID.
+    from pybluehost.core.uuid import UUID16
+    assert isinstance(added_svc.uuid, UUID16)
+    assert added_svc.uuid.value == 0x180F
+
+
+@pytest.mark.asyncio
+async def test_start_server_no_stack_fails():
+    svc = GattService(actions=_FakeActions(), tester=MagicMock())   # no _stack
+    body = bytes([0, 2]) + bytes.fromhex("0F18")
+    await svc.dispatch(opcode=op.OP_GATT_ADD_SERVICE, controller_index=0, data=body)
+    status, _ = await svc.dispatch(opcode=op.OP_GATT_START_SERVER, controller_index=0, data=b"")
+    assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_reset_server_clears_pending_db():
+    svc = _make_svc()
+    body = bytes([0, 2]) + bytes.fromhex("0F18")
+    await svc.dispatch(opcode=op.OP_GATT_ADD_SERVICE, controller_index=0, data=body)
+    assert len(svc._services) == 1
+    status, _ = await svc.dispatch(opcode=op.OP_GATT_RESET_SERVER, controller_index=0, data=b"")
+    assert status == op.BTP_STATUS_SUCCESS
+    assert svc._services == []
+    assert svc._all_attrs == {}
