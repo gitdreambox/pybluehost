@@ -17,6 +17,7 @@ from pybluehost.cli._lifecycle import (
     add_common_arguments, run_app_command, trace_kwargs_from_args,
 )
 from pybluehost.core.address import BDAddress
+from pybluehost.core.gap_common import ClassOfDevice
 from pybluehost.profiles.classic import (
     A2DPSink, AVRCPController, HFPHandsFree,
 )
@@ -24,6 +25,11 @@ from pybluehost.stack import Stack
 
 
 logger = logging.getLogger(__name__)
+_AUDIO_HEADPHONES_COD = ClassOfDevice(
+    major_device_class=0x04,
+    minor_device_class=0x06,
+    service_class=0x120,
+)
 
 
 _AVRCP_METHODS = {
@@ -100,46 +106,54 @@ async def _demo_headphone_main(stack: Stack, stop: asyncio.Event, args) -> None:
     hfp_hf.register()
     logger.info("[HEADPHONE] HFP HF registered (UUID 0x111E)")
 
-    # --- Pair + connect to phone -------------------------------------
-    handle = await stack.connect_classic(target, timeout=10.0)
-    await stack.authenticate_classic(handle, timeout=10.0)
-    logger.info("[HEADPHONE] paired + authenticated with %s (handle 0x%04X)", target, handle)
-
-    # --- AVRCP Controller (sends commands) ----------------------------
-    avrcp_ctrl = AVRCPController(stack=stack)
-    avrcp_ctrl.register()
-    avrcp_session = await avrcp_ctrl.connect(handle=handle)
-    await asyncio.sleep(0.1)
-    logger.info("[HEADPHONE] AVRCP Controller connected")
-
-    # Scheduled AVRCP command
+    discoverability = getattr(getattr(stack, "gap", None), "classic_discoverability", None)
     avrcp_task = None
-    if args.avrcp_cmd is not None:
-        avrcp_task = asyncio.create_task(
-            _send_avrcp_after_delay(avrcp_session, args.avrcp_cmd, args.avrcp_cmd_at, stop),
-        )
-
-    # HFP HF connect (also opens RFCOMM channel)
+    call_wav_task = None
+    avrcp_session = None
     hfp_session = None
     try:
-        hfp_session = await hfp_hf.connect(handle=handle)
+        if discoverability is not None:
+            await discoverability.set_device_name("PyBlueHost Headphone")
+            await discoverability.set_class_of_device(_AUDIO_HEADPHONES_COD)
+            await discoverability.set_discoverable(True)
+            await discoverability.set_connectable(True)
+
+        # --- Pair + connect to phone -------------------------------------
+        handle = await stack.connect_classic(target, timeout=10.0)
+        await stack.authenticate_classic(handle, timeout=10.0)
+        logger.info("[HEADPHONE] paired + authenticated with %s (handle 0x%04X)", target, handle)
+
+        # --- AVRCP Controller (sends commands) ----------------------------
+        avrcp_ctrl = AVRCPController(stack=stack)
+        avrcp_ctrl.register()
+        avrcp_session = await avrcp_ctrl.connect(handle=handle)
         await asyncio.sleep(0.1)
-        logger.info(
-            "[HEADPHONE] HFP HF SLC %s",
-            hfp_session.sm.state.name if hfp_session.sm else "n/a",
-        )
-    except Exception as exc:
-        logger.warning("[HEADPHONE] HFP HF connect failed: %s", exc)
+        logger.info("[HEADPHONE] AVRCP Controller connected")
 
-    # If --auto-answer, watch for SCO link arming (phone-side AG sets up SCO).
-    call_wav_task = None
-    if args.auto_answer and hfp_session is not None:
-        call_wav_task = asyncio.create_task(
-            _drain_call_to_wav(hfp_session, args.call_output, stop),
-        )
+        # Scheduled AVRCP command
+        if args.avrcp_cmd is not None:
+            avrcp_task = asyncio.create_task(
+                _send_avrcp_after_delay(avrcp_session, args.avrcp_cmd, args.avrcp_cmd_at, stop),
+            )
 
-    logger.info("[HEADPHONE] Demo running. Ctrl+C to stop.")
-    try:
+        # HFP HF connect (also opens RFCOMM channel)
+        try:
+            hfp_session = await hfp_hf.connect(handle=handle)
+            await asyncio.sleep(0.1)
+            logger.info(
+                "[HEADPHONE] HFP HF SLC %s",
+                hfp_session.sm.state.name if hfp_session.sm else "n/a",
+            )
+        except Exception as exc:
+            logger.warning("[HEADPHONE] HFP HF connect failed: %s", exc)
+
+        # If --auto-answer, watch for SCO link arming (phone-side AG sets up SCO).
+        if args.auto_answer and hfp_session is not None:
+            call_wav_task = asyncio.create_task(
+                _drain_call_to_wav(hfp_session, args.call_output, stop),
+            )
+
+        logger.info("[HEADPHONE] Demo running. Ctrl+C to stop.")
         await stop.wait()
     finally:
         if avrcp_task is not None:
@@ -152,15 +166,19 @@ async def _demo_headphone_main(stack: Stack, stop: asyncio.Event, args) -> None:
                     await t
                 except asyncio.CancelledError:
                     pass
-        try:
-            await avrcp_session.close()
-        except Exception:
-            pass
+        if avrcp_session is not None:
+            try:
+                await avrcp_session.close()
+            except Exception:
+                pass
         if hfp_session is not None:
             try:
                 await hfp_session.close()
             except Exception:
                 pass
+        if discoverability is not None:
+            await discoverability.set_discoverable(False)
+            await discoverability.set_connectable(False)
         music_wav.close()
         logger.info(
             "[HEADPHONE] Stopped. Received %d A2DP chunks (%d bytes)",

@@ -169,6 +169,11 @@ class AVDTPSession:
         raw = await self._send_command(AVDTPSignalID.GET_CAPABILITIES, payload)
         return decode_capabilities(raw)
 
+    async def get_all_capabilities(self, *, peer_seid: int) -> list[tuple[ServiceCategory, bytes]]:
+        payload = bytes([encode_seid_byte(peer_seid)])
+        raw = await self._send_command(AVDTPSignalID.GET_ALL_CAPABILITIES, payload)
+        return decode_capabilities(raw)
+
     async def set_configuration(
         self,
         *,
@@ -248,7 +253,10 @@ class AVDTPSession:
                     for sep in self._local_seps.values()
                 )
                 await self._send_accept(msg, payload)
-            elif msg.signal_id == AVDTPSignalID.GET_CAPABILITIES:
+            elif msg.signal_id in (
+                AVDTPSignalID.GET_CAPABILITIES,
+                AVDTPSignalID.GET_ALL_CAPABILITIES,
+            ):
                 seid = decode_seid_byte(msg.payload[0])
                 caps = self._capabilities.get(seid, [])
                 await self._send_accept(msg, encode_capabilities(caps))

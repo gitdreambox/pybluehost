@@ -31,6 +31,10 @@ from pybluehost.hci.constants import (
     HCI_HOST_BUFFER_SIZE,
     HCI_LE_SET_SCAN_PARAMS,
     HCI_LE_SET_RANDOM_ADDRESS,
+    HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST,
+    HCI_LE_CLEAR_RESOLVING_LIST,
+    HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE,
+    HCI_LE_SET_PRIVACY_MODE,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
     HCI_READ_LOCAL_EXTENDED_FEATURES,
     HCI_READ_LOCAL_SUPPORTED_FEATURES,
@@ -626,6 +630,112 @@ class HCI_LE_Set_Random_Address_Command(HCICommand):
     @classmethod
     def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Random_Address_Command:
         return cls(random_address=parameters[:6])
+
+
+@PacketRegistry.register_command(HCI_LE_CLEAR_RESOLVING_LIST)
+@dataclass
+class HCI_LE_Clear_Resolving_List_Command(HCICommand):
+    """HCI_LE_Clear_Resolving_List command."""
+
+    opcode: int = field(default=HCI_LE_CLEAR_RESOLVING_LIST, init=False)
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return b""
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Clear_Resolving_List_Command:
+        return cls()
+
+
+@PacketRegistry.register_command(HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST)
+@dataclass
+class HCI_LE_Add_Device_To_Resolving_List_Command(HCICommand):
+    """HCI_LE_Add_Device_To_Resolving_List command."""
+
+    peer_identity_address_type: int = 0
+    peer_identity_address: bytes = field(default_factory=lambda: bytes(6))
+    peer_irk: bytes = field(default_factory=lambda: bytes(16))
+    local_irk: bytes = field(default_factory=lambda: bytes(16))
+    opcode: int = field(default=HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST, init=False)
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return (
+            bytes([self.peer_identity_address_type])
+            + self.peer_identity_address[:6]
+            + self.peer_irk[:16]
+            + self.local_irk[:16]
+        )
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Add_Device_To_Resolving_List_Command:
+        return cls(
+            peer_identity_address_type=parameters[0],
+            peer_identity_address=parameters[1:7],
+            peer_irk=parameters[7:23],
+            local_irk=parameters[23:39],
+        )
+
+
+@PacketRegistry.register_command(HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE)
+@dataclass
+class HCI_LE_Set_Address_Resolution_Enable_Command(HCICommand):
+    """HCI_LE_Set_Address_Resolution_Enable command."""
+
+    address_resolution_enable: int = 0
+    opcode: int = field(default=HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE, init=False)
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return bytes([self.address_resolution_enable & 0x01])
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Address_Resolution_Enable_Command:
+        return cls(address_resolution_enable=parameters[0])
+
+
+@PacketRegistry.register_command(HCI_LE_SET_PRIVACY_MODE)
+@dataclass
+class HCI_LE_Set_Privacy_Mode_Command(HCICommand):
+    """HCI_LE_Set_Privacy_Mode command."""
+
+    peer_identity_address_type: int = 0
+    peer_identity_address: bytes = field(default_factory=lambda: bytes(6))
+    privacy_mode: int = 1
+    opcode: int = field(default=HCI_LE_SET_PRIVACY_MODE, init=False)
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return (
+            bytes([self.peer_identity_address_type])
+            + self.peer_identity_address[:6]
+            + bytes([self.privacy_mode & 0x01])
+        )
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Privacy_Mode_Command:
+        return cls(
+            peer_identity_address_type=parameters[0],
+            peer_identity_address=parameters[1:7],
+            privacy_mode=parameters[7],
+        )
 
 
 @PacketRegistry.register_command(HCI_LE_START_ENCRYPTION)

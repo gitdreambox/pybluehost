@@ -19,9 +19,20 @@ from pybluehost.hci.packets import (
     HCI_Disconnection_Complete_Event,
     HCI_Number_Of_Completed_Packets_Event,
     HCI_LE_Meta_Event,
+    HCI_LE_Add_Device_To_Resolving_List_Command,
+    HCI_LE_Clear_Resolving_List_Command,
+    HCI_LE_Set_Address_Resolution_Enable_Command,
+    HCI_LE_Set_Privacy_Mode_Command,
     decode_hci_packet,
 )
-from pybluehost.hci.constants import EventCode, HCI_RESET
+from pybluehost.hci.constants import (
+    EventCode,
+    HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST,
+    HCI_LE_CLEAR_RESOLVING_LIST,
+    HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE,
+    HCI_LE_SET_PRIVACY_MODE,
+    HCI_RESET,
+)
 
 
 # --- HCI Command encode/decode ---
@@ -70,6 +81,67 @@ def test_generic_command_decode():
     assert isinstance(pkt, HCICommand)
     assert pkt.opcode == 0xFFFF
     assert pkt.parameters == b"\xAA\xBB"
+
+
+def test_le_resolving_list_commands_encode():
+    add = HCI_LE_Add_Device_To_Resolving_List_Command(
+        peer_identity_address_type=0x00,
+        peer_identity_address=bytes.fromhex("20e8a56b6f38"),
+        peer_irk=b"\x22" * 16,
+        local_irk=b"\x33" * 16,
+    )
+    assert add.parameters == b"\x00" + bytes.fromhex("20e8a56b6f38") + b"\x22" * 16 + b"\x33" * 16
+    assert struct.unpack_from("<H", add.to_bytes(), 1)[0] == HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST
+    assert add.to_bytes()[3] == 39
+
+    clear = HCI_LE_Clear_Resolving_List_Command()
+    assert clear.parameters == b""
+    assert struct.unpack_from("<H", clear.to_bytes(), 1)[0] == HCI_LE_CLEAR_RESOLVING_LIST
+    assert clear.to_bytes()[3] == 0
+
+    enable = HCI_LE_Set_Address_Resolution_Enable_Command(address_resolution_enable=1)
+    assert enable.parameters == b"\x01"
+    assert struct.unpack_from("<H", enable.to_bytes(), 1)[0] == HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE
+    assert enable.to_bytes()[3] == 1
+
+    privacy = HCI_LE_Set_Privacy_Mode_Command(
+        peer_identity_address_type=0x00,
+        peer_identity_address=bytes.fromhex("20e8a56b6f38"),
+        privacy_mode=1,
+    )
+    assert privacy.parameters == b"\x00" + bytes.fromhex("20e8a56b6f38") + b"\x01"
+    assert struct.unpack_from("<H", privacy.to_bytes(), 1)[0] == HCI_LE_SET_PRIVACY_MODE
+    assert privacy.to_bytes()[3] == 8
+
+
+def test_le_resolving_list_commands_decode_via_registry():
+    add_raw = (
+        bytes([0x01, 0x27, 0x20, 39])
+        + b"\x00"
+        + bytes.fromhex("20e8a56b6f38")
+        + b"\x22" * 16
+        + b"\x33" * 16
+    )
+    add = decode_hci_packet(add_raw)
+    assert isinstance(add, HCI_LE_Add_Device_To_Resolving_List_Command)
+    assert add.peer_identity_address_type == 0x00
+    assert add.peer_identity_address == bytes.fromhex("20e8a56b6f38")
+    assert add.peer_irk == b"\x22" * 16
+    assert add.local_irk == b"\x33" * 16
+
+    clear = decode_hci_packet(bytes([0x01, 0x29, 0x20, 0]))
+    assert isinstance(clear, HCI_LE_Clear_Resolving_List_Command)
+
+    enable = decode_hci_packet(bytes([0x01, 0x2D, 0x20, 1, 1]))
+    assert isinstance(enable, HCI_LE_Set_Address_Resolution_Enable_Command)
+    assert enable.address_resolution_enable == 1
+
+    privacy = decode_hci_packet(
+        bytes([0x01, 0x4E, 0x20, 8]) + b"\x00" + bytes.fromhex("20e8a56b6f38") + b"\x01"
+    )
+    assert isinstance(privacy, HCI_LE_Set_Privacy_Mode_Command)
+    assert privacy.peer_identity_address == bytes.fromhex("20e8a56b6f38")
+    assert privacy.privacy_mode == 1
 
 
 # --- HCI Event decode ---

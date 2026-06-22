@@ -9,11 +9,17 @@ from pybluehost.classic.avrcp.constants import AVRCPEventID, AVRCPOperationID, A
 from pybluehost.cli._lifecycle import (
     add_common_arguments, run_app_command, trace_kwargs_from_args,
 )
+from pybluehost.core.gap_common import ClassOfDevice
 from pybluehost.profiles.classic import AVRCPTarget
 from pybluehost.stack import Stack
 
 
 logger = logging.getLogger(__name__)
+_PHONE_AUDIO_COD = ClassOfDevice(
+    major_device_class=0x02,
+    minor_device_class=0x03,
+    service_class=0x120,
+)
 
 
 def register_avrcp_target_command(subparsers: argparse._SubParsersAction) -> None:
@@ -58,5 +64,16 @@ async def _avrcp_target_main(stack: Stack, stop: asyncio.Event) -> None:
         on_notification_register=on_notify_register,
     )
     target.register()
+    discoverability = getattr(getattr(stack, "gap", None), "classic_discoverability", None)
+    if discoverability is not None:
+        await discoverability.set_device_name("PyBlueHost AVRCP Target")
+        await discoverability.set_class_of_device(_PHONE_AUDIO_COD)
+        await discoverability.set_discoverable(True)
+        await discoverability.set_connectable(True)
     logger.info("AVRCP target registered. Ctrl+C to stop.")
-    await stop.wait()
+    try:
+        await stop.wait()
+    finally:
+        if discoverability is not None:
+            await discoverability.set_discoverable(False)
+            await discoverability.set_connectable(False)

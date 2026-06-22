@@ -83,6 +83,24 @@ async def test_get_capabilities_returns_capability_list(paired_sessions):
     assert ServiceCategory.MEDIA_CODEC in categories
 
 
+async def test_get_all_capabilities_returns_capability_list(paired_sessions):
+    sess_a, sess_b = paired_sessions
+    sess_b.set_capabilities(seid=2, capabilities=[
+        (ServiceCategory.MEDIA_TRANSPORT, b""),
+        (ServiceCategory.MEDIA_CODEC, encode_sbc_codec_capability(
+            SBCCapability(
+                sample_rates={44100}, channel_modes={"joint_stereo"},
+                block_lengths={16}, subbands={8}, allocations={"loudness"},
+                min_bitpool=2, max_bitpool=53,
+            )
+        )),
+    ])
+    caps = await sess_a.get_all_capabilities(peer_seid=2)
+    categories = [c for c, _ in caps]
+    assert ServiceCategory.MEDIA_TRANSPORT in categories
+    assert ServiceCategory.MEDIA_CODEC in categories
+
+
 async def test_set_configuration_transitions_remote_sep_to_configured(paired_sessions):
     sess_a, sess_b = paired_sessions
     sess_b.set_capabilities(seid=2, capabilities=[

@@ -9,11 +9,18 @@ import wave
 from pybluehost.cli._lifecycle import (
     add_common_arguments, run_app_command, trace_kwargs_from_args,
 )
+from pybluehost.core.gap_common import ClassOfDevice
 from pybluehost.profiles.classic import A2DPSink
 from pybluehost.stack import Stack
 
 
 logger = logging.getLogger(__name__)
+_SERVICE_NAME = "PyBlueHost A2DP Sink"
+_AUDIO_HEADPHONES_COD = ClassOfDevice(
+    major_device_class=0x04,
+    minor_device_class=0x06,
+    service_class=0x120,
+)
 
 
 def register_a2dp_sink_command(subparsers: argparse._SubParsersAction) -> None:
@@ -58,10 +65,19 @@ async def _sink_to_wav(stack: Stack, wav_path: str, stop: asyncio.Event) -> None
 
     sink = A2DPSink(stack=stack, on_pcm=on_pcm)
     sink.register()
+    discoverability = getattr(getattr(stack, "gap", None), "classic_discoverability", None)
+    if discoverability is not None:
+        await discoverability.set_device_name(_SERVICE_NAME)
+        await discoverability.set_class_of_device(_AUDIO_HEADPHONES_COD)
+        await discoverability.set_discoverable(True)
+        await discoverability.set_connectable(True)
     logger.info("A2DP sink registered; writing to %s. Ctrl+C to stop.", wav_path)
     try:
         await stop.wait()
     finally:
+        if discoverability is not None:
+            await discoverability.set_discoverable(False)
+            await discoverability.set_connectable(False)
         w.close()
         logger.info("Wrote %s", wav_path)
 
@@ -84,8 +100,17 @@ async def _sink_to_device(stack: Stack, device_index, stop: asyncio.Event) -> No
 
     sink = A2DPSink(stack=stack, on_pcm=on_pcm)
     sink.register()
+    discoverability = getattr(getattr(stack, "gap", None), "classic_discoverability", None)
+    if discoverability is not None:
+        await discoverability.set_device_name(_SERVICE_NAME)
+        await discoverability.set_class_of_device(_AUDIO_HEADPHONES_COD)
+        await discoverability.set_discoverable(True)
+        await discoverability.set_connectable(True)
     logger.info("A2DP sink playing through audio device. Ctrl+C to stop.")
     try:
         await stop.wait()
     finally:
+        if discoverability is not None:
+            await discoverability.set_discoverable(False)
+            await discoverability.set_connectable(False)
         await dev.stop()

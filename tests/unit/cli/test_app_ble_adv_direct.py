@@ -15,9 +15,13 @@ from pybluehost.ble.smp import BondInfo
 from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.hci.constants import (
     ErrorCode,
+    HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST,
+    HCI_LE_CLEAR_RESOLVING_LIST,
+    HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE,
     HCI_LE_SET_ADVERTISE_ENABLE,
     HCI_LE_SET_ADVERTISING_DATA,
     HCI_LE_SET_ADVERTISING_PARAMS,
+    HCI_LE_SET_PRIVACY_MODE,
     HCI_LE_SET_SCAN_RESPONSE_DATA,
 )
 from pybluehost.hci.packets import HCI_Command_Complete_Event
@@ -142,6 +146,22 @@ async def test_start_directed_advertising_supports_high_duty_random_target():
     assert params[7:13] == bytes.fromhex("466845fa10d2")
 
 
+async def test_start_directed_advertising_normalizes_random_identity_target():
+    hci = FakeHCI()
+    peer = BDAddress.from_string("D2:10:FA:45:68:46", AddressType.RANDOM_IDENTITY)
+
+    await start_directed_advertising(
+        hci,
+        peer_address=peer,
+        own_address_type="public",
+        duty="low",
+    )
+
+    params = next(cmd.parameters for cmd in hci.commands if cmd.opcode == HCI_LE_SET_ADVERTISING_PARAMS)
+    assert params[6] == 0x01  # legacy directed advertising uses public/random, not identity type 0x03
+    assert params[7:13] == bytes.fromhex("466845fa10d2")
+
+
 async def test_start_directed_advertising_raises_on_hci_status_error():
     hci = FakeHCI()
     hci.status_by_opcode[HCI_LE_SET_ADVERTISING_PARAMS] = ErrorCode.INVALID_PARAMETERS
@@ -204,6 +224,9 @@ def test_ble_adv_direct_stack_config_uses_bond_store(tmp_path):
     config = _build_ble_adv_direct_stack_config(path)
 
     assert config.bond_storage is not None
+    assert config.security.enable_secure_connections is True
+    assert config.security.mitm_required is True
+    assert int(config.le_io_capability) == 0x01  # DISPLAY_YES_NO
 
 
 async def test_ble_adv_direct_flow_switches_to_directed_after_disconnect():
@@ -235,7 +258,7 @@ async def test_ble_adv_direct_flow_switches_to_directed_after_disconnect():
     await task
 
     assert stack.gap.ble_advertiser.stopped >= 1
-    assert stack._smp.security_requests == [(0x0040, 0x01)]
+    assert stack._smp.security_requests == [(0x0040, 0x0D)]
     opcodes = [cmd.opcode for cmd in stack._hci.commands]
     assert HCI_LE_SET_ADVERTISING_PARAMS in opcodes
     directed_params = next(
@@ -343,3 +366,103 @@ async def test_ble_adv_direct_prefers_bond_identity_address_for_directed_target(
     )
     assert directed_params[6] == 0x00
     assert directed_params[7:13] == bytes.fromhex("20e8a56b6f38")
+
+
+async def test_ble_adv_direct_configures_resolving_list_for_irk_bond():
+    class FakeBondStorage:
+        async def list_bonds(self):
+            return [
+                BondInfo(
+                    peer_address=BDAddress.from_string("38:6F:6B:A5:E8:20", AddressType.RANDOM_IDENTITY),
+                    address_type=AddressType.RANDOM_IDENTITY,
+                    ltk=b"\x11" * 16,
+                    irk=b"\x22" * 16,
+                )
+            ]
+
+    stack = FakeStack()
+    stack._config.bond_storage = FakeBondStorage()
+    stop = asyncio.Event()
+
+    task = asyncio.create_task(
+        _ble_adv_direct_main(
+            stack,
+            stop,
+            name="DirectTest",
+            peer_address=None,
+            peer_address_type="random",
+            own_address_type="public",
+            direct_duty="low",
+            direct_timeout=1.0,
+        )
+    )
+    await asyncio.sleep(0)
+
+    stack.emit(StackConnectionEvent(state="connected", handle=0x0040))
+    await asyncio.sleep(0)
+    stack.emit(StackConnectionEvent(state="disconnected", handle=0x0040, reason="remote user"))
+    await asyncio.sleep(0)
+    stack.emit(StackConnectionEvent(state="connected", handle=0x0041))
+    await asyncio.sleep(0)
+    stop.set()
+    await task
+
+    opcodes = [cmd.opcode for cmd in stack._hci.commands]
+    assert opcodes[:5] == [
+        HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE,
+        HCI_LE_CLEAR_RESOLVING_LIST,
+        HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST,
+        HCI_LE_SET_PRIVACY_MODE,
+        HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE,
+    ]
+    assert stack._hci.commands[0].parameters == b"\x00"
+    assert stack._hci.commands[2].parameters == (
+        b"\x01" + bytes.fromhex("20e8a56b6f38") + (b"\x22" * 16) + bytes(16)
+    )
+    assert stack._hci.commands[4].parameters == b"\x01"
+    directed_params = next(
+        cmd.parameters
+        for cmd in stack._hci.commands
+        if cmd.opcode == HCI_LE_SET_ADVERTISING_PARAMS
+    )
+    assert directed_params[6] == 0x01
+
+
+async def test_ble_adv_direct_raises_when_resolving_list_add_fails():
+    class FakeBondStorage:
+        async def list_bonds(self):
+            return [
+                BondInfo(
+                    peer_address=BDAddress.from_string("38:6F:6B:A5:E8:20", AddressType.PUBLIC),
+                    address_type=AddressType.PUBLIC,
+                    ltk=b"\x11" * 16,
+                    irk=b"\x22" * 16,
+                )
+            ]
+
+    stack = FakeStack()
+    stack._config.bond_storage = FakeBondStorage()
+    stack._hci.status_by_opcode[HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST] = ErrorCode.UNKNOWN_COMMAND
+    stop = asyncio.Event()
+
+    task = asyncio.create_task(
+        _ble_adv_direct_main(
+            stack,
+            stop,
+            name="DirectTest",
+            peer_address=None,
+            peer_address_type="random",
+            own_address_type="public",
+            direct_duty="low",
+            direct_timeout=1.0,
+        )
+    )
+    await asyncio.sleep(0)
+
+    stack.emit(StackConnectionEvent(state="connected", handle=0x0040))
+    await asyncio.sleep(0)
+    stack.emit(StackConnectionEvent(state="disconnected", handle=0x0040, reason="remote user"))
+    await asyncio.sleep(0)
+
+    with pytest.raises(RuntimeError, match="0x2027.*UNKNOWN_COMMAND"):
+        await task

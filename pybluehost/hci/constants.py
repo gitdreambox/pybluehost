@@ -101,6 +101,9 @@ HCI_LE_READ_SUPPORTED_STATES = make_opcode(OGF.LE, 0x1C)
 HCI_LE_SET_DATA_LENGTH = make_opcode(OGF.LE, 0x22)
 HCI_LE_READ_LOCAL_P256_PUBLIC_KEY = make_opcode(OGF.LE, 0x0025)
 HCI_LE_GENERATE_DHKEY = make_opcode(OGF.LE, 0x0026)
+HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST = make_opcode(OGF.LE, 0x27)
+HCI_LE_CLEAR_RESOLVING_LIST = make_opcode(OGF.LE, 0x29)
+HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE = make_opcode(OGF.LE, 0x2D)
 # Note: Bluetooth Core Spec 6.1 renamed HCI_LE_Read_Local_Supported_Features
 # (OCF 0x0003) to HCI_LE_Read_Local_Supported_Features_Page and added an
 # optional 1-byte page_number parameter. SAME OCF 0x0003; SAME
@@ -111,6 +114,7 @@ HCI_LE_SET_EXTENDED_ADVERTISING_PARAMS = make_opcode(OGF.LE, 0x36)
 HCI_LE_SET_EXTENDED_ADVERTISING_DATA = make_opcode(OGF.LE, 0x37)
 HCI_LE_SET_EXTENDED_SCAN_RSP_DATA = make_opcode(OGF.LE, 0x38)
 HCI_LE_SET_EXTENDED_ADVERTISING_ENABLE = make_opcode(OGF.LE, 0x39)
+HCI_LE_SET_PRIVACY_MODE = make_opcode(OGF.LE, 0x4E)
 HCI_LE_START_ENCRYPTION                       = make_opcode(OGF.LE, 0x19)
 HCI_LE_LONG_TERM_KEY_REQUEST_REPLY            = make_opcode(OGF.LE, 0x1A)
 HCI_LE_LONG_TERM_KEY_REQUEST_NEGATIVE_REPLY   = make_opcode(OGF.LE, 0x1B)

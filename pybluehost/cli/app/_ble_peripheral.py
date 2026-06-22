@@ -65,6 +65,12 @@ def _legacy_address_type(value: str) -> AddressType:
     raise ValueError(f"legacy directed advertising supports public/random address types, got {value!r}")
 
 
+def _legacy_direct_peer_address_type(address: BDAddress) -> AddressType:
+    if int(address.type) in (int(AddressType.RANDOM), int(AddressType.RANDOM_IDENTITY)):
+        return AddressType.RANDOM
+    return AddressType.PUBLIC
+
+
 def _legacy_adv_interval_units(interval_ms: float) -> int:
     if interval_ms <= 0:
         raise ValueError("advertising interval must be positive")
@@ -113,7 +119,7 @@ async def start_directed_advertising(
         peer = peer_address
     else:
         peer = BDAddress.from_string(peer_address, _legacy_address_type(peer_address_type))
-    peer_type = AddressType(peer.type)
+    peer_type = _legacy_direct_peer_address_type(peer)
 
     duty_normalized = duty.strip().lower()
     if duty_normalized == "high":

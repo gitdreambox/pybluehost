@@ -20,6 +20,7 @@ from pybluehost.classic.avrcp.constants import AVRCPEventID, AVRCPOperationID, A
 from pybluehost.cli._lifecycle import (
     add_common_arguments, run_app_command, trace_kwargs_from_args,
 )
+from pybluehost.core.gap_common import ClassOfDevice
 from pybluehost.profiles.classic import (
     A2DPSource, AVRCPTarget, HFPAudioGateway,
 )
@@ -28,6 +29,11 @@ from pybluehost.stack import Stack
 
 
 logger = logging.getLogger(__name__)
+_PHONE_AUDIO_COD = ClassOfDevice(
+    major_device_class=0x02,
+    minor_device_class=0x03,
+    service_class=0x120,
+)
 
 
 def register_demo_phone_command(subparsers: argparse._SubParsersAction) -> None:
@@ -118,9 +124,18 @@ async def _demo_phone_main(stack: Stack, stop: asyncio.Event, args) -> None:
         )
 
     logger.info("[PHONE] Ready. Waiting for headphone to connect. Ctrl+C to stop.")
+    discoverability = getattr(getattr(stack, "gap", None), "classic_discoverability", None)
+    if discoverability is not None:
+        await discoverability.set_device_name("PyBlueHost Phone")
+        await discoverability.set_class_of_device(_PHONE_AUDIO_COD)
+        await discoverability.set_discoverable(True)
+        await discoverability.set_connectable(True)
     try:
         await stop.wait()
     finally:
+        if discoverability is not None:
+            await discoverability.set_discoverable(False)
+            await discoverability.set_connectable(False)
         streamer_task.cancel()
         if ring_task is not None:
             ring_task.cancel()

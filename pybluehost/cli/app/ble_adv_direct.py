@@ -9,11 +9,14 @@ from pathlib import Path
 
 from pybluehost.cli._lifecycle import add_common_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.cli.app._ble_peripheral import (
+    _ensure_hci_success,
     start_connectable_advertising,
     start_directed_advertising,
     stop_advertising,
 )
 from pybluehost.core.address import BDAddress
+from pybluehost.core.types import IOCapability
+from pybluehost.ble.security import SecurityConfig
 from pybluehost.ble.smp import JsonBondStorage
 from pybluehost.profiles.ble import BatteryServer, HeartRateServer
 from pybluehost.stack import Stack, StackConfig, StackConnectionEvent
@@ -92,11 +95,19 @@ def register_ble_adv_direct_command(subparsers: argparse._SubParsersAction) -> N
 
 
 def _build_ble_adv_direct_stack_config(bond_store: Path) -> StackConfig:
-    return StackConfig(bond_storage=JsonBondStorage(bond_store))
+    return StackConfig(
+        bond_storage=JsonBondStorage(bond_store),
+        security=SecurityConfig(enable_secure_connections=True, mitm_required=True),
+        le_io_capability=IOCapability.DISPLAY_YES_NO,
+    )
 
 
 def _format_address_type(address: BDAddress) -> str:
     return getattr(address.type, "name", str(int(address.type)))
+
+
+def _public_random_address_type(address: BDAddress) -> int:
+    return 0x01 if int(address.type) in (0x01, 0x03) else 0x00
 
 
 class _ConnectionEventQueue:
@@ -127,7 +138,7 @@ async def _learn_peer_address(stack: Stack, handle: int | None) -> BDAddress | N
     return None
 
 
-async def _latest_bond_peer_address(stack: Stack) -> BDAddress | None:
+async def _latest_bond(stack: Stack):
     config = getattr(stack, "_config", None)
     storage = getattr(config, "bond_storage", None)
     if storage is None:
@@ -135,7 +146,47 @@ async def _latest_bond_peer_address(stack: Stack) -> BDAddress | None:
     bonds = await storage.list_bonds()
     if not bonds:
         return None
-    return bonds[-1].peer_address
+    return bonds[-1]
+
+
+async def _configure_resolving_list_for_bond(stack: Stack, bond) -> None:
+    if bond is None or not getattr(bond, "irk", None):
+        return
+    from pybluehost.hci.packets import (
+        HCI_LE_Add_Device_To_Resolving_List_Command,
+        HCI_LE_Clear_Resolving_List_Command,
+        HCI_LE_Set_Address_Resolution_Enable_Command,
+        HCI_LE_Set_Privacy_Mode_Command,
+    )
+
+    peer = bond.peer_address
+    if not isinstance(peer, BDAddress):
+        return
+    peer_type = _public_random_address_type(peer)
+    peer_addr = peer.to_hci()
+    cmd = HCI_LE_Set_Address_Resolution_Enable_Command(address_resolution_enable=0)
+    _ensure_hci_success(await stack.hci.send_command(cmd), cmd.opcode)
+    cmd = HCI_LE_Clear_Resolving_List_Command()
+    _ensure_hci_success(await stack.hci.send_command(cmd), cmd.opcode)
+    cmd = HCI_LE_Add_Device_To_Resolving_List_Command(
+        peer_identity_address_type=peer_type,
+        peer_identity_address=peer_addr,
+        peer_irk=bond.irk,
+        local_irk=bytes(16),
+    )
+    _ensure_hci_success(await stack.hci.send_command(cmd), cmd.opcode)
+    try:
+        cmd = HCI_LE_Set_Privacy_Mode_Command(
+            peer_identity_address_type=peer_type,
+            peer_identity_address=peer_addr,
+            privacy_mode=1,
+        )
+        _ensure_hci_success(await stack.hci.send_command(cmd), cmd.opcode)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("LE Set Privacy Mode not applied: %s", exc)
+    cmd = HCI_LE_Set_Address_Resolution_Enable_Command(address_resolution_enable=1)
+    _ensure_hci_success(await stack.hci.send_command(cmd), cmd.opcode)
+    logger.info("Resolving list configured for directed peer %s", peer)
 
 
 async def _register_demo_services(stack: Stack) -> None:
@@ -180,23 +231,25 @@ async def _ble_adv_direct_main(
     smp = getattr(stack, "smp", None)
     request_security = getattr(smp, "request_security", None)
     if request_security is not None and first_handle is not None:
-        await request_security(first_handle, auth_req=0x01)
-        logger.info("SMP Security Request sent on handle 0x%04X", first_handle)
+        await request_security(first_handle, auth_req=0x0D)
+        logger.info("SMP Security Request sent on handle 0x%04X auth_req=0x0D", first_handle)
 
     disconnected = await events.wait_for("disconnected", handle=first_handle)
     logger.info("Phone disconnected from handle 0x%04X: %s", first_handle or 0, disconnected.reason)
 
     learned_peer = await _learn_peer_address(stack, first_handle)
-    bonded_peer = await _latest_bond_peer_address(stack)
+    latest_bond = await _latest_bond(stack)
+    bonded_peer = latest_bond.peer_address if latest_bond is not None else None
     target_address: str | BDAddress | None = peer_address or bonded_peer or connected_peer or learned_peer
     if target_address is None:
         raise RuntimeError(
             "No peer address learned from the first connection; pass --peer-address and --peer-address-type"
         )
     if isinstance(target_address, BDAddress):
-        peer_address_type = "random" if int(target_address.type) == 0x01 else "public"
+        peer_address_type = "random" if _public_random_address_type(target_address) == 0x01 else "public"
 
     await stop_advertising(stack)
+    await _configure_resolving_list_for_bond(stack, latest_bond)
     await start_directed_advertising(
         stack.hci,
         peer_address=target_address,
