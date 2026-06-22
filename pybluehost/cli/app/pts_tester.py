@@ -29,23 +29,48 @@ def register_pts_tester_command(subparsers: argparse._SubParsersAction) -> None:
 
 async def _pts_tester_main(stack, stop_event, *, listen: str):
     logger = logging.getLogger(__name__)
+    from pybluehost.pts.actions import IutActions
     from pybluehost.pts.btp import (
         BtpServiceRegistry, BtpTester, CoreService,
     )
+    from pybluehost.pts.btp.services.gap import GapService
 
     if ":" not in listen:
         raise ValueError(f"--listen must be host:port, got {listen!r}")
     host, port_str = listen.rsplit(":", 1)
     port = int(port_str)
 
+    actions = IutActions(stack)
     registry = BtpServiceRegistry()
     registry.register(CoreService(registry=registry))
-    # GAP/GATT/L2CAP/SMP services land in P.6-P.8.
     tester = BtpTester(registry=registry, host=host, port=port)
+    gap = GapService(actions=actions, tester=tester)
+    registry.register(gap)
     await tester.start()
+
+    # Hook stack connection events into GapService for DEVICE_CONNECTED/DISCONNECTED.
+    def _on_conn(ev):
+        if ev.state not in ("connected", "disconnected"):
+            return
+        peer = getattr(ev, "peer_address", None)
+        if peer is None:
+            return
+        addr_type_attr = getattr(peer, "address_type", 0)
+        addr_type = getattr(addr_type_attr, "value", addr_type_attr)
+        raw = getattr(peer, "address", None) or getattr(peer, "bytes", None)
+        if raw is None:
+            return
+        gap.on_connection_state_change(
+            handle=ev.handle or 0,
+            addr=bytes(raw)[:6].ljust(6, b"\x00"),
+            addr_type=int(addr_type),
+            connected=(ev.state == "connected"),
+        )
+    stack.on_connection_event(_on_conn)
+
     logger.info(
         "PyBlueHost BTP tester listening on %s:%d "
-        "(P.5: Core service only; GAP/GATT/L2CAP/SMP land in P.6-P.8)",
+        "(Core + GAP; GATT/L2CAP/SMP land in P.7-P.8)",
         host, port,
     )
     try:
