@@ -151,3 +151,48 @@ async def test_device_disconnected_event_on_state_change():
     await asyncio.sleep(0)
     assert tester.events[-1].opcode == op.OP_GAP_EVENT_DEVICE_DISCONNECTED
     assert len(tester.events[-1].data) == 7
+
+
+# ---------------------------------------------------------------------------
+# T7: Pairing events
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_pairing_failed_event_emitted():
+    tester = _FakeTester()
+    actions = _FakeActions()
+    svc = GapService(actions=actions, tester=tester)
+    svc.on_pairing_failed(addr=bytes.fromhex("AABBCCDDEEFF"),
+                          addr_type=op.GAP_ADDR_TYPE_RANDOM, reason=0x05)
+    await asyncio.sleep(0)
+    assert len(tester.events) == 1
+    evt = tester.events[0]
+    assert evt.opcode == op.OP_GAP_EVENT_PAIRING_FAILED
+    assert evt.data == bytes([op.GAP_ADDR_TYPE_RANDOM]) + bytes.fromhex("AABBCCDDEEFF") + bytes([0x05])
+
+
+@pytest.mark.asyncio
+async def test_sec_level_changed_event_emitted():
+    tester = _FakeTester()
+    actions = _FakeActions()
+    svc = GapService(actions=actions, tester=tester)
+    svc.on_sec_level_changed(addr=bytes(6), addr_type=0, sec_level=2)
+    await asyncio.sleep(0)
+    assert len(tester.events) == 1
+    assert tester.events[-1].opcode == op.OP_GAP_EVENT_SEC_LEVEL_CHANGED
+    assert tester.events[-1].data[-1] == 2
+
+
+@pytest.mark.asyncio
+async def test_passkey_display_event_emitted():
+    tester = _FakeTester()
+    actions = _FakeActions()
+    svc = GapService(actions=actions, tester=tester)
+    svc.on_passkey_display(addr=bytes.fromhex("AABBCCDDEEFF"),
+                            addr_type=op.GAP_ADDR_TYPE_RANDOM, passkey=123456)
+    await asyncio.sleep(0)
+    assert len(tester.events) == 1
+    evt = tester.events[0]
+    assert evt.opcode == op.OP_GAP_EVENT_PASSKEY_DISPLAY
+    assert evt.data[:7] == bytes([op.GAP_ADDR_TYPE_RANDOM]) + bytes.fromhex("AABBCCDDEEFF")
+    assert int.from_bytes(evt.data[7:11], "little") == 123456

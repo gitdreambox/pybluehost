@@ -313,6 +313,135 @@ class GapService(BtpService):
             return op.BTP_STATUS_FAILED, b""
         return op.BTP_STATUS_SUCCESS, b""
 
+    # ---- Set IO Cap -------------------------------------------------------
+
+    _IO_CAP_NAMES = {
+        op.GAP_IO_CAP_DISPLAY_ONLY: "DisplayOnly",
+        op.GAP_IO_CAP_DISPLAY_YESNO: "DisplayYesNo",
+        op.GAP_IO_CAP_KEYBOARD_ONLY: "KeyboardOnly",
+        op.GAP_IO_CAP_NO_INPUT_NO_OUTPUT: "NoInputNoOutput",
+        op.GAP_IO_CAP_KEYBOARD_DISPLAY: "KeyboardDisplay",
+    }
+
+    async def _handle_op_10(self, controller_index: int, data: bytes):
+        """SET_IO_CAP — body: 1 byte IO capability enum."""
+        if len(data) != 1 or data[0] not in self._IO_CAP_NAMES:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            self._actions.set_io_cap(self._IO_CAP_NAMES[data[0]])
+        except Exception:
+            logger.exception("GAP Set IO Cap raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    # ---- Pair / Unpair / Passkey -----------------------------------------
+
+    async def _handle_op_11(self, controller_index: int, data: bytes):
+        """PAIR — body: addr_type(1) + addr(6). Resolve addr → handle, call actions.pair."""
+        if len(data) != 7:
+            return op.BTP_STATUS_FAILED, b""
+        addr_bytes = bytes(data[1:7])
+        try:
+            session = self._actions.status()
+            target_handle = None
+            for h, info in session.connections.items():
+                if _encode_bd_addr(info.peer) == addr_bytes:
+                    target_handle = h
+                    break
+            if target_handle is None:
+                return op.BTP_STATUS_FAILED, b""
+            await self._actions.pair(target_handle)
+        except Exception:
+            logger.exception("GAP Pair raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    async def _handle_op_12(self, controller_index: int, data: bytes):
+        """UNPAIR — body: addr_type(1) + addr(6). Phase 1 has no unpair → FAILED."""
+        if len(data) != 7:
+            return op.BTP_STATUS_FAILED, b""
+        unpair_fn = getattr(self._actions, "unpair", None)
+        if unpair_fn is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            await unpair_fn(_decode_bd_addr(bytes(data[1:7])))
+        except Exception:
+            logger.exception("GAP Unpair raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    async def _handle_op_13(self, controller_index: int, data: bytes):
+        """PASSKEY_ENTRY_REPLY — body: addr_type(1) + addr(6) + passkey(u32 LE)."""
+        if len(data) != 11:
+            return op.BTP_STATUS_FAILED, b""
+        passkey_fn = getattr(self._actions, "submit_passkey", None)
+        if passkey_fn is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            await passkey_fn(int.from_bytes(data[7:11], "little"))
+        except Exception:
+            logger.exception("GAP Passkey Entry Reply raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    async def _handle_op_14(self, controller_index: int, data: bytes):
+        """PASSKEY_CONFIRM_REPLY — body: addr_type(1) + addr(6) + match(u8)."""
+        if len(data) != 8:
+            return op.BTP_STATUS_FAILED, b""
+        confirm_fn = getattr(self._actions, "confirm_passkey", None)
+        if confirm_fn is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            await confirm_fn(bool(data[7]))
+        except Exception:
+            logger.exception("GAP Passkey Confirm Reply raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    # ---- Pairing event emission helpers -----------------------------------
+
+    def on_pairing_failed(self, *, addr: bytes, addr_type: int, reason: int) -> None:
+        if self._tester is None:
+            return
+        payload = (
+            bytes([addr_type & 0xFF])
+            + bytes(addr)[:6].ljust(6, b"\x00")
+            + bytes([reason & 0xFF])
+        )
+        self._emit_event(op.OP_GAP_EVENT_PAIRING_FAILED, payload)
+
+    def on_sec_level_changed(self, *, addr: bytes, addr_type: int, sec_level: int) -> None:
+        if self._tester is None:
+            return
+        payload = (
+            bytes([addr_type & 0xFF])
+            + bytes(addr)[:6].ljust(6, b"\x00")
+            + bytes([sec_level & 0xFF])
+        )
+        self._emit_event(op.OP_GAP_EVENT_SEC_LEVEL_CHANGED, payload)
+
+    def on_passkey_display(self, *, addr: bytes, addr_type: int, passkey: int) -> None:
+        if self._tester is None:
+            return
+        payload = (
+            bytes([addr_type & 0xFF])
+            + bytes(addr)[:6].ljust(6, b"\x00")
+            + passkey.to_bytes(4, "little")
+        )
+        self._emit_event(op.OP_GAP_EVENT_PASSKEY_DISPLAY, payload)
+
+    def _emit_event(self, opcode: int, payload: bytes) -> None:
+        if self._tester is None:
+            return
+        frame = BtpFrame(
+            service=op.SERVICE_GAP, opcode=opcode,
+            controller_index=self._controller_index, data=payload,
+        )
+        try:
+            asyncio.create_task(self._tester.emit_event(frame))
+        except RuntimeError:
+            logger.exception("GAP event %#x: no event loop; dropping", opcode)
+
     # ---- Connection state event hook --------------------------------------
 
     def on_connection_state_change(

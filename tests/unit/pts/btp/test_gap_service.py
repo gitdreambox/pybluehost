@@ -288,3 +288,127 @@ async def test_disconnect_decodes_addr_and_calls_actions():
     )
     assert status == op.BTP_STATUS_SUCCESS
     assert any(c[0] == "disconnect" and c[1]["handle"] == 0x000C for c in actions.calls)
+
+
+# ---------------------------------------------------------------------------
+# T7: Set IO Cap / Pair / Unpair / Passkey
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_set_io_cap_calls_actions():
+    from unittest.mock import MagicMock
+    actions = _FakeActions()
+    captured = {}
+
+    def fake_set_io_cap(cap: str) -> None:
+        captured["cap"] = cap
+        actions.calls.append(("set_io_cap", {"cap": cap}))
+
+    actions.set_io_cap = fake_set_io_cap
+    svc = GapService(actions=actions, tester=MagicMock())
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_SET_IO_CAP, controller_index=0,
+        data=bytes([op.GAP_IO_CAP_DISPLAY_YESNO]),
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert captured["cap"] == "DisplayYesNo"
+
+
+@pytest.mark.asyncio
+async def test_set_io_cap_unknown_value_fails():
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_SET_IO_CAP, controller_index=0,
+        data=bytes([0xFF]),
+    )
+    assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_pair_resolves_addr_to_handle_and_calls_actions():
+    from unittest.mock import MagicMock
+    from dataclasses import dataclass
+
+    @dataclass
+    class _FakePeer:
+        address: bytes
+        @property
+        def bytes(self): return self.address
+
+    @dataclass
+    class _FakeConnInfo:
+        handle: int
+        peer: _FakePeer
+        transport: str = "le"
+        gatt_client: object = None
+
+    @dataclass
+    class _FakeSession:
+        connections: dict
+        last_handle: int | None = None
+
+    addr_bytes = bytes.fromhex("112233445566")
+    session = _FakeSession(connections={
+        0x0010: _FakeConnInfo(handle=0x0010, peer=_FakePeer(address=addr_bytes))
+    })
+    actions = _FakeActions()
+    actions.status = lambda: session
+
+    async def fake_pair(handle=None, *, io_cap=None, mitm=False):
+        actions.calls.append(("pair", {"handle": handle}))
+
+    actions.pair = fake_pair
+    svc = GapService(actions=actions, tester=MagicMock())
+    body = bytes([op.GAP_ADDR_TYPE_RANDOM]) + addr_bytes
+    status, _ = await svc.dispatch(opcode=op.OP_GAP_PAIR, controller_index=0, data=body)
+    assert status == op.BTP_STATUS_SUCCESS
+    assert any(c[0] == "pair" and c[1]["handle"] == 0x0010 for c in actions.calls)
+
+
+@pytest.mark.asyncio
+async def test_pair_unknown_peer_fails():
+    from unittest.mock import MagicMock
+    from dataclasses import dataclass
+
+    @dataclass
+    class _FakeSession:
+        connections: dict
+        last_handle: int | None = None
+
+    actions = _FakeActions()
+    actions.status = lambda: _FakeSession(connections={})
+    svc = GapService(actions=actions, tester=MagicMock())
+    body = bytes([op.GAP_ADDR_TYPE_PUBLIC]) + bytes.fromhex("000000000000")
+    status, _ = await svc.dispatch(opcode=op.OP_GAP_PAIR, controller_index=0, data=body)
+    assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_unpair_returns_failed_when_actions_lacks_method():
+    """Phase 1 IutActions has no unpair — handler returns STATUS_FAILED."""
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    body = bytes([op.GAP_ADDR_TYPE_PUBLIC]) + bytes.fromhex("000000000000")
+    status, _ = await svc.dispatch(opcode=op.OP_GAP_UNPAIR, controller_index=0, data=body)
+    assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_passkey_entry_reply_rejects_wrong_length():
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_PASSKEY_ENTRY_REPLY, controller_index=0, data=b"\x00\x01",
+    )
+    assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_passkey_confirm_reply_rejects_wrong_length():
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_PASSKEY_CONFIRM_REPLY, controller_index=0, data=b"\x00",
+    )
+    assert status == op.BTP_STATUS_FAILED
