@@ -243,3 +243,131 @@ async def test_find_included_svcs_returns_failed_not_supported():
         opcode=op.OP_GATT_FIND_INCLUDED_SVCS, controller_index=0, data=body,
     )
     assert status == op.BTP_STATUS_FAILED
+
+
+# ---------------------------------------------------------------------------
+# Task 7 — Client Read + Write (opcodes 0x11/0x13/0x14/0x15/0x17/0x18/0x19)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_read_returns_value_with_att_status():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    # Inject a known value at handle 0x0007.
+    async def fake_read(handle):
+        if handle == 0x0007:
+            return b"\xAA\xBB\xCC"
+        return b""
+    client.read_characteristic = fake_read
+
+    body = bytes([0]) + addr + (0x0007).to_bytes(2, "little")
+    status, data = await svc.dispatch(
+        opcode=op.OP_GATT_READ, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    # Response: att_response(u8=0x00) + value_len(u16 LE) + value
+    assert data[0] == 0x00
+    assert int.from_bytes(data[1:3], "little") == 3
+    assert data[3:6] == b"\xAA\xBB\xCC"
+
+
+@pytest.mark.asyncio
+async def test_read_long_dispatches_same_as_read():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    async def fake_read(handle):
+        return b"\x01" * 50
+    client.read_characteristic = fake_read
+
+    body = bytes([0]) + addr + (0x0007).to_bytes(2, "little")
+    status, data = await svc.dispatch(
+        opcode=op.OP_GATT_READ_LONG, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert int.from_bytes(data[1:3], "little") == 50
+
+
+@pytest.mark.asyncio
+async def test_read_multiple_concatenates_values():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    values = {0x0007: b"\xAA", 0x0009: b"\xBB\xCC"}
+    async def fake_read(handle):
+        return values.get(handle, b"")
+    client.read_characteristic = fake_read
+
+    # Body: addr_type+addr + handles_count(u8) + handles(2×n)
+    body = (
+        bytes([0]) + addr + bytes([2])
+        + (0x0007).to_bytes(2, "little")
+        + (0x0009).to_bytes(2, "little")
+    )
+    status, data = await svc.dispatch(
+        opcode=op.OP_GATT_READ_MULTIPLE, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert data[0] == 0x00
+    assert int.from_bytes(data[1:3], "little") == 3
+    assert data[3:6] == b"\xAA\xBB\xCC"
+
+
+@pytest.mark.asyncio
+async def test_write_dispatches_and_returns_att_status():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    write_log: list[tuple[int, bytes]] = []
+    async def fake_write(handle, value):
+        write_log.append((handle, value))
+    client.write_characteristic = fake_write
+
+    body = (
+        bytes([0]) + addr + (0x0007).to_bytes(2, "little")
+        + (3).to_bytes(2, "little") + b"\x01\x02\x03"
+    )
+    status, data = await svc.dispatch(
+        opcode=op.OP_GATT_WRITE, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert data == bytes([0x00])
+    assert write_log == [(0x0007, b"\x01\x02\x03")]
+
+
+@pytest.mark.asyncio
+async def test_write_without_response_logs_write():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    write_log: list[tuple[int, bytes]] = []
+    async def fake_write(handle, value):
+        write_log.append((handle, value))
+    client.write_characteristic = fake_write
+
+    body = (
+        bytes([0]) + addr + (0x0007).to_bytes(2, "little")
+        + (2).to_bytes(2, "little") + b"\xAA\xBB"
+    )
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GATT_WRITE_WITHOUT_RSP, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert write_log == [(0x0007, b"\xAA\xBB")]
+
+
+@pytest.mark.asyncio
+async def test_write_long_dispatches_same_as_write():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    write_log: list[tuple[int, bytes]] = []
+    async def fake_write(handle, value):
+        write_log.append((handle, value))
+    client.write_characteristic = fake_write
+
+    payload = b"\x00" * 30
+    body = (
+        bytes([0]) + addr + (0x0007).to_bytes(2, "little")
+        + len(payload).to_bytes(2, "little") + payload
+    )
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GATT_WRITE_LONG, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert write_log == [(0x0007, payload)]

@@ -510,3 +510,87 @@ class GattService(BtpService):
             out.append(len(d.uuid))
             out.extend(d.uuid)
         return op.BTP_STATUS_SUCCESS, bytes(out)
+
+    # ---- Read variants ---------------------------------------------------
+
+    async def _handle_op_11(self, controller_index: int, data: bytes):
+        """READ — body: addr_type(1)+addr(6)+handle(u16 LE)."""
+        if len(data) != 9:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        handle = int.from_bytes(data[7:9], "little")
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            value = await client.read_characteristic(handle)
+        except Exception:
+            logger.exception("GATT READ raised")
+            return op.BTP_STATUS_FAILED, b""
+        out = bytes([0x00]) + len(value).to_bytes(2, "little") + value
+        return op.BTP_STATUS_SUCCESS, out
+
+    async def _handle_op_13(self, controller_index: int, data: bytes):
+        """READ_LONG — same body as READ; GATTClient.read_characteristic handles blobs."""
+        return await self._handle_op_11(controller_index, data)
+
+    async def _handle_op_14(self, controller_index: int, data: bytes):
+        """READ_MULTIPLE — body: addr_type+addr+count(u8)+handles(2*count).
+        Concatenates values from individual READs."""
+        if len(data) < 8:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        count = data[7]
+        if 8 + 2 * count > len(data):
+            return op.BTP_STATUS_FAILED, b""
+        handles = [
+            int.from_bytes(data[8 + 2 * i : 10 + 2 * i], "little")
+            for i in range(count)
+        ]
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        chunks = bytearray()
+        for h in handles:
+            try:
+                chunks.extend(await client.read_characteristic(h))
+            except Exception:
+                logger.exception("GATT READ_MULTIPLE handle 0x%04X raised", h)
+                return op.BTP_STATUS_FAILED, b""
+        out = bytes([0x00]) + len(chunks).to_bytes(2, "little") + bytes(chunks)
+        return op.BTP_STATUS_SUCCESS, out
+
+    # ---- Write variants --------------------------------------------------
+
+    async def _handle_op_17(self, controller_index: int, data: bytes):
+        """WRITE — body: addr_type+addr+handle+value_len(u16 LE)+value.
+        Returns att_response(u8)."""
+        if len(data) < 11:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        handle = int.from_bytes(data[7:9], "little")
+        value_len = int.from_bytes(data[9:11], "little")
+        if 11 + value_len > len(data):
+            return op.BTP_STATUS_FAILED, b""
+        value = bytes(data[11:11 + value_len])
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            await client.write_characteristic(handle, value)
+        except Exception:
+            logger.exception("GATT WRITE raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, bytes([0x00])
+
+    async def _handle_op_15(self, controller_index: int, data: bytes):
+        """WRITE_WITHOUT_RSP — same body as WRITE; ATT-level no-response."""
+        return await self._handle_op_17(controller_index, data)
+
+    async def _handle_op_18(self, controller_index: int, data: bytes):
+        """WRITE_LONG — same body; GATTClient transparently prepares/executes."""
+        return await self._handle_op_17(controller_index, data)
+
+    async def _handle_op_19(self, controller_index: int, data: bytes):
+        """WRITE_RELIABLE — same body; not distinguished at GATTClient surface."""
+        return await self._handle_op_17(controller_index, data)
