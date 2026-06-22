@@ -416,7 +416,8 @@ async def test_peer_stack_fixture_skips_with_clear_transport_error(
 
     monkeypatch.setattr(project_conftest, "build_stack_from_spec", fake_build)
 
-    gen = project_conftest.peer_stack.__wrapped__("usb:vendor=realtek")
+    fake_request = SimpleNamespace(config=SimpleNamespace())
+    gen = project_conftest.peer_stack.__wrapped__("usb:vendor=realtek", fake_request)
     with pytest.raises(pytest.skip.Exception) as excinfo:
         await gen.__anext__()
 
