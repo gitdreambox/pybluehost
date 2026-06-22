@@ -69,6 +69,27 @@ def _decode_uuid(data: bytes, *, offset: int) -> tuple[bytes, int]:
     return bytes(data[offset + 1 : offset + 1 + length]), offset + 1 + length
 
 
+def _encode_services(services) -> bytes:
+    """Encode [(start, end, uuid_bytes), ...] per auto-pts wire format.
+
+    Wire layout per btp_gatt.txt:
+      services_count (u8)
+      [for each service]
+        start_handle (u16 LE)
+        end_handle   (u16 LE)
+        uuid_len     (u8)  -- 2 or 16
+        uuid_bytes         -- LE order on the wire (BTP-internal)
+    """
+    out = bytearray()
+    out.append(len(services))
+    for start, end, uuid_bytes in services:
+        out.extend(start.to_bytes(2, "little"))
+        out.extend(end.to_bytes(2, "little"))
+        out.append(len(uuid_bytes))
+        out.extend(uuid_bytes)
+    return bytes(out)
+
+
 class GattService(BtpService):
     """GATT BTP service (both server-build and client-drive sides)."""
 
@@ -324,3 +345,78 @@ class GattService(BtpService):
         self._all_attrs.clear()
         self._next_handle = 1
         return op.BTP_STATUS_SUCCESS, b""
+
+    # ---- Client helpers --------------------------------------------------
+
+    def _resolve_gatt_client(self, addr: bytes):
+        """Find a GATTClient for the LE connection whose peer matches addr bytes."""
+        try:
+            session = self._actions.status()
+        except Exception:
+            return None
+        for h, info in session.connections.items():
+            peer_raw = (
+                getattr(info.peer, "address", None)
+                or getattr(info.peer, "bytes", None)
+                or info.peer
+            )
+            if bytes(peer_raw)[:6] == bytes(addr)[:6]:
+                return getattr(info, "gatt_client", None)
+        return None
+
+    # ---- Exchange MTU ----------------------------------------------------
+
+    async def _handle_op_0a(self, controller_index: int, data: bytes):
+        """EXCHANGE_MTU (0x0a) — body: addr_type(1)+addr(6)+mtu(u16 LE)."""
+        if len(data) != 9:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        mtu = int.from_bytes(data[7:9], "little")
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            negotiated = await client.exchange_mtu(mtu)
+        except Exception:
+            logger.exception("GATT Exchange MTU raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, int(negotiated).to_bytes(2, "little")
+
+    # ---- Discover All Primary Services ------------------------------------
+
+    async def _handle_op_0b(self, controller_index: int, data: bytes):
+        """DISC_ALL_PRIM_SVCS (0x0b) — body: addr_type(1)+addr(6)."""
+        if len(data) != 7:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            services = await client.discover_all_services()
+        except Exception:
+            logger.exception("GATT DISC_ALL_PRIM_SVCS raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, _encode_services(services)
+
+    # ---- Discover Primary Service by UUID ---------------------------------
+
+    async def _handle_op_0c(self, controller_index: int, data: bytes):
+        """DISC_PRIM_SVC_BY_UUID (0x0c) — body: addr_type(1)+addr(6)+uuid_len(1)+uuid_bytes."""
+        if len(data) < 8:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        try:
+            target_uuid, _ = _decode_uuid(data, offset=7)
+        except ValueError:
+            return op.BTP_STATUS_FAILED, b""
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            services = await client.discover_all_services()
+        except Exception:
+            logger.exception("GATT DISC_PRIM_SVC_BY_UUID raised")
+            return op.BTP_STATUS_FAILED, b""
+        filtered = [s for s in services if s[2] == target_uuid]
+        return op.BTP_STATUS_SUCCESS, _encode_services(filtered)

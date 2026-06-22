@@ -568,6 +568,10 @@ class GATTClient:
             await self._on_insufficient_encryption(self._connection_handle)
             return await coro_factory()
 
+    async def exchange_mtu(self, mtu: int) -> int:
+        """ATT MTU Exchange (Core Spec Vol 3 Part F §3.4.2) — returns negotiated MTU."""
+        return await self._bearer.exchange_mtu(mtu)
+
     async def read_characteristic(self, handle: int) -> bytes:
         return await self._request_with_retry(lambda: self._bearer.read(handle))
 
