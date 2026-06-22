@@ -209,3 +209,82 @@ async def test_start_discovery_calls_actions_scan():
     )
     assert status == op.BTP_STATUS_SUCCESS
     assert any(c[0] == "scan" for c in actions.calls)
+
+
+# ---------------------------------------------------------------------------
+# T6: Connect / Disconnect
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_connect_decodes_addr_and_calls_actions():
+    from unittest.mock import MagicMock
+    actions = _FakeActions()
+
+    async def fake_connect(peer, *, le=True):
+        actions.calls.append(("connect", {"peer_bytes": getattr(peer, "bytes", None)
+                                          or getattr(peer, "address", None), "le": le}))
+        return 0x000C
+
+    actions.connect = fake_connect
+    svc = GapService(actions=actions, tester=MagicMock())
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    body = bytes([op.GAP_ADDR_TYPE_RANDOM]) + addr
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_CONNECT, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert any(c[0] == "connect" for c in actions.calls)
+
+
+@pytest.mark.asyncio
+async def test_connect_rejects_wrong_length():
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_CONNECT, controller_index=0, data=b"\x00\x01\x02",
+    )
+    assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_disconnect_decodes_addr_and_calls_actions():
+    from unittest.mock import MagicMock
+    from dataclasses import dataclass
+
+    @dataclass
+    class _FakePeer:
+        address: bytes
+
+        @property
+        def bytes(self): return self.address
+
+    @dataclass
+    class _FakeConnInfo:
+        handle: int
+        peer: _FakePeer
+        transport: str = "le"
+        gatt_client: object = None
+
+    @dataclass
+    class _FakeSession:
+        connections: dict
+        last_handle: int | None = None
+
+    addr_bytes = bytes.fromhex("AABBCCDDEEFF")
+    session = _FakeSession(connections={
+        0x000C: _FakeConnInfo(handle=0x000C, peer=_FakePeer(address=addr_bytes))
+    })
+    actions = _FakeActions()
+    actions.status = lambda: session
+
+    async def fake_disconnect(handle=None):
+        actions.calls.append(("disconnect", {"handle": handle}))
+
+    actions.disconnect = fake_disconnect
+    svc = GapService(actions=actions, tester=MagicMock())
+    body = bytes([op.GAP_ADDR_TYPE_RANDOM]) + addr_bytes
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_DISCONNECT, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert any(c[0] == "disconnect" and c[1]["handle"] == 0x000C for c in actions.calls)

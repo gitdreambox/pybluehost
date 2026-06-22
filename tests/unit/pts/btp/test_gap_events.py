@@ -110,3 +110,44 @@ async def test_stop_discovery_clears_callback():
     actions.simulate_scan_result(result)
     await asyncio.sleep(0)
     assert len(tester.events) == 0
+
+
+# ---------------------------------------------------------------------------
+# T6: DEVICE_CONNECTED / DEVICE_DISCONNECTED events
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_device_connected_event_on_state_change():
+    tester = _FakeTester()
+    actions = _FakeActions()
+    svc = GapService(actions=actions, tester=tester)
+    svc.on_connection_state_change(
+        handle=0x000C, addr=bytes.fromhex("AABBCCDDEEFF"),
+        addr_type=op.GAP_ADDR_TYPE_RANDOM, connected=True,
+    )
+    await asyncio.sleep(0)
+    assert len(tester.events) == 1
+    evt = tester.events[0]
+    assert evt.opcode == op.OP_GAP_EVENT_DEVICE_CONNECTED
+    assert evt.data[0] == op.GAP_ADDR_TYPE_RANDOM
+    assert evt.data[1:7] == bytes.fromhex("AABBCCDDEEFF")
+    # Payload includes conn_interval(2) + latency(2) + timeout(2) — 13 bytes total
+    assert len(evt.data) == 13
+
+
+@pytest.mark.asyncio
+async def test_device_disconnected_event_on_state_change():
+    tester = _FakeTester()
+    actions = _FakeActions()
+    svc = GapService(actions=actions, tester=tester)
+    svc.on_connection_state_change(
+        handle=0x000C, addr=bytes.fromhex("AABBCCDDEEFF"),
+        addr_type=op.GAP_ADDR_TYPE_RANDOM, connected=True,
+    )
+    svc.on_connection_state_change(
+        handle=0x000C, addr=bytes.fromhex("AABBCCDDEEFF"),
+        addr_type=op.GAP_ADDR_TYPE_RANDOM, connected=False,
+    )
+    await asyncio.sleep(0)
+    assert tester.events[-1].opcode == op.OP_GAP_EVENT_DEVICE_DISCONNECTED
+    assert len(tester.events[-1].data) == 7

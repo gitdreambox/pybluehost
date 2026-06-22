@@ -21,6 +21,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _decode_bd_addr(addr_bytes: bytes) -> "BDAddress":
+    """6-byte BTP address (little-endian per BD_ADDR convention) → BDAddress.
+
+    The default address type is PUBLIC; callers wanting RANDOM must override
+    via the surrounding command (BTP commands carry the type as a separate byte).
+    """
+    from pybluehost.core.address import AddressType, BDAddress
+    return BDAddress(address=bytes(addr_bytes), type=AddressType.PUBLIC)
+
+
+def _encode_bd_addr(addr) -> bytes:
+    """BDAddress → 6 bytes (matches the wire format `address` field)."""
+    if addr is None:
+        return bytes(6)
+    # Real BDAddress uses `.address`; test fakes may use `.bytes`.
+    raw = getattr(addr, "address", None)
+    if raw is None:
+        raw = getattr(addr, "bytes", None)
+    if raw is None:
+        try:
+            raw = bytes(addr)
+        except Exception:
+            raw = bytes(6)
+    return bytes(raw)[:6].ljust(6, b"\x00")
+
+
 class GapService(BtpService):
     """LE GAP BTP service. Routes opcodes to IutActions calls; emits async
     GAP events to autoptsclient via BtpTester.emit_event."""
@@ -251,3 +277,70 @@ class GapService(BtpService):
         except RuntimeError:
             # No running event loop — should not happen in normal usage.
             logger.exception("GAP DEVICE_FOUND: no event loop; dropping")
+
+    # ---- Connect / Disconnect ---------------------------------------------
+
+    async def _handle_op_0e(self, controller_index: int, data: bytes):
+        """CONNECT — body: addr_type(1), addr(6)."""
+        if len(data) != 7:
+            return op.BTP_STATUS_FAILED, b""
+        addr_bytes = bytes(data[1:7])
+        peer = _decode_bd_addr(addr_bytes)
+        try:
+            await self._actions.connect(peer, le=True)
+        except Exception:
+            logger.exception("GAP CONNECT: actions.connect raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    async def _handle_op_0f(self, controller_index: int, data: bytes):
+        """DISCONNECT — body: addr_type(1), addr(6). Resolve to handle via session table."""
+        if len(data) != 7:
+            return op.BTP_STATUS_FAILED, b""
+        addr_bytes = bytes(data[1:7])
+        try:
+            session = self._actions.status()
+            target_handle = None
+            for h, info in session.connections.items():
+                if _encode_bd_addr(info.peer) == addr_bytes:
+                    target_handle = h
+                    break
+            if target_handle is None:
+                return op.BTP_STATUS_FAILED, b""
+            await self._actions.disconnect(target_handle)
+        except Exception:
+            logger.exception("GAP DISCONNECT: actions.disconnect raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    # ---- Connection state event hook --------------------------------------
+
+    def on_connection_state_change(
+        self, *, handle: int, addr: bytes, addr_type: int, connected: bool,
+    ) -> None:
+        """Synthesize a DEVICE_CONNECTED or DEVICE_DISCONNECTED BTP event.
+
+        Wire this method as a callback into stack.on_connection_event when
+        registering GapService in `pts-tester` (Task 8).
+        """
+        if self._tester is None:
+            return
+        opcode = (
+            op.OP_GAP_EVENT_DEVICE_CONNECTED if connected
+            else op.OP_GAP_EVENT_DEVICE_DISCONNECTED
+        )
+        payload = bytearray()
+        payload.append(addr_type & 0xFF)
+        payload.extend(bytes(addr)[:6].ljust(6, b"\x00"))
+        if connected:
+            # conn_interval(u16) + latency(u16) + supervision_timeout(u16) — zeros
+            # for now; the real stack will supply once wired (Task 8).
+            payload.extend(b"\x00" * 6)
+        frame = BtpFrame(
+            service=op.SERVICE_GAP, opcode=opcode,
+            controller_index=self._controller_index, data=bytes(payload),
+        )
+        try:
+            asyncio.create_task(self._tester.emit_event(frame))
+        except RuntimeError:
+            logger.exception("GAP connection event: no event loop; dropping")
