@@ -6,10 +6,12 @@ Command handlers land in P.6 Tasks 2-7; this file is the skeleton.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
 from pybluehost.pts.btp import opcodes as op
+from pybluehost.pts.btp.protocol import BtpFrame
 from pybluehost.pts.btp.services.base import BtpService
 
 if TYPE_CHECKING:
@@ -29,6 +31,7 @@ class GapService(BtpService):
         self._actions = actions
         self._tester = tester
         self._current_settings: int = 0
+        self._controller_index: int = 0
 
     async def _handle_op_01(self, controller_index: int, data: bytes):
         """READ_SUPPORTED_COMMANDS — bitfield of supported GAP opcodes."""
@@ -160,3 +163,91 @@ class GapService(BtpService):
             return op.BTP_STATUS_FAILED, b""
         self._current_settings &= ~(1 << 9)
         return op.BTP_STATUS_SUCCESS, self._current_settings.to_bytes(4, "little")
+
+    # ---- Start / Stop Discovery -------------------------------------------
+
+    async def _handle_op_0c(self, controller_index: int, data: bytes):
+        """START_DISCOVERY. Body: flags(u8) — bit 0=LE, bit 1=BR/EDR, bit 2=active."""
+        if len(data) != 1:
+            return op.BTP_STATUS_FAILED, b""
+        flags = data[0]
+        active = bool(flags & 0x04)
+        try:
+            await self._actions.scan(active=active, on_result=self._on_scan_result)
+        except Exception:
+            logger.exception("GAP START_DISCOVERY: scan() raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    async def _handle_op_0d(self, controller_index: int, data: bytes):
+        """STOP_DISCOVERY. No body."""
+        stop_fn = getattr(self._actions, "stop_scan", None)
+        if stop_fn is not None:
+            try:
+                await stop_fn()
+            except Exception:
+                logger.exception("GAP STOP_DISCOVERY: stop_scan raised")
+                return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    def _on_scan_result(self, result) -> None:
+        """Adapter: BLEScanner ScanResult -> BTP DEVICE_FOUND event."""
+        if self._tester is None:
+            return
+        addr_obj = getattr(result, "address", None)
+        if addr_obj is None:
+            return
+
+        # Normalise address type — may be IntEnum or plain int.
+        addr_type = getattr(addr_obj, "address_type", 0)
+        addr_type_value = int(getattr(addr_type, "value", addr_type)) & 0xFF
+
+        # 6-byte address. Real BDAddress uses `.address`; test fakes may use `.bytes`.
+        addr_bytes = getattr(addr_obj, "bytes", None)
+        if addr_bytes is None:
+            addr_bytes = getattr(addr_obj, "address", None)
+        if addr_bytes is None:
+            try:
+                addr_bytes = bytes(addr_obj)
+            except Exception:
+                addr_bytes = bytes(6)
+        addr_bytes = bytes(addr_bytes)[:6].ljust(6, b"\x00")
+
+        rssi = int(getattr(result, "rssi", 0)) & 0xFF
+
+        ad = getattr(result, "advertising_data", None)
+        if ad is None:
+            eir = b""
+        elif hasattr(ad, "to_bytes"):
+            try:
+                eir = ad.to_bytes()
+            except Exception:
+                eir = b""
+        elif isinstance(ad, (bytes, bytearray)):
+            eir = bytes(ad)
+        else:
+            eir = b""
+
+        flags = 0
+        if getattr(result, "connectable", False):
+            flags |= 0x01
+
+        payload = bytearray()
+        payload.append(addr_type_value)
+        payload.extend(addr_bytes)
+        payload.append(rssi)
+        payload.append(flags & 0xFF)
+        payload.extend(len(eir).to_bytes(2, "little"))
+        payload.extend(eir)
+
+        frame = BtpFrame(
+            service=op.SERVICE_GAP,
+            opcode=op.OP_GAP_EVENT_DEVICE_FOUND,
+            controller_index=self._controller_index,
+            data=bytes(payload),
+        )
+        try:
+            asyncio.create_task(self._tester.emit_event(frame))
+        except RuntimeError:
+            # No running event loop — should not happen in normal usage.
+            logger.exception("GAP DEVICE_FOUND: no event loop; dropping")

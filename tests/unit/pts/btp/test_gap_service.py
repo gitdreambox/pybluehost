@@ -187,3 +187,25 @@ async def test_start_advertising_truncated_body_fails():
         opcode=op.OP_GAP_START_ADVERTISING, controller_index=0, data=body,
     )
     assert status == op.BTP_STATUS_FAILED
+
+
+# ---------------------------------------------------------------------------
+# T5: Start / Stop Discovery
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_start_discovery_calls_actions_scan():
+    from unittest.mock import MagicMock
+    actions = _FakeActions()
+
+    async def fake_scan(*, active=False, on_result=None):
+        actions.calls.append(("scan", {"active": active, "on_result": on_result}))
+
+    actions.scan = fake_scan
+    svc = GapService(actions=actions, tester=MagicMock())
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GAP_START_DISCOVERY, controller_index=0,
+        data=bytes([0x01]),       # LE only
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert any(c[0] == "scan" for c in actions.calls)
