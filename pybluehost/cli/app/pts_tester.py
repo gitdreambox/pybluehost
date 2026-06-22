@@ -34,6 +34,7 @@ async def _pts_tester_main(stack, stop_event, *, listen: str):
         BtpServiceRegistry, BtpTester, CoreService,
     )
     from pybluehost.pts.btp.services.gap import GapService
+    from pybluehost.pts.btp.services.gatt import GattService
 
     if ":" not in listen:
         raise ValueError(f"--listen must be host:port, got {listen!r}")
@@ -46,9 +47,12 @@ async def _pts_tester_main(stack, stop_event, *, listen: str):
     tester = BtpTester(registry=registry, host=host, port=port)
     gap = GapService(actions=actions, tester=tester)
     registry.register(gap)
+    gatt = GattService(actions=actions, tester=tester)
+    registry.register(gatt)
     await tester.start()
 
-    # Hook stack connection events into GapService for DEVICE_CONNECTED/DISCONNECTED.
+    # Hook stack connection events into GapService for DEVICE_CONNECTED/DISCONNECTED
+    # and attach GATT notification listeners to new central connections.
     def _on_conn(ev):
         if ev.state not in ("connected", "disconnected"):
             return
@@ -60,17 +64,29 @@ async def _pts_tester_main(stack, stop_event, *, listen: str):
         raw = getattr(peer, "address", None) or getattr(peer, "bytes", None)
         if raw is None:
             return
+        peer_bytes = bytes(raw)[:6].ljust(6, b"\x00")
         gap.on_connection_state_change(
             handle=ev.handle or 0,
-            addr=bytes(raw)[:6].ljust(6, b"\x00"),
+            addr=peer_bytes,
             addr_type=int(addr_type),
             connected=(ev.state == "connected"),
         )
+        # When a central connection comes up, wire GATT notifications through
+        # GattService → BTP 0x80 event stream.
+        if ev.state == "connected":
+            try:
+                session = actions.status()
+                conn_info = session.connections.get(ev.handle)
+            except Exception:
+                conn_info = None
+            client = getattr(conn_info, "gatt_client", None) if conn_info else None
+            if client is not None:
+                gatt.attach_to_gatt_client(client, peer=peer_bytes, addr_type=int(addr_type))
     stack.on_connection_event(_on_conn)
 
     logger.info(
         "PyBlueHost BTP tester listening on %s:%d "
-        "(Core + GAP; GATT/L2CAP/SMP land in P.7-P.8)",
+        "(Core + GAP + GATT; L2CAP/SMP land in P.8)",
         host, port,
     )
     try:
