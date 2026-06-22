@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from pybluehost.pts.btp import opcodes as op
+from pybluehost.pts.btp.protocol import BtpFrame
 from pybluehost.pts.btp.services.base import BtpService
 
 if TYPE_CHECKING:
@@ -202,6 +203,7 @@ class GattService(BtpService):
         """SET_VALUE (0x06) — update the stored value of an attribute by handle.
 
         BTP payload: u16 handle, u16 value_len, value_bytes.
+        Emits 0x81 Attribute Value Changed event on success.
         """
         if len(data) < 4:
             return op.BTP_STATUS_FAILED, b""
@@ -213,7 +215,35 @@ class GattService(BtpService):
         if attr is None:
             return op.BTP_STATUS_FAILED, b""
         attr.value = bytes(data[4:4 + value_len])
+        self._emit_attr_value_changed(handle, attr.value)
         return op.BTP_STATUS_SUCCESS, b""
+
+    def _emit_attr_value_changed(self, handle: int, value: bytes) -> None:
+        """Push the upstream 0x81 event to autoptsclient.
+
+        Payload: handle(u16 LE) + data_len(u16 LE) + data.
+        """
+        if self._tester is None:
+            return
+        payload = (
+            handle.to_bytes(2, "little")
+            + len(value).to_bytes(2, "little")
+            + bytes(value)
+        )
+        frame = BtpFrame(
+            service=op.SERVICE_GATT,
+            opcode=op.OP_GATT_EVENT_ATTR_VALUE_CHANGED,
+            controller_index=self._controller_index,
+            data=payload,
+        )
+        try:
+            import asyncio
+            import inspect
+            coro = self._tester.emit_event(frame)
+            if inspect.iscoroutine(coro):
+                asyncio.create_task(coro)
+        except RuntimeError:
+            logger.exception("GATT attr-value-changed event: no event loop; dropping")
 
     # ---- Start Server ----------------------------------------------------
 
