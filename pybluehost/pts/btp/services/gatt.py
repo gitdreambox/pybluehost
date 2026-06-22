@@ -594,3 +594,65 @@ class GattService(BtpService):
     async def _handle_op_19(self, controller_index: int, data: bytes):
         """WRITE_RELIABLE — same body; not distinguished at GATTClient surface."""
         return await self._handle_op_17(controller_index, data)
+
+    # ---- Cfg Notify / Cfg Indicate (CCCD write) --------------------------
+
+    async def _cfg_subscribe(self, data: bytes, *, enable_value: int) -> tuple[int, bytes]:
+        if len(data) != 10:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        enable = data[7]
+        cccd_handle = int.from_bytes(data[8:10], "little")
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        write_value = enable_value if enable else 0x0000
+        try:
+            await client.write_characteristic(cccd_handle, write_value.to_bytes(2, "little"))
+        except Exception:
+            logger.exception("GATT Cfg subscribe write raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
+
+    async def _handle_op_1a(self, controller_index: int, data: bytes):
+        """CFG_NOTIFY — enable=1 writes 0x0001 to CCCD; enable=0 writes 0x0000."""
+        return await self._cfg_subscribe(data, enable_value=0x0001)
+
+    async def _handle_op_1b(self, controller_index: int, data: bytes):
+        """CFG_INDICATE — enable=1 writes 0x0002 to CCCD; enable=0 writes 0x0000."""
+        return await self._cfg_subscribe(data, enable_value=0x0002)
+
+    # ---- Notification event wiring --------------------------------------
+
+    def attach_to_gatt_client(self, client, *, peer: bytes, addr_type: int) -> None:
+        """Wire BTP event emission onto a v1.0 GATTClient's notification hook.
+
+        When the peer sends a Handle Value Notification, the registered callback
+        synthesises a BTP 0x80 event and pushes it via the bound tester.
+        """
+        import asyncio
+
+        peer_bytes = bytes(peer)[:6]
+        type_byte = int(addr_type) & 0xFF
+
+        def _on_notification(char_handle: int, value: bytes):
+            if self._tester is None:
+                return
+            payload = bytearray()
+            payload.append(type_byte)
+            payload.extend(peer_bytes)
+            payload.extend(int(char_handle).to_bytes(2, "little"))
+            payload.extend(len(value).to_bytes(2, "little"))
+            payload.extend(value)
+            frame = BtpFrame(
+                service=op.SERVICE_GATT,
+                opcode=op.OP_GATT_EVENT_NOTIFICATION,
+                controller_index=self._controller_index,
+                data=bytes(payload),
+            )
+            try:
+                asyncio.create_task(self._tester.emit_event(frame))
+            except RuntimeError:
+                logger.exception("GATT notification: no event loop; dropping")
+
+        client.on_notification(_on_notification)

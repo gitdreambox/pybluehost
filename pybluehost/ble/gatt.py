@@ -572,6 +572,14 @@ class GATTClient:
         """ATT MTU Exchange (Core Spec Vol 3 Part F §3.4.2) — returns negotiated MTU."""
         return await self._bearer.exchange_mtu(mtu)
 
+    def on_notification(self, cb) -> None:
+        """Register a callback fired on each incoming Handle Value Notification.
+
+        Signature: cb(value_handle: int, value: bytes) -> None | Awaitable[None]
+        Replaces any previously-registered handler on the underlying ATT bearer.
+        """
+        self._bearer.set_notification_handler(cb)
+
     async def read_characteristic(self, handle: int) -> bytes:
         return await self._request_with_retry(lambda: self._bearer.read(handle))
 
