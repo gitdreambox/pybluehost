@@ -16,6 +16,10 @@ from pybluehost.hci.constants import (
     HCI_RESET,
     HCI_SET_EVENT_MASK,
     HCI_LE_SET_EVENT_MASK,
+    HCI_LE_SET_ADVERTISE_ENABLE,
+    HCI_LE_SET_ADVERTISING_DATA,
+    HCI_LE_SET_ADVERTISING_PARAMS,
+    HCI_LE_SET_SCAN_RESPONSE_DATA,
     HCI_WRITE_LE_HOST_SUPPORTED,
     HCI_WRITE_SIMPLE_PAIRING_MODE,
     HCI_WRITE_SCAN_ENABLE,
@@ -42,6 +46,7 @@ from pybluehost.hci.packets import (
     HCI_LE_Set_Scan_Parameters_Command,
     HCI_LE_Set_Random_Address_Command,
     HCI_LE_Read_Local_Supported_Features_Command,
+    HCICommand,
     decode_hci_packet,
 )
 from pybluehost.hci.virtual import VirtualController
@@ -183,6 +188,16 @@ async def test_empty_data_returns_none(vc):
         (lambda: HCI_Host_Buffer_Size_Command(), HCI_HOST_BUFFER_SIZE),
         (lambda: HCI_LE_Set_Scan_Parameters_Command(), HCI_LE_SET_SCAN_PARAMS),
         (lambda: HCI_LE_Set_Random_Address_Command(), HCI_LE_SET_RANDOM_ADDRESS),
+        (lambda: HCICommand(HCI_LE_SET_ADVERTISE_ENABLE, b"\x00"), HCI_LE_SET_ADVERTISE_ENABLE),
+        (lambda: HCICommand(HCI_LE_SET_ADVERTISING_DATA, bytes(32)), HCI_LE_SET_ADVERTISING_DATA),
+        (lambda: HCICommand(HCI_LE_SET_SCAN_RESPONSE_DATA, bytes(32)), HCI_LE_SET_SCAN_RESPONSE_DATA),
+        (
+            lambda: HCICommand(
+                HCI_LE_SET_ADVERTISING_PARAMS,
+                struct.pack("<HHBBB6sBB", 0x00A0, 0x00A0, 0x00, 0x00, 0x00, bytes(6), 0x07, 0x00),
+            ),
+            HCI_LE_SET_ADVERTISING_PARAMS,
+        ),
     ],
 )
 async def test_status_only_commands(vc, cmd_factory, expected_opcode):

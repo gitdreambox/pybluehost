@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 _A2DP_BYTES_PER_FRAME = 2 * 16 * 8 * 2   # 512 bytes
+_A2DP_STEREO_FRAMES_PER_SBC_FRAME = 16 * 8
 
 
 def register_a2dp_source_command(subparsers: argparse._SubParsersAction) -> None:
@@ -72,7 +73,7 @@ async def _stream_from_wav(session, wav_path: str, stop: asyncio.Event) -> None:
                 f"A2DP source requires 44.1 kHz / 16-bit / stereo WAV; "
                 f"got {w.getframerate()} Hz / {w.getsampwidth()*8} bit / {w.getnchannels()} ch"
             )
-        n_samples = 256
+        n_samples = _A2DP_STEREO_FRAMES_PER_SBC_FRAME
         while not stop.is_set():
             pcm = w.readframes(n_samples)
             if len(pcm) < _A2DP_BYTES_PER_FRAME:
@@ -89,12 +90,15 @@ async def _stream_from_device(session, device_index, stop: asyncio.Event) -> Non
             "Install 'pybluehost[audio]' to use live device input"
         )
     dev = AudioInputDevice(
-        sample_rate=44100, channels=2, device=device_index, buffer_frames=256,
+        sample_rate=44100,
+        channels=2,
+        device=device_index,
+        buffer_frames=_A2DP_STEREO_FRAMES_PER_SBC_FRAME,
     )
     await dev.start()
     try:
         while not stop.is_set():
-            pcm = await dev.read_frame(256)
+            pcm = await dev.read_frame(_A2DP_STEREO_FRAMES_PER_SBC_FRAME)
             await session.send_pcm(pcm)
     finally:
         await dev.stop()

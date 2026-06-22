@@ -9,6 +9,7 @@ from pybluehost.cli._lifecycle import (
     add_common_arguments, run_app_command, trace_kwargs_from_args,
 )
 from pybluehost.core.address import BDAddress
+from pybluehost.core.gap_common import ClassOfDevice
 from pybluehost.profiles.classic import HSPAudioGateway, HSPHeadset
 from pybluehost.profiles.classic._hsp_constants import HSP_AG_RFCOMM_CHANNEL
 from pybluehost.profiles.classic._sco_loopback import (
@@ -18,6 +19,12 @@ from pybluehost.stack import Stack
 
 
 logger = logging.getLogger(__name__)
+_PHONE_AUDIO_COD = ClassOfDevice(
+    major_device_class=0x02,
+    minor_device_class=0x03,
+    service_class=0x120,
+)
+_SCO_WAV_PEER_ARM_DELAY_SECONDS = 0.25
 
 
 def register_hsp_test_command(subparsers: argparse._SubParsersAction) -> None:
@@ -111,6 +118,8 @@ async def _run_hs(stack: Stack, args, stop: asyncio.Event) -> None:
     await session.request_audio()
     await asyncio.sleep(0.1)
     sco_link = await session.setup_sco()
+    if getattr(args, "wav", None):
+        await asyncio.sleep(_SCO_WAV_PEER_ARM_DELAY_SECONDS)
 
     snd_kind, snd = _build_sender(args, sco_link)
     rcv_kind, rcv = _build_receiver(args, sco_link)
@@ -164,20 +173,31 @@ async def _run_ag(stack: Stack, args, stop: asyncio.Event) -> None:
 
     asyncio.create_task(stop_with_drain())
     seen: set[int] = set()
-    while not stop.is_set():
-        await asyncio.sleep(0.2)
-        for _h, sess in list(ag._sessions.items()):
-            sco = getattr(sess, "_sco_link", None)
-            if sco is not None and id(sco) not in seen:
-                seen.add(id(sco))
-                rcv_kind, rcv = _build_receiver(args, sco, ag_output=args.output)
-                if rcv_kind == "speaker":
-                    spk_dev, spk_recv = rcv
-                    if not speaker_started:
-                        await spk_dev.start()
-                        speaker_started = True
-                    receivers.append(spk_recv)
-                    logger.info("HSP AG armed speaker receiver on SCO handle 0x%04X", sco.handle)
-                elif rcv_kind == "wav":
-                    receivers.append(rcv)
-                    logger.info("HSP AG armed WAV receiver on SCO handle 0x%04X", sco.handle)
+    discoverability = getattr(getattr(stack, "gap", None), "classic_discoverability", None)
+    if discoverability is not None:
+        await discoverability.set_device_name("PyBlueHost HSP AG")
+        await discoverability.set_class_of_device(_PHONE_AUDIO_COD)
+        await discoverability.set_discoverable(True)
+        await discoverability.set_connectable(True)
+    try:
+        while not stop.is_set():
+            await asyncio.sleep(0.2)
+            for _h, sess in list(ag._sessions.items()):
+                sco = getattr(sess, "_sco_link", None)
+                if sco is not None and id(sco) not in seen:
+                    seen.add(id(sco))
+                    rcv_kind, rcv = _build_receiver(args, sco, ag_output=args.output)
+                    if rcv_kind == "speaker":
+                        spk_dev, spk_recv = rcv
+                        if not speaker_started:
+                            await spk_dev.start()
+                            speaker_started = True
+                        receivers.append(spk_recv)
+                        logger.info("HSP AG armed speaker receiver on SCO handle 0x%04X", sco.handle)
+                    elif rcv_kind == "wav":
+                        receivers.append(rcv)
+                        logger.info("HSP AG armed WAV receiver on SCO handle 0x%04X", sco.handle)
+    finally:
+        if discoverability is not None:
+            await discoverability.set_discoverable(False)
+            await discoverability.set_connectable(False)

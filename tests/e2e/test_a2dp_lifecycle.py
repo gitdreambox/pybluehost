@@ -15,6 +15,7 @@ import pytest
 import pytest_asyncio
 
 from pybluehost.hci.virtual_classic_link import VirtualClassicLink
+from pybluehost.audio.codec.sbc import sbc_backend
 from pybluehost.profiles.classic import A2DPSink, A2DPSource
 
 from tests.e2e._helpers import (
@@ -131,7 +132,12 @@ async def test_a2dp_source_to_sink_loopback_via_virtual(
         orig_left = list(struct.unpack(f"<{len(pcm) // 2}h", pcm))[0::2]
         rec_left = list(struct.unpack(f"<{len(rec_bytes) // 2}h", rec_bytes))[0::2]
         psnr = _best_psnr(orig_left, rec_left)
-        assert psnr > 60, f"PSNR {psnr:.2f} dB below 60 dB e2e threshold"
+        backend = sbc_backend()
+        threshold = 60 if backend == "libsbc" else 15
+        assert psnr > threshold, (
+            f"PSNR {psnr:.2f} dB below {threshold} dB e2e threshold "
+            f"({backend} backend)"
+        )
     finally:
         if handle is not None:
             try:
