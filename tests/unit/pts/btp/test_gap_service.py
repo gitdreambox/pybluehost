@@ -80,3 +80,44 @@ async def test_reset_clears_current_settings():
     )
     assert status == op.BTP_STATUS_SUCCESS
     assert svc._current_settings == 0
+
+
+# ---------------------------------------------------------------------------
+# T3: Set Powered / Connectable / Fast Connectable / Discoverable / Bondable
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("opcode,bit", [
+    (op.OP_GAP_SET_POWERED, 0),
+    (op.OP_GAP_SET_CONNECTABLE, 1),
+    (op.OP_GAP_SET_FAST_CONNECTABLE, 2),
+    (op.OP_GAP_SET_DISCOVERABLE, 3),
+    (op.OP_GAP_SET_BONDABLE, 4),
+])
+@pytest.mark.asyncio
+async def test_set_flag_updates_current_settings_bit(opcode, bit):
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    status, data = await svc.dispatch(opcode=opcode, controller_index=0,
+                                       data=bytes([1]))
+    assert status == op.BTP_STATUS_SUCCESS
+    current = int.from_bytes(data, "little")
+    assert (current >> bit) & 1
+
+
+@pytest.mark.asyncio
+async def test_set_powered_off_clears_bit():
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    await svc.dispatch(opcode=op.OP_GAP_SET_POWERED, controller_index=0, data=bytes([1]))
+    _, data = await svc.dispatch(opcode=op.OP_GAP_SET_POWERED, controller_index=0, data=bytes([0]))
+    current = int.from_bytes(data, "little")
+    assert not (current & 0x01)
+
+
+@pytest.mark.asyncio
+async def test_set_command_rejects_empty_data():
+    from unittest.mock import MagicMock
+    svc = GapService(actions=_FakeActions(), tester=MagicMock())
+    status, _ = await svc.dispatch(opcode=op.OP_GAP_SET_POWERED,
+                                    controller_index=0, data=b"")
+    assert status == op.BTP_STATUS_FAILED

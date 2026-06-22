@@ -76,3 +76,50 @@ class GapService(BtpService):
         """RESET — clear per-session GAP state."""
         self._current_settings = 0
         return op.BTP_STATUS_SUCCESS, b""
+
+    _SETTINGS_BITS = {
+        op.OP_GAP_SET_POWERED: 0,
+        op.OP_GAP_SET_CONNECTABLE: 1,
+        op.OP_GAP_SET_FAST_CONNECTABLE: 2,
+        op.OP_GAP_SET_DISCOVERABLE: 3,
+        op.OP_GAP_SET_BONDABLE: 4,
+    }
+
+    def _set_settings_bit(self, opcode: int, value: int) -> bytes:
+        bit = self._SETTINGS_BITS[opcode]
+        if value:
+            self._current_settings |= (1 << bit)
+        else:
+            self._current_settings &= ~(1 << bit)
+        return self._current_settings.to_bytes(4, "little")
+
+    async def _handle_op_05(self, controller_index: int, data: bytes):
+        """SET_POWERED."""
+        if len(data) != 1:
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, self._set_settings_bit(op.OP_GAP_SET_POWERED, data[0])
+
+    async def _handle_op_06(self, controller_index: int, data: bytes):
+        """SET_CONNECTABLE."""
+        if len(data) != 1:
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, self._set_settings_bit(op.OP_GAP_SET_CONNECTABLE, data[0])
+
+    async def _handle_op_07(self, controller_index: int, data: bytes):
+        """SET_FAST_CONNECTABLE."""
+        if len(data) != 1:
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, self._set_settings_bit(op.OP_GAP_SET_FAST_CONNECTABLE, data[0])
+
+    async def _handle_op_08(self, controller_index: int, data: bytes):
+        """SET_DISCOVERABLE. Upstream payload is 1 byte (discoverable flag);
+        some auto-pts variants append a 2-byte duration — we accept either."""
+        if len(data) < 1:
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, self._set_settings_bit(op.OP_GAP_SET_DISCOVERABLE, data[0])
+
+    async def _handle_op_09(self, controller_index: int, data: bytes):
+        """SET_BONDABLE."""
+        if len(data) != 1:
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, self._set_settings_bit(op.OP_GAP_SET_BONDABLE, data[0])
