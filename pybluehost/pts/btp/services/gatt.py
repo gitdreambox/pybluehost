@@ -69,6 +69,23 @@ def _decode_uuid(data: bytes, *, offset: int) -> tuple[bytes, int]:
     return bytes(data[offset + 1 : offset + 1 + length]), offset + 1 + length
 
 
+def _encode_characteristics(chars) -> bytes:
+    """Encode discovered characteristics per BTP wire format.
+
+    Each entry: handle(u16 LE) + properties(u8) + value_handle(u16 LE)
+              + uuid_len(u8) + uuid_bytes.
+    Prefixed with count(u8).
+    """
+    out = bytearray([len(chars) & 0xFF])
+    for c in chars:
+        out.extend(int(c.declaration_handle).to_bytes(2, "little"))
+        out.append(int(c.properties) & 0xFF)
+        out.extend(int(c.value_handle).to_bytes(2, "little"))
+        out.append(len(c.uuid))
+        out.extend(c.uuid)
+    return bytes(out)
+
+
 def _encode_services(services) -> bytes:
     """Encode [(start, end, uuid_bytes), ...] per auto-pts wire format.
 
@@ -420,3 +437,76 @@ class GattService(BtpService):
             return op.BTP_STATUS_FAILED, b""
         filtered = [s for s in services if s[2] == target_uuid]
         return op.BTP_STATUS_SUCCESS, _encode_services(filtered)
+
+    # ---- Find Included Services ------------------------------------------
+
+    async def _handle_op_0d(self, controller_index: int, data: bytes):
+        """FIND_INCLUDED_SVCS — not implemented in v1.0 GATTClient. Return FAILED."""
+        return op.BTP_STATUS_FAILED, b""
+
+    # ---- Discover All Characteristics ------------------------------------
+
+    async def _handle_op_0e(self, controller_index: int, data: bytes):
+        """DISC_ALL_CHRC — discover characteristics in [start, end]."""
+        if len(data) != 11:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        start = int.from_bytes(data[7:9], "little")
+        end = int.from_bytes(data[9:11], "little")
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            chars = await client.discover_characteristics(start, end)
+        except Exception:
+            logger.exception("GATT DISC_ALL_CHRC raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, _encode_characteristics(chars)
+
+    # ---- Discover Characteristic by UUID ---------------------------------
+
+    async def _handle_op_0f(self, controller_index: int, data: bytes):
+        """DISC_CHRC_BY_UUID — filter discover_characteristics by uuid."""
+        if len(data) < 12:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        start = int.from_bytes(data[7:9], "little")
+        end = int.from_bytes(data[9:11], "little")
+        try:
+            target_uuid, _ = _decode_uuid(data, offset=11)
+        except ValueError:
+            return op.BTP_STATUS_FAILED, b""
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            chars = await client.discover_characteristics(start, end)
+        except Exception:
+            logger.exception("GATT DISC_CHRC_BY_UUID raised")
+            return op.BTP_STATUS_FAILED, b""
+        filtered = [c for c in chars if c.uuid == target_uuid]
+        return op.BTP_STATUS_SUCCESS, _encode_characteristics(filtered)
+
+    # ---- Discover All Descriptors ----------------------------------------
+
+    async def _handle_op_10(self, controller_index: int, data: bytes):
+        """DISC_ALL_DESC — discover descriptors in [start, end]."""
+        if len(data) != 11:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        start = int.from_bytes(data[7:9], "little")
+        end = int.from_bytes(data[9:11], "little")
+        client = self._resolve_gatt_client(addr)
+        if client is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            descs = await client.discover_descriptors(start, end)
+        except Exception:
+            logger.exception("GATT DISC_ALL_DESC raised")
+            return op.BTP_STATUS_FAILED, b""
+        out = bytearray([len(descs) & 0xFF])
+        for d in descs:
+            out.extend(d.handle.to_bytes(2, "little"))
+            out.append(len(d.uuid))
+            out.extend(d.uuid)
+        return op.BTP_STATUS_SUCCESS, bytes(out)

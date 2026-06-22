@@ -131,3 +131,115 @@ async def test_exchange_mtu_rejects_wrong_length():
         opcode=op.OP_GATT_EXCHANGE_MTU, controller_index=0, data=body,
     )
     assert status == op.BTP_STATUS_FAILED
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — Discover Characteristics + Descriptors
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass
+
+
+@dataclass
+class _FakeChar:
+    declaration_handle: int
+    value_handle: int
+    properties: int
+    uuid: bytes
+
+
+@dataclass
+class _FakeDesc:
+    handle: int
+    uuid: bytes
+
+
+@pytest.mark.asyncio
+async def test_disc_all_chrc_returns_encoded_list():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    fake_chars = [
+        _FakeChar(declaration_handle=0x0006, value_handle=0x0007,
+                  properties=0x12, uuid=bytes.fromhex("1929")),
+        _FakeChar(declaration_handle=0x0009, value_handle=0x000A,
+                  properties=0x02, uuid=bytes.fromhex("0A2A")),
+    ]
+    async def fake_dc(start, end):
+        return list(fake_chars)
+    client.discover_characteristics = fake_dc
+
+    body = bytes([0]) + addr + (0x0001).to_bytes(2, "little") + (0x000F).to_bytes(2, "little")
+    status, data = await svc.dispatch(
+        opcode=op.OP_GATT_DISC_ALL_CHRC, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert data[0] == 2
+    # Decode first entry.
+    offset = 1
+    decl = int.from_bytes(data[offset:offset+2], "little"); offset += 2
+    props = data[offset]; offset += 1
+    vh = int.from_bytes(data[offset:offset+2], "little"); offset += 2
+    ul = data[offset]; offset += 1
+    uu = data[offset:offset+ul]; offset += ul
+    assert (decl, props, vh, ul, uu) == (0x0006, 0x12, 0x0007, 2, bytes.fromhex("1929"))
+
+
+@pytest.mark.asyncio
+async def test_disc_chrc_by_uuid_filters_results():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    fake_chars = [
+        _FakeChar(0x0006, 0x0007, 0x12, bytes.fromhex("1929")),
+        _FakeChar(0x0009, 0x000A, 0x02, bytes.fromhex("0A2A")),
+    ]
+    async def fake_dc(start, end):
+        return list(fake_chars)
+    client.discover_characteristics = fake_dc
+
+    body = (
+        bytes([0]) + addr
+        + (0x0001).to_bytes(2, "little") + (0x000F).to_bytes(2, "little")
+        + bytes([2]) + bytes.fromhex("0A2A")
+    )
+    status, data = await svc.dispatch(
+        opcode=op.OP_GATT_DISC_CHRC_BY_UUID, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert data[0] == 1
+    decl = int.from_bytes(data[1:3], "little")
+    assert decl == 0x0009
+
+
+@pytest.mark.asyncio
+async def test_disc_all_desc_returns_encoded_list():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client = _make_svc_with_conn(addr)
+    fake_descs = [
+        _FakeDesc(handle=0x0008, uuid=bytes.fromhex("0229")),
+    ]
+    async def fake_dd(start, end):
+        return list(fake_descs)
+    client.discover_descriptors = fake_dd
+
+    body = bytes([0]) + addr + (0x0001).to_bytes(2, "little") + (0x000F).to_bytes(2, "little")
+    status, data = await svc.dispatch(
+        opcode=op.OP_GATT_DISC_ALL_DESC, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert data[0] == 1
+    h = int.from_bytes(data[1:3], "little")
+    ul = data[3]
+    uu = data[4:4+ul]
+    assert (h, ul, uu) == (0x0008, 2, bytes.fromhex("0229"))
+
+
+@pytest.mark.asyncio
+async def test_find_included_svcs_returns_failed_not_supported():
+    """FIND_INCLUDED_SVCS not on real GATTClient — handler returns STATUS_FAILED."""
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, _ = _make_svc_with_conn(addr)
+    body = bytes([0]) + addr + (0x0001).to_bytes(2, "little") + (0x000F).to_bytes(2, "little")
+    status, _ = await svc.dispatch(
+        opcode=op.OP_GATT_FIND_INCLUDED_SVCS, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_FAILED
