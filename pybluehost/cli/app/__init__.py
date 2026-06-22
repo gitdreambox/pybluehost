@@ -51,3 +51,5 @@ def register_app_commands(subparsers: argparse._SubParsersAction) -> None:
     register_demo_headphone_command(app_subs)
     from pybluehost.cli.app.pts_iut import register_pts_iut_command
     register_pts_iut_command(app_subs)
+    from pybluehost.cli.app.pts_tester import register_pts_tester_command
+    register_pts_tester_command(app_subs)

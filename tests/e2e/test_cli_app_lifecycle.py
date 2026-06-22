@@ -80,6 +80,7 @@ CLI_APP_E2E_COVERAGE: dict[str, str] = {
     "hsp-test": "test_hsp_cli_app_hs_to_ag_wav_loopback",
     "mitm": "test_mitm_cli_app_builds_authorized_relay_specs",
     "pts-iut": "test_pts_iut_cli_app_action_layer_drives_gap",
+    "pts-tester": "test_pts_tester_cli_app_starts_btp_tester_and_stops_cleanly",
     "sdp-browser": "test_sdp_browser_cli_app_queries_spp_echo_record",
     "spp-echo": "test_classic_inquiry_and_spp_echo_cli_apps_exchange_rfcomm",
 }
@@ -674,6 +675,23 @@ async def test_pts_iut_cli_app_action_layer_drives_gap(stack):
     assert stack.gap.ble_scanner._active is True
     await actions.stop_scan()
     assert stack.gap.ble_scanner._active is False
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_pts_tester_cli_app_starts_btp_tester_and_stops_cleanly(stack):
+    """BTP tester starts, binds a TCP port, and shuts down cleanly on stop."""
+    from pybluehost.cli.app.pts_tester import _pts_tester_main
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(_pts_tester_main(stack, stop, listen="127.0.0.1:0"))
+    try:
+        # Give it a moment to bind and enter the wait loop
+        await asyncio.sleep(0.05)
+        assert not task.done(), "pts-tester task should still be running"
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, timeout=3.0)
 
 
 def test_mitm_cli_app_builds_authorized_relay_specs() -> None:
