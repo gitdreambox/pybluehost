@@ -1,0 +1,14 @@
+group: GAP
+last_updated: '2026-06-23'
+runs: 0
+cases:
+  GAP/CONN/CPUP/BV-01-C:
+    verdict: untested
+    last_run: null
+    notes: ''
+    bug_refs: []
+  GAP/CONN/GCEP/BV-01-C:
+    verdict: untested
+    last_run: null
+    notes: ''
+    bug_refs: []

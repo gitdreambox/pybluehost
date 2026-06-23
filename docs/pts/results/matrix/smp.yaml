@@ -1,0 +1,9 @@
+group: SMP
+last_updated: '2026-06-23'
+runs: 0
+cases:
+  SM/CEN/JW/BV-01-C:
+    verdict: untested
+    last_run: null
+    notes: ''
+    bug_refs: []

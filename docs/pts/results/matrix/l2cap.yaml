@@ -1,0 +1,9 @@
+group: L2CAP
+last_updated: '2026-06-23'
+runs: 0
+cases:
+  L2CAP/LE/CFC/BV-01-C:
+    verdict: untested
+    last_run: null
+    notes: ''
+    bug_refs: []
