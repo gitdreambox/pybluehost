@@ -1,0 +1,9 @@
+SMP:
+  TSPC_SMP_LEGACY:
+    supported: false
+    evidence: SMP legacy always supported in PyBlueHost when LE present
+    description: Legacy pairing
+  TSPC_SMP_SC:
+    supported: false
+    evidence: capability_summary.le_sc
+    description: Secure Connections

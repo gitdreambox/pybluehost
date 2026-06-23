@@ -1,0 +1,13 @@
+GAP:
+  TSPC_GAP_LE_CENTRAL:
+    supported: false
+    evidence: capability_summary.le_central
+    description: LE central role
+  TSPC_GAP_LE_PERIPHERAL:
+    supported: false
+    evidence: capability_summary.le_peripheral
+    description: LE peripheral role
+  TSPC_GAP_BREDR:
+    supported: false
+    evidence: implied by bredr_supported
+    description: BR/EDR GAP

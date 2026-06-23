@@ -1,0 +1,5 @@
+RFCOMM:
+  TSPC_RFCOMM_BR_EDR:
+    supported: false
+    evidence: implied by bredr_supported (RFCOMM impl exists in pybluehost/classic/rfcomm.py)
+    description: Classic RFCOMM

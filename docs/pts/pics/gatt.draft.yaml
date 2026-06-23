@@ -1,0 +1,9 @@
+GATT:
+  TSPC_GATT_CLIENT:
+    supported: false
+    evidence: GATT client always supported when LE supported in PyBlueHost
+    description: GATT client
+  TSPC_GATT_SERVER:
+    supported: false
+    evidence: GATT server always supported when LE supported in PyBlueHost
+    description: GATT server

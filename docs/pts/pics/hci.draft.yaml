@@ -1,0 +1,13 @@
+HCI:
+  TSPC_HCI_3_1:
+    supported: true
+    evidence: supported_commands present in capability dump
+    description: any HCI Command supported
+  TSPC_HCI_LE:
+    supported: false
+    evidence: capability_summary.le_supported = True
+    description: LE supported
+  TSPC_HCI_BREDR:
+    supported: false
+    evidence: capability_summary.bredr_supported = True
+    description: BR/EDR supported

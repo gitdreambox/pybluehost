@@ -127,3 +127,30 @@ def generate_pics_draft(capabilities: dict) -> dict[str, dict[str, dict]]:
             }
         result[group] = group_dict
     return result
+
+
+def yaml_draft_to_autopts_dict(yaml_path) -> dict[str, bool]:
+    """Convert a Phase 1 PICS draft YAML to autoptsclient's flat dict format.
+
+    Input YAML shape (one top-level group key):
+        GroupName:
+          FEATURE_ID:
+            supported: bool
+            evidence: str
+            description: str
+
+    Output: ``{FEATURE_ID: bool}`` flat dict. Group name is dropped because
+    autoptsclient organises PICS by per-group module attribute, not by feature
+    prefix.
+
+    Raises ValueError if the YAML has zero or multiple top-level keys.
+    """
+    import yaml
+    from pathlib import Path
+    raw = yaml.safe_load(Path(yaml_path).read_text())
+    if not isinstance(raw, dict) or len(raw) != 1:
+        raise ValueError(
+            f"PICS YAML must have a single top-level group key: {yaml_path}"
+        )
+    _, features = next(iter(raw.items()))
+    return {feature: bool(info["supported"]) for feature, info in features.items()}

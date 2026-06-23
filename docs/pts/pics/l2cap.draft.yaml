@@ -1,0 +1,9 @@
+L2CAP:
+  TSPC_L2CAP_LE:
+    supported: false
+    evidence: implied by le_supported
+    description: LE L2CAP
+  TSPC_L2CAP_CLASSIC:
+    supported: false
+    evidence: implied by bredr_supported
+    description: Classic L2CAP

@@ -1,0 +1,5 @@
+SDP:
+  TSPC_SDP_BR_EDR:
+    supported: false
+    evidence: implied by bredr_supported (SDP impl exists in pybluehost/classic/sdp.py)
+    description: Classic SDP
