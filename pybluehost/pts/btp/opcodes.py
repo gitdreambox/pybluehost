@@ -156,3 +156,21 @@ GATT_PERM_READ_AUTHEN = 0x10
 GATT_PERM_WRITE_AUTHEN = 0x20
 GATT_PERM_READ_AUTHOR = 0x40
 GATT_PERM_WRITE_AUTHOR = 0x80
+
+
+# L2CAP service opcodes (auto-pts doc/btp_l2cap.txt — verified 2026-06-23).
+# P.8 v1 implements 0x01-0x05 + events 0x80-0x83.
+# Out of P.8 v1: 0x06 Accept Connection Request, 0x07 Reconfigure, 0x08 Credits,
+# 0x0a ECHO, 0x0b Connect v2, 0x0c Listen v2, 0x0d Send Connectionless,
+# 0x84 Reconfigured event.
+OP_L2CAP_READ_SUPPORTED_COMMANDS = 0x01
+OP_L2CAP_CONNECT = 0x02
+OP_L2CAP_DISCONNECT = 0x03
+OP_L2CAP_SEND_DATA = 0x04
+OP_L2CAP_LISTEN = 0x05
+
+# L2CAP events (0x80+ — unsolicited, tester → autoptsclient).
+OP_L2CAP_EVENT_CONNECTION_REQUEST = 0x80
+OP_L2CAP_EVENT_CONNECTED = 0x81
+OP_L2CAP_EVENT_DISCONNECTED = 0x82
+OP_L2CAP_EVENT_DATA_RECEIVED = 0x83
