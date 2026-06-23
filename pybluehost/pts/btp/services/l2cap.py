@@ -50,3 +50,57 @@ class LeCoCService(BtpService):
             bit_index = code - 1
             out[bit_index // 8] |= 1 << (bit_index % 8)
         return op.BTP_STATUS_SUCCESS, bytes(out)
+
+    def _resolve_le_connection_handle(self, addr: bytes) -> int | None:
+        """Look up an LE connection whose peer's 6-byte address matches `addr`."""
+        try:
+            session = self._actions.status()
+        except Exception:
+            return None
+        target = bytes(addr)[:6]
+        for h, info in session.connections.items():
+            peer = getattr(info, "peer", None)
+            if peer is None:
+                continue
+            raw = getattr(peer, "address", None) or getattr(peer, "bytes", None) or peer
+            try:
+                if bytes(raw)[:6] == target:
+                    return h
+            except Exception:
+                continue
+        return None
+
+    async def _handle_op_02(self, controller_index: int, data: bytes):
+        """L2CAP CONNECT (0x02) — body 13 bytes: addr_type(1) + addr(6) +
+        PSM(u16 LE) + MTU(u16 LE) + Num(u8) + Options(u8).
+        Response: Num(u8) + chan_ids(u8 × Num).
+        """
+        if len(data) != 13:
+            return op.BTP_STATUS_FAILED, b""
+        addr = bytes(data[1:7])
+        psm = int.from_bytes(data[7:9], "little")
+        mtu = int.from_bytes(data[9:11], "little")
+        num = data[11]
+        # options = data[12]  # ECFC modes etc. — P.8 v1 ignores
+        if num != 1:
+            logger.warning(
+                "L2CAP CONNECT: Num=%d, only single-channel supported in P.8 v1", num,
+            )
+            return op.BTP_STATUS_FAILED, b""
+        handle = self._resolve_le_connection_handle(addr)
+        if handle is None:
+            return op.BTP_STATUS_FAILED, b""
+        stack = getattr(self._actions, "_stack", None)
+        if stack is None or not hasattr(stack, "l2cap"):
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            ch = await stack.l2cap.connect_le_coc_channel(
+                handle=handle, psm=psm,
+                mtu=mtu or 512, mps=247, initial_credits=10, timeout=5.0,
+            )
+        except Exception:
+            logger.exception("L2CAP CONNECT: connect_le_coc_channel raised")
+            return op.BTP_STATUS_FAILED, b""
+        chan_id = self._allocate_chan_id()
+        self._channels[chan_id] = ch
+        return op.BTP_STATUS_SUCCESS, bytes([1, chan_id & 0xFF])
