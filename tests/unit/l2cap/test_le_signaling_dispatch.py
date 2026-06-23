@@ -89,9 +89,9 @@ async def test_le_signaling_credit_pdu_dispatches_to_channel():
     m = _make_manager()
     await m.on_connection(handle=0x000C, link_type=LinkType.LE,
                           peer_address=None, role=None)
-    # Register a fake channel whose peer_cid matches the credit PDU's cid.
+    # Register a fake channel whose _peer_cid matches the credit PDU's cid.
     fake_channel = MagicMock()
-    fake_channel.peer_cid = 0x0060
+    fake_channel._peer_cid = 0x0060
     fake_channel.add_credits = MagicMock()
     m._le_channels[0x0042] = fake_channel
 

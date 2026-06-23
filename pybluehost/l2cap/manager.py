@@ -598,9 +598,9 @@ class L2CAPManager:
                 fut.set_result(payload)
         elif code == LE_SIG_LE_FLOW_CONTROL_CREDIT:
             assert isinstance(payload, LEFlowControlCredit)
-            # Credit PDU's CID is the SENDER's CID (i.e., our peer's CID, our channel's peer_cid).
+            # Credit PDU's CID is the SENDER's CID (i.e., our peer's CID, our channel's _peer_cid).
             for ch in self._le_channels.values():
-                if getattr(ch, "peer_cid", None) == payload.cid:
+                if getattr(ch, "_peer_cid", None) == payload.cid:
                     ch.add_credits(payload.credits)
                     break
             else:
@@ -730,9 +730,38 @@ class L2CAPManager:
         except Exception:
             logger.exception("LE CoC listener raised")
 
-    async def _handle_le_disconnection_request(self, handle, ident, req) -> None:
-        """T5 replaces this stub."""
-        logger.debug(
-            "LE disconnection request stub (handle=0x%04X ident=%d dcid=0x%04X scid=0x%04X)",
-            handle, ident, req.dcid, req.scid,
+    async def disconnect_le_coc_channel(self, channel) -> None:
+        """Tear down an LE CoC channel: send DISCONNECTION_REQUEST + remove
+        local state. Peer's DISCONNECTION_RESPONSE is silently consumed (see
+        _on_le_signaling)."""
+        from pybluehost.l2cap.le_signaling import (
+            DisconnectionRequest, LE_SIG_DISCONNECTION_REQUEST,
+        )
+        local_cid = channel.cid
+        peer_cid = channel._peer_cid
+        handle = channel.connection_handle
+        ident = self._next_le_signaling_id_value()
+        await self._send_le_signaling(
+            handle=handle, code=LE_SIG_DISCONNECTION_REQUEST, ident=ident,
+            payload=DisconnectionRequest(dcid=peer_cid, scid=local_cid).encode(),
+        )
+        self._le_channels.pop(local_cid, None)
+        if handle in self._connections:
+            self._connections[handle].pop(local_cid, None)
+
+    async def _handle_le_disconnection_request(self, handle: int, ident: int, req) -> None:
+        from pybluehost.l2cap.le_signaling import (
+            DisconnectionResponse, LE_SIG_DISCONNECTION_RESPONSE,
+        )
+        # req.dcid is OUR side's CID per Core Spec §4.6 (the request says
+        # "disconnect this destination" — i.e., the CID the peer is sending TO).
+        local_cid = req.dcid
+        peer_cid = req.scid
+        self._le_channels.pop(local_cid, None)
+        if handle in self._connections:
+            self._connections[handle].pop(local_cid, None)
+        # Always respond, even if the CID wasn't tracked.
+        await self._send_le_signaling(
+            handle=handle, code=LE_SIG_DISCONNECTION_RESPONSE, ident=ident,
+            payload=DisconnectionResponse(dcid=local_cid, scid=peer_cid).encode(),
         )
