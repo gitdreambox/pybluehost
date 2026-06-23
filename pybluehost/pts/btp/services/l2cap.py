@@ -7,10 +7,13 @@ Handlers land in P.8 Tasks 2-4; this file is the skeleton.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from pybluehost.l2cap.channel import SimpleChannelEvents
 from pybluehost.pts.btp import opcodes as op
+from pybluehost.pts.btp.protocol import BtpFrame
 from pybluehost.pts.btp.services.base import BtpService
 
 if TYPE_CHECKING:
@@ -142,3 +145,89 @@ class LeCoCService(BtpService):
             logger.exception("L2CAP SEND_DATA: ch.send raised")
             return op.BTP_STATUS_FAILED, b""
         return op.BTP_STATUS_SUCCESS, b""
+
+    # ---- Listen (0x05) ---------------------------------------------------
+
+    async def _handle_op_05(self, controller_index: int, data: bytes):
+        """LISTEN — body: PSM(u16) + Transport(u8) + MTU(u16) + Security_Type(u8) + Key_Size(u8) + Response(u16). Min 9 bytes."""
+        if len(data) < 9:
+            return op.BTP_STATUS_FAILED, b""
+        psm = int.from_bytes(data[0:2], "little")
+        # Other fields ignored in P.8 v1.
+        stack = getattr(self._actions, "_stack", None)
+        if stack is None or not hasattr(stack, "l2cap"):
+            return op.BTP_STATUS_FAILED, b""
+        listen_fn = getattr(stack.l2cap, "listen_le_coc_channel", None)
+        if listen_fn is None:
+            return op.BTP_STATUS_FAILED, b""
+        listen_fn(psm, self._make_incoming_handler(psm))
+        return op.BTP_STATUS_SUCCESS, b""
+
+    def _make_incoming_handler(self, psm: int):
+        """Build a closure that captures the PSM for event emission."""
+        def on_incoming(ch):
+            self._handle_incoming_channel(ch, psm=psm)
+        return on_incoming
+
+    def _handle_incoming_channel(self, ch, *, psm: int) -> None:
+        """Allocate BTP chan_id, wire data/close events, emit 0x81 Connected."""
+        btp_chan_id = self._allocate_chan_id()
+        self._channels[btp_chan_id] = ch
+
+        # Wire per-channel events for Data Received / Disconnected emission.
+        def on_data(data, _btp_id=btp_chan_id):
+            self._emit_data_received(_btp_id, data)
+
+        def on_close(reason, _btp_id=btp_chan_id, _psm=psm):
+            self._emit_disconnected(_btp_id, _psm, reason)
+
+        ch.set_events(SimpleChannelEvents(on_data=on_data, on_close=on_close))
+
+        # Emit 0x81 Connected.
+        # Per upstream: chan_id(1) + psm(2) + peer_mtu(2) + peer_mps(2) +
+        # our_mtu(2) + our_mps(2) + addr_type(1) + addr(6) = 17 bytes.
+        peer_mtu = getattr(ch, "mtu", 0)
+        peer_mps = getattr(ch, "_mps", 0)
+        our_mtu, our_mps = peer_mtu, peer_mps    # P.8 v1: we negotiated the min
+        addr_type = 0
+        addr = bytes(6)
+        payload = (
+            bytes([btp_chan_id])
+            + psm.to_bytes(2, "little")
+            + peer_mtu.to_bytes(2, "little")
+            + peer_mps.to_bytes(2, "little")
+            + our_mtu.to_bytes(2, "little")
+            + our_mps.to_bytes(2, "little")
+            + bytes([addr_type])
+            + addr
+        )
+        self._emit_event(op.OP_L2CAP_EVENT_CONNECTED, payload)
+
+    def _emit_data_received(self, btp_chan_id: int, data: bytes) -> None:
+        # Payload: chan_id(1) + data_len(u16) + data
+        payload = bytes([btp_chan_id]) + len(data).to_bytes(2, "little") + bytes(data)
+        self._emit_event(op.OP_L2CAP_EVENT_DATA_RECEIVED, payload)
+
+    def _emit_disconnected(self, btp_chan_id: int, psm: int, reason: int) -> None:
+        # Payload: result(u16) + chan_id(1) + psm(u16) + addr_type(1) + addr(6) = 12 bytes
+        payload = (
+            (reason & 0xFFFF).to_bytes(2, "little")
+            + bytes([btp_chan_id])
+            + psm.to_bytes(2, "little")
+            + bytes([0])    # addr_type placeholder
+            + bytes(6)      # addr placeholder
+        )
+        self._emit_event(op.OP_L2CAP_EVENT_DISCONNECTED, payload)
+        self._channels.pop(btp_chan_id, None)
+
+    def _emit_event(self, opcode: int, payload: bytes) -> None:
+        if self._tester is None:
+            return
+        frame = BtpFrame(
+            service=op.SERVICE_L2CAP, opcode=opcode,
+            controller_index=self._controller_index, data=payload,
+        )
+        try:
+            asyncio.create_task(self._tester.emit_event(frame))
+        except RuntimeError:
+            logger.exception("L2CAP event %#x: no event loop; dropping", opcode)
