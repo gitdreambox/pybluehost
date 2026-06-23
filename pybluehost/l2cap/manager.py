@@ -611,6 +611,71 @@ class L2CAPManager:
         else:
             logger.debug("LE signaling: unhandled code 0x%02X (ident=%d)", code, ident)
 
+    async def connect_le_coc_channel(
+        self,
+        *,
+        handle: int,
+        psm: int,
+        mtu: int = 512,
+        mps: int = 247,
+        initial_credits: int = 10,
+        timeout: float = 5.0,
+    ):
+        """Open an LE Credit-Based Channel to the peer on `psm`.
+
+        Returns the established `LECoCChannel`. Raises RuntimeError on
+        result != 0x0000, asyncio.TimeoutError if no response within `timeout`.
+        """
+        from pybluehost.l2cap.ble import LECoCChannel
+        from pybluehost.l2cap.le_signaling import (
+            LECreditBasedConnectionRequest,
+            LE_SIG_LE_CREDIT_BASED_CONNECTION_REQUEST,
+        )
+
+        if handle not in self._connections or CID_LE_SIGNALING not in self._connections[handle]:
+            raise RuntimeError(
+                f"no LE connection on handle 0x{handle:04X}; cannot open LE CoC"
+            )
+        scid = self._allocate_le_cid()
+        ident = self._next_le_signaling_id_value()
+        req = LECreditBasedConnectionRequest(
+            le_psm=psm, scid=scid, mtu=mtu, mps=mps, initial_credits=initial_credits,
+        )
+        fut: asyncio.Future = asyncio.get_event_loop().create_future()
+        self._pending_le_connect[ident] = fut
+        try:
+            await self._send_le_signaling(
+                handle=handle,
+                code=LE_SIG_LE_CREDIT_BASED_CONNECTION_REQUEST,
+                ident=ident,
+                payload=req.encode(),
+            )
+            try:
+                resp = await asyncio.wait_for(fut, timeout=timeout)
+            except asyncio.TimeoutError:
+                self._pending_le_connect.pop(ident, None)
+                raise
+        except BaseException:
+            self._pending_le_connect.pop(ident, None)
+            raise
+
+        if resp.result != 0x0000:
+            raise RuntimeError(
+                f"LE CoC connect failed: result=0x{resp.result:04X}"
+            )
+        ch = LECoCChannel(
+            connection_handle=handle,
+            local_cid=scid,
+            peer_cid=resp.dcid,
+            hci=self._hci,
+            mtu=min(mtu, resp.mtu),
+            mps=min(mps, resp.mps),
+            initial_credits=resp.initial_credits,
+        )
+        self._le_channels[scid] = ch
+        self._connections[handle][scid] = ch
+        return ch
+
     async def _handle_incoming_le_coc_request(self, handle, ident, req) -> None:
         """T4 replaces this stub."""
         logger.debug(
