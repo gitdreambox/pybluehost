@@ -8,3 +8,15 @@ __pycache__
 /.temp
 /pybluehost.log
 /pybluehost-usb-firmware-load.log
+
+# Test/build artifacts.
+/.coverage
+
+# Local-only working dirs (not part of repo content).
+/.claire/
+/refs/
+
+# Operator scratch — vendor SDKs / analyzer demos / large reference PDFs.
+# Tracked CLI commands live in `pybluehost/cli/tools/`, not here.
+/pybluehost/tools/
+/docs/*.pdf
