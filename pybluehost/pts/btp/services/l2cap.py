@@ -104,3 +104,41 @@ class LeCoCService(BtpService):
         chan_id = self._allocate_chan_id()
         self._channels[chan_id] = ch
         return op.BTP_STATUS_SUCCESS, bytes([1, chan_id & 0xFF])
+
+    async def _handle_op_03(self, controller_index: int, data: bytes):
+        """DISCONNECT — body: chan_id(u8)."""
+        if len(data) != 1:
+            return op.BTP_STATUS_FAILED, b""
+        chan_id = data[0]
+        ch = self._channels.get(chan_id)
+        if ch is None:
+            return op.BTP_STATUS_FAILED, b""
+        stack = getattr(self._actions, "_stack", None)
+        if stack is None or not hasattr(stack, "l2cap"):
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            await stack.l2cap.disconnect_le_coc_channel(ch)
+        except Exception:
+            logger.exception("L2CAP DISCONNECT: disconnect_le_coc_channel raised")
+            return op.BTP_STATUS_FAILED, b""
+        self._channels.pop(chan_id, None)
+        return op.BTP_STATUS_SUCCESS, b""
+
+    async def _handle_op_04(self, controller_index: int, data: bytes):
+        """SEND_DATA — body: chan_id(u8) + data_len(u16 LE) + data."""
+        if len(data) < 3:
+            return op.BTP_STATUS_FAILED, b""
+        chan_id = data[0]
+        data_len = int.from_bytes(data[1:3], "little")
+        if 3 + data_len != len(data):
+            return op.BTP_STATUS_FAILED, b""
+        payload = bytes(data[3:3 + data_len])
+        ch = self._channels.get(chan_id)
+        if ch is None:
+            return op.BTP_STATUS_FAILED, b""
+        try:
+            await ch.send(payload)
+        except Exception:
+            logger.exception("L2CAP SEND_DATA: ch.send raised")
+            return op.BTP_STATUS_FAILED, b""
+        return op.BTP_STATUS_SUCCESS, b""
