@@ -539,6 +539,11 @@ class L2CAPManager:
             )
             pending.future.set_result(pending.channel)
 
+    def listen_le_coc_channel(self, psm: int, handler) -> None:
+        """Register `handler(channel: LECoCChannel)` to receive incoming LE CoC
+        connections on `psm`. Handler may be sync or async."""
+        self._le_listeners[psm] = handler
+
     # -- LE Credit-Based Channel helpers --
 
     def _allocate_le_cid(self) -> int:
@@ -676,12 +681,54 @@ class L2CAPManager:
         self._connections[handle][scid] = ch
         return ch
 
-    async def _handle_incoming_le_coc_request(self, handle, ident, req) -> None:
-        """T4 replaces this stub."""
-        logger.debug(
-            "LE CoC incoming request stub (handle=0x%04X ident=%d psm=0x%04X)",
-            handle, ident, req.le_psm,
+    async def _handle_incoming_le_coc_request(self, handle: int, ident: int, req) -> None:
+        from pybluehost.l2cap.ble import LECoCChannel
+        from pybluehost.l2cap.le_signaling import (
+            LECreditBasedConnectionResponse,
+            LE_SIG_LE_CREDIT_BASED_CONNECTION_RESPONSE,
+            LE_CONN_RESULT_SUCCESS, LE_CONN_RESULT_PSM_NOT_SUPPORTED,
         )
+
+        listener = self._le_listeners.get(req.le_psm)
+        if listener is None:
+            await self._send_le_signaling(
+                handle=handle,
+                code=LE_SIG_LE_CREDIT_BASED_CONNECTION_RESPONSE, ident=ident,
+                payload=LECreditBasedConnectionResponse(
+                    dcid=0, mtu=0, mps=0, initial_credits=0,
+                    result=LE_CONN_RESULT_PSM_NOT_SUPPORTED,
+                ).encode(),
+            )
+            return
+
+        # Allocate our local CID + pick our negotiation params.
+        dcid = self._allocate_le_cid()
+        our_mtu, our_mps, our_credits = 512, 247, 10
+
+        await self._send_le_signaling(
+            handle=handle,
+            code=LE_SIG_LE_CREDIT_BASED_CONNECTION_RESPONSE, ident=ident,
+            payload=LECreditBasedConnectionResponse(
+                dcid=dcid, mtu=our_mtu, mps=our_mps,
+                initial_credits=our_credits, result=LE_CONN_RESULT_SUCCESS,
+            ).encode(),
+        )
+
+        ch = LECoCChannel(
+            connection_handle=handle, local_cid=dcid, peer_cid=req.scid,
+            hci=self._hci,
+            mtu=min(our_mtu, req.mtu), mps=min(our_mps, req.mps),
+            initial_credits=req.initial_credits,
+        )
+        self._le_channels[dcid] = ch
+        self._connections[handle][dcid] = ch
+
+        try:
+            result = listener(ch)
+            if asyncio.iscoroutine(result):
+                asyncio.create_task(result)
+        except Exception:
+            logger.exception("LE CoC listener raised")
 
     async def _handle_le_disconnection_request(self, handle, ident, req) -> None:
         """T5 replaces this stub."""
