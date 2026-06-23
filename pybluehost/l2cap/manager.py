@@ -72,6 +72,12 @@ class L2CAPManager:
         self._classic_listeners: dict[int, Callable[[ClassicChannel], object]] = {}
         self._classic_inbound_pending: dict[tuple[int, int], _ClassicInboundPending] = {}
         self._le_connection_open_listeners: list[Callable[[int, dict[int, "Channel"]], None]] = []
+        # LE Credit-Based Channels (Plan 2026-06-23-le-coc-manager).
+        self._le_listeners: dict[int, Callable] = {}                  # psm -> handler
+        self._pending_le_connect: dict[int, asyncio.Future] = {}      # ident -> future
+        self._next_le_signaling_id: int = 1
+        self._next_le_cid: int = 0x0040                               # LE dynamic CID range start
+        self._le_channels: dict[int, object] = {}                     # local SCID -> channel
 
     # -- HCI upstream callbacks (registered via hci.set_upstream) --
 
@@ -147,9 +153,15 @@ class L2CAPManager:
             channels[CID_SMP] = FixedChannel(
                 connection_handle=handle, cid=CID_SMP, hci=self._hci, mtu=65,
             )
-            channels[CID_LE_SIGNALING] = FixedChannel(
+            le_sig_ch = FixedChannel(
                 connection_handle=handle, cid=CID_LE_SIGNALING, hci=self._hci, mtu=23,
             )
+            le_sig_ch.set_events(
+                SimpleChannelEvents(
+                    on_data=lambda data, conn_handle=handle: self._on_le_signaling(conn_handle, data),
+                )
+            )
+            channels[CID_LE_SIGNALING] = le_sig_ch
         else:
             # Classic connections get signaling fixed channel
             signaling = FixedChannel(
@@ -526,3 +538,89 @@ class L2CAPManager:
                 pending.channel.mtu,
             )
             pending.future.set_result(pending.channel)
+
+    # -- LE Credit-Based Channel helpers --
+
+    def _allocate_le_cid(self) -> int:
+        cid = self._next_le_cid
+        self._next_le_cid += 1
+        return cid
+
+    def _next_le_signaling_id_value(self) -> int:
+        """Return current signaling id then advance, wrapping 0xFF → 0x01 (0 reserved)."""
+        val = self._next_le_signaling_id
+        nxt = (val % 0xFF) + 1
+        # Skip 0 — Core Spec §4 says identifier 0 is invalid.
+        self._next_le_signaling_id = nxt if nxt != 0 else 1
+        return val
+
+    async def _send_le_signaling(
+        self, *, handle: int, code: int, ident: int, payload: bytes,
+    ) -> None:
+        from pybluehost.l2cap.le_signaling import encode_le_signaling
+        sig_ch = self._connections.get(handle, {}).get(CID_LE_SIGNALING)
+        if sig_ch is None:
+            logger.warning("LE signaling: no LE signaling channel on handle 0x%04X", handle)
+            return
+        await sig_ch.send(encode_le_signaling(code, ident, payload))
+
+    async def _on_le_signaling(self, handle: int, data: bytes) -> None:
+        """Dispatch LE signaling PDUs received on the LE signaling fixed channel."""
+        from pybluehost.l2cap.le_signaling import (
+            DisconnectionRequest, DisconnectionResponse,
+            LECreditBasedConnectionRequest, LECreditBasedConnectionResponse,
+            LEFlowControlCredit,
+            LE_SIG_DISCONNECTION_REQUEST,
+            LE_SIG_DISCONNECTION_RESPONSE,
+            LE_SIG_LE_CREDIT_BASED_CONNECTION_REQUEST,
+            LE_SIG_LE_CREDIT_BASED_CONNECTION_RESPONSE,
+            LE_SIG_LE_FLOW_CONTROL_CREDIT,
+            decode_le_signaling,
+        )
+        try:
+            code, ident, payload = decode_le_signaling(data)
+        except ValueError:
+            logger.exception("LE signaling: decode failed")
+            return
+
+        if code == LE_SIG_LE_CREDIT_BASED_CONNECTION_REQUEST:
+            assert isinstance(payload, LECreditBasedConnectionRequest)
+            await self._handle_incoming_le_coc_request(handle, ident, payload)
+        elif code == LE_SIG_LE_CREDIT_BASED_CONNECTION_RESPONSE:
+            assert isinstance(payload, LECreditBasedConnectionResponse)
+            fut = self._pending_le_connect.pop(ident, None)
+            if fut is not None and not fut.done():
+                fut.set_result(payload)
+        elif code == LE_SIG_LE_FLOW_CONTROL_CREDIT:
+            assert isinstance(payload, LEFlowControlCredit)
+            # Credit PDU's CID is the SENDER's CID (i.e., our peer's CID, our channel's peer_cid).
+            for ch in self._le_channels.values():
+                if getattr(ch, "peer_cid", None) == payload.cid:
+                    ch.add_credits(payload.credits)
+                    break
+            else:
+                logger.warning(
+                    "LE signaling: credit PDU for unknown cid=0x%04X", payload.cid,
+                )
+        elif code == LE_SIG_DISCONNECTION_REQUEST:
+            assert isinstance(payload, DisconnectionRequest)
+            await self._handle_le_disconnection_request(handle, ident, payload)
+        elif code == LE_SIG_DISCONNECTION_RESPONSE:
+            # Optional: resolve any pending disconnect future. T5 adds a real impl.
+            return
+        else:
+            logger.debug("LE signaling: unhandled code 0x%02X (ident=%d)", code, ident)
+
+    async def _handle_incoming_le_coc_request(self, handle, ident, req) -> None:
+        """T4 replaces this stub."""
+        logger.debug(
+            "LE CoC incoming request stub (handle=0x%04X ident=%d psm=0x%04X)",
+            handle, ident, req.le_psm,
+        )
+
+    async def _handle_le_disconnection_request(self, handle, ident, req) -> None:
+        """T5 replaces this stub."""
+        logger.debug(
+            "LE disconnection request stub (handle=0x%04X ident=%d dcid=0x%04X scid=0x%04X)",
+            handle, ident, req.dcid, req.scid,
+        )
