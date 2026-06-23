@@ -35,6 +35,7 @@ async def _pts_tester_main(stack, stop_event, *, listen: str):
     )
     from pybluehost.pts.btp.services.gap import GapService
     from pybluehost.pts.btp.services.gatt import GattService
+    from pybluehost.pts.btp.services.l2cap import LeCoCService
 
     if ":" not in listen:
         raise ValueError(f"--listen must be host:port, got {listen!r}")
@@ -49,6 +50,8 @@ async def _pts_tester_main(stack, stop_event, *, listen: str):
     registry.register(gap)
     gatt = GattService(actions=actions, tester=tester)
     registry.register(gatt)
+    l2cap = LeCoCService(actions=actions, tester=tester)
+    registry.register(l2cap)
     await tester.start()
 
     # Hook stack connection events into GapService for DEVICE_CONNECTED/DISCONNECTED
@@ -86,7 +89,7 @@ async def _pts_tester_main(stack, stop_event, *, listen: str):
 
     logger.info(
         "PyBlueHost BTP tester listening on %s:%d "
-        "(Core + GAP + GATT; L2CAP/SMP land in P.8)",
+        "(Core + GAP + GATT + L2CAP)",
         host, port,
     )
     try:
