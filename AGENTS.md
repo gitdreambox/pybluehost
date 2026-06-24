@@ -69,6 +69,124 @@ uv run pytest tests/ -q
 
 ---
 
+## 已交付子系统 — AI Agent 上手指南
+
+> v1.0 PRD 之后又交付了 v1.1 / v1.2 Phase 1+2 / v2.0 / v2.1 等若干 PRD，下面是接手时必须知道的入口。详细命令使用例见 [`README.md`](README.md) §1.7–1.10；本节只讲"是什么、入口在哪、怎么扩展"。
+
+### v1.1 Virtual Sniffer — live HCI 注入 Ellisys / WPS
+
+`pybluehost.sniffer.*` 包 + CLI flag `--virtual-sniffer={ellisys,wps}`。Windows-only。代码已合并 master 并真机实测通过（CSR8510 + 真分析仪）。要改注入字节布局或加新分析仪后端：
+
+- 后端 ABC：`pybluehost/sniffer/backend.py::SnifferBackend`
+- 现成实现：`ellisys.py`、`wps.py`（用 ctypes 调 Live Import DLL）
+- Spec 字段：`SnifferSpec` 在 `pybluehost/sniffer/spec.py`（注意：早期版本在 `cli/_sniffer_arg.py`，已在 Plan C.2 时反向依赖修复中搬迁）
+- 操作员 runbook：[`docs/VIRTUAL_SNIFFER_VERIFY.md`](docs/VIRTUAL_SNIFFER_VERIFY.md)
+
+### v1.2 PTS IUT — 两阶段并存
+
+PyBlueHost 当 PTS（Profile Tuning Suite）的 IUT。两条路径**都已实装、可以并存**：
+
+#### Phase 1：手动 REPL（`pybluehost app pts-iut`）
+
+适合**无 autoptsclient / 不想搭自动框架**的快速排查：
+
+```bash
+pybluehost app pts-iut -t usb
+# 进 REPL：advertise / scan / connect <addr> / pair / notify / write / status …
+# 操作员看 PTS MMI 提示 → 在 REPL 敲对应命令。
+```
+
+- 动作层：`pybluehost/pts/actions.py::IutActions`（async 方法集，**Phase 2 BTP 服务也复用同一层**）
+- REPL：`pybluehost/pts/repl.py`（`parse_repl_command` + `run_repl`）
+- PTS-mode 行为开关：`pybluehost/pts/config.py::PTSModeConfig` 5 个 opt-in flag（`disable_conn_updates` / `secure_pair_only` / `disable_sdp_on_le_pair` / `smp_options` / `smp_failure_at`）通过 `StackConfig.pts=` 启用，默认 `None` 时零影响
+- PICS 生成：`pybluehost tools pics-gen -c <adapter>.json -o docs/pts/pics`
+- 操作员 runbook：[`docs/PTS_RUNBOOK.md`](docs/PTS_RUNBOOK.md)
+
+#### Phase 2：autoptsclient 自动驱动（`pybluehost app pts-tester`）
+
+适合**完整自动化 + CI 接入**：
+
+```bash
+# IUT host 上起 BTP TCP 服务
+pybluehost app pts-tester -t usb --listen=127.0.0.1:65103
+
+# 另一台机器（或同机）跑 autoptsclient，--project-path 指向我们的 IUT 模块
+autoptsclient --project pybluehost \
+    --project-path /path/to/pybluehost/auto_pts_project \
+    --server <windows-host>:65000 \
+    --workspace /path/to/PTS-workspace \
+    --test-cases GAP/
+```
+
+- BTP 协议层：`pybluehost/pts/btp/`（`protocol.py` 帧编解码 + `services/{base,core,gap,gatt,l2cap}.py` 四个 service + `tester.py` asyncio TCP server）
+- IUT 模块（autoptsclient 加载的入口）：`auto_pts_project/pybluehost/`
+  - `iutctl.py` — `iut_init()` spawn `pybluehost app pts-tester` 子进程 + 等 BTP READY；`iut_cleanup()` 拆掉
+  - `pics.py` — 按组从 `docs/pts/pics/*.draft.yaml` 加载 → `PICS_GAP / PICS_GATT / PICS_L2CAP / PICS_SMP / PICS_HCI` 等扁平 dict
+  - `ixit.py` — 手写 IXIT_* 参数 dict；**operator 改这里的 `TSPX_bd_addr_iut`**
+  - `wid/{gap,gatt,l2cap,sm}.py` — WID handler 适配器，默认继承上游 `wid.<group>` dispatch 字典；通过 `PYBLUEHOST_OVERRIDES` 列表加 PyBlueHost 特有覆盖（baseline 空）
+- 操作员 README：[`auto_pts_project/pybluehost/README.md`](auto_pts_project/pybluehost/README.md)（含 quickstart + 真机 step-by-step + troubleshooting 表）
+- BTP upstream 校准：曾多次发现 plan 跟 upstream auto-pts 的 opcode 编号有出入（详见 plan 顶部 banner）；**未来加新 BTP service 之前先 WebFetch 一遍 `https://raw.githubusercontent.com/auto-pts/auto-pts/master/doc/btp_<service>.txt` 对齐**
+
+#### Phase 2 状态矩阵 + CI
+
+- `scripts/pts_matrix.py`：管理 `docs/pts/results/matrix/<group>.yaml` 的 verdict（pass/fail/inconc/blocked/untested）+ 渲染 `docs/pts/results/SUMMARY.md`
+- `scripts/ci_btp_smoke.py`：spawn pts-tester → 走 Core/GAP/GATT 命令序列做 plumbing 自检（不需要 PTS dongle）
+- `.github/workflows/pts-virtual.yml`：每 push/PR 跑上面的 smoke + PTS 单测
+- **真机 pass-rate** 留 operator：跑完一个 case 用 `python scripts/pts_matrix.py update docs/pts/results/matrix/<group>.yaml <case_id> --verdict=pass --last-run=YYYY-MM-DD --notes='…'` 录入
+
+### v2.0 Classic Audio + v2.1 SCO 适配
+
+A2DP / AVRCP / HFP / HSP 全实装。`pybluehost/profiles/classic/` 下：
+
+- `a2dp.py` — A2DPSource / A2DPSink，用 `pybluehost/classic/avdtp/`（线协议）+ `pybluehost/audio/codec/sbc`（SBC 编解码，基于 BlueZ libsbc ctypes 绑定）
+- `avrcp.py` — AVRCPController / AVRCPTarget，用 `pybluehost/classic/avctp/` + `pybluehost/classic/avrcp/`（**注意**：profile facade 在 `profiles/classic/avrcp.py`，线协议在 `classic/avrcp/` —— Plan C.3 把 AV* 三个包从顶层搬到 `classic/` 下）
+- `hfp.py` / `hsp.py` — SLC + SCO link setup + CVSD/mSBC codec
+- `_sco_loopback.py` — WAV-based SCO send/receive；`_sco_realtime.py`（v2.1 B.2 加）—— sounddevice 实时 mic/speaker
+- `pybluehost/transport/usb/` 里的 Intel/Realtek 子类（v2.1 B.1）实现了 `prepare_for_sco(codec)` 自动切换 USB Alt Setting / 发 Realtek vendor cmd `0xFC8B`，所以 SCO 数据在 USB 上跑得通
+- 集成 demo：`pybluehost app demo-phone` / `app demo-headphone` 在单进程里把 A2DP+AVRCP+HFP 三个 profile 串起来，配 `tests/e2e/test_integrated_demo.py`
+- 操作员手册：[`docs/CLASSIC_AUDIO_E2E.md`](docs/CLASSIC_AUDIO_E2E.md)（含 adapter SCO quirk 矩阵）
+
+### LE CoC manager（L2CAP LE Credit-Based Channel）
+
+v1.0 协议栈原本只有 Classic L2CAP signaling；v1.2 Phase 2 P.8 之前为了让 BTP L2CAP service 能跑，**专门加了 LE CoC manager 扩展**（独立 Plan，6 Task），现在 v1.0 协议栈原生支持 LE CoC：
+
+```python
+# 出向
+ch = await stack.l2cap.connect_le_coc_channel(handle=h, psm=0x0080, mtu=512, mps=247, initial_credits=10)
+await ch.send(b"…")
+await stack.l2cap.disconnect_le_coc_channel(ch)
+
+# 入向
+def on_incoming(channel):
+    channel.set_events(SimpleChannelEvents(on_data=lambda d: ..., on_close=lambda r: ...))
+stack.l2cap.listen_le_coc_channel(psm=0x0080, handler=on_incoming)
+```
+
+- 信令 PDU 编解码：`pybluehost/l2cap/le_signaling.py`（0x06/0x07/0x14/0x15/0x16）
+- 管理器扩展：`pybluehost/l2cap/manager.py::L2CAPManager._on_le_signaling` + 三个 public 方法
+- 端到端测试：`tests/e2e/test_le_coc_lifecycle.py`（VirtualLELink loopback）
+- **加新 BLE profile 跑 over LE CoC** 直接复用这层，不需要再动 stack
+
+### 28 个 CLI 命令一览
+
+`app`（需要 transport）21 个 + `tools`（离线）7 个。完整使用例在 [`README.md`](README.md) §1.3–1.10。如果你（AI agent）需要加一个新 CLI 子命令：
+
+- 加到 `pybluehost/cli/app/<name>.py` 或 `pybluehost/cli/tools/<name>.py`
+- 在 `pybluehost/cli/app/__init__.py` 或 `cli/tools/__init__.py` 里 `register_<name>_command()`
+- 测试模式：参照 `tests/unit/cli/app/test_*.py`（argparse 烟测）+ 如果是 transport-driven 命令再加 `tests/e2e/test_*_lifecycle.py`
+- 更新 README §1.x 里加一段使用例
+- 跑 `pybluehost <namespace> --help` 自查
+
+### 版本号同步
+
+唯一可改的版本字符串在 `pybluehost/__init__.py::__version__`。`pyproject.toml` 用 `dynamic = ["version"]` + `[tool.hatch.version]` 自动从 `__init__.py` 读取。**改版本只动 `__init__.py`**；`tests/unit/test_version_sync.py` 守卫两边不漂移。当前 `0.99`，真机验证完成后 bump `1.0.0`。
+
+### 真机验证状态（哪些 ✅ / 哪些 ⏳）
+
+[`README.md`](README.md) 末尾 `## 项目状态` 有"真机验证状态"小表，列每个 PRD 是 ✅（已验证）还是 ⏳（待 operator）。**接手时先看那张表**，不要在已 ✅ 的部分二次造轮子。
+
+---
+
 ## Plan 拆分原则
 
 ### 核心约束：只要不冲突，就可以拆
