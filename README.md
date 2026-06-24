@@ -102,6 +102,9 @@ pybluehost app ble-scan --transport usb --hci-log
 # 自己也广播让别的设备看到
 pybluehost app ble-adv --transport usb --name MyDevice
 
+# Directed advertising：先用普通广播完成 bond，然后用 directed adv 让已配对的 central 快速重连
+pybluehost app ble-adv-direct --transport usb --peer-addr A0:90:B5:10:40:82 --bond-store=bonds.yaml
+
 # 起一个 GATT server，让手机能连过来
 pybluehost app gatt-server --transport usb
 
@@ -170,6 +173,10 @@ pybluehost app avrcp-target  -t usb
 pybluehost app hfp-test -t usb --role=hf --target=AA:BB:CC:DD:EE:FF --wav=mic.wav --out=recv.wav
 pybluehost app hfp-test -t usb --role=hf --target=AA:BB:CC:DD:EE:FF --mic-device=2 --speaker-device=3
 
+# HSP（Headset Profile，CVSD-only，无 SLC handshake）—— 同样支持 file loopback 或 live mic/speaker
+pybluehost app hsp-test -t usb --role=hs --target=AA:BB:CC:DD:EE:FF --wav=mic.wav --out=recv.wav
+pybluehost app hsp-test -t usb --role=ag --output=received.wav
+
 # 集成 demo：单机模拟一部手机或一只耳机（A2DP + AVRCP + HFP 同时在线）
 pybluehost app demo-phone     -t usb --wav music.wav --ring-after=15
 pybluehost app demo-headphone -t usb --target AA:BB:CC:DD:EE:FF --avrcp-cmd=pause --avrcp-cmd-at=5
@@ -233,6 +240,19 @@ pybluehost tools rpa verify --irk <32-hex> --addr AA:BB:CC:DD:EE:FF
 # USB 蓝牙芯片固件管理
 pybluehost tools fw list
 pybluehost tools fw download <chip>
+
+# HCI 适配器能力 dump（json/yaml/markdown）—— 喂给 pics-gen / 写硬件矩阵
+pybluehost tools info -t usb
+pybluehost tools info -t usb --json > my-adapter.json
+
+# USB 诊断：枚举蓝牙 USB 设备 + 检查 WinUSB / udev 权限
+pybluehost tools usb diagnose
+
+# PortAudio 设备索引（喂给 hfp-test / hsp-test 的 --mic-device / --speaker-device）
+pybluehost tools audio list-devices
+
+# 半自动生成 PTS PICS YAML drafts（由 capability dump 派生 feature 表）
+pybluehost tools pics-gen -c my-adapter.json -o docs/pts/pics
 ```
 
 ## 1.11 出问题怎么调试（trace）
