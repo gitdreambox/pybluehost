@@ -1,8 +1,8 @@
 # PyBlueHost PRD — Product Requirements Document
 
-**版本**：v0.1  
-**日期**：2026-04-11  
-**状态**：待确认
+**版本**：v0.1
+**日期**：2026-04-11
+**状态**：✅ 已交付（v1.0 全 31 个 Plan + Hardware E2E Readiness 已完成）
 
 ---
 

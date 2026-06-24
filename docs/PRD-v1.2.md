@@ -2,7 +2,7 @@
 
 **版本**：v1.2
 **日期**：2026-05-28
-**状态**：草案（brainstorm 已确认）
+**状态**：✅ 已交付（Phase 1 ✅ 2026-06-22；Phase 2 ✅ 框架 2026-06-23，含 BTP Core/GAP/GATT/L2CAP + auto_pts_project + CI smoke；真机 pass-rate 留 operator）
 **前置版本**：[PRD v1.0](PRD.md)（已完成 31 个 Plan）
 **同期版本**：[PRD v1.1 — Virtual Sniffer](PRD-v1.1.md)（独立，无依赖）
 
