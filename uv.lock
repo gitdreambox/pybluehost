@@ -386,7 +386,6 @@ wheels = [
 
 [[package]]
 name = "pybluehost"
-version = "0.9.9"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
@@ -425,7 +424,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sounddevice", marker = "extra == 'audio'", specifier = ">=0.4" },
 ]
-provides-extras = ["dev", "audio"]
+provides-extras = ["audio", "dev"]
 
 [package.metadata.requires-dev]
 dev = [

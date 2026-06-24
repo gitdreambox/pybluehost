@@ -1,6 +1,6 @@
 [project]
 name = "pybluehost"
-version = "0.9.9"
+dynamic = ["version"]    # single source of truth: pybluehost/__init__.py __version__
 description = "A professional Python Bluetooth Host stack for testing, simulation and protocol education."
 readme = "README.md"
 license = "MIT"
@@ -47,6 +47,11 @@ Homepage = "https://github.com/gitdreambox/pybluehost"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Single-source-of-truth: build reads __version__ from pybluehost/__init__.py.
+# To bump: edit `__version__` in that file, then run any `uv build` / `pip install`.
+[tool.hatch.version]
+path = "pybluehost/__init__.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
