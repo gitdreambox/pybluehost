@@ -69,6 +69,72 @@ uv run pytest tests/ -q
 
 ---
 
+## 文档自维护规则（强制要求）
+
+> **AGENTS.md（与 symlink CLAUDE.md 共用一份）和 README.md 是项目对未来 AI agent / 新接手者的承诺。让承诺过期的改动，必须在同一个 commit 里把对应文档刷新——不接受"以后再补"。**
+
+### 何时必须改本文件（AGENTS.md）
+
+| 触发 | 改哪里 |
+|---|---|
+| 新增 PRD 或大特性（v1.x / v2.x 等） | "已交付子系统"加一个 `###` 小节：是什么 / 入口在哪 / 怎么扩展 / runbook 链接 |
+| Refactor 搬迁文件（如 Plan C.2/C.3 类的） | 改对应路径；**保留一行历史脚注**（"早期在 X，现已在 Y"），下次接手者搜旧路径也能定位 |
+| 加 stack-level 公共 API（如 LE CoC manager 那批） | 加最少 3 行代码示例 + 测试位置 |
+| 踩到 upstream / 项目隐含约定的坑 | 写进对应小节的"纪律"提示。**这种总结比技术指南更值钱**——用 session 时间换的 |
+| 引入新术语 / 缩写 | 加小注解释（参考已有 BTP / WID / MMI / SLC 写法） |
+| 发现 AGENTS.md 自己有错（路径搬过没改、类重名、命令删了） | **同一 commit 修掉**，commit message：`docs(agents): purge stale ref to X (now Y)` |
+
+### 何时必须改 README.md
+
+| 触发 | 改哪里 |
+|---|---|
+| 增 / 删 / 改名 `app` 或 `tools` 命令 | §1.3–1.10 对应小节的使用例 + "关键 CLI 命令一览"表 |
+| 加新用户场景（如 Mesh / LE Audio） | 加 `## 1.X` 小节，按用途分组插在最匹配位置 |
+| 改命令必填参数 / 默认值 | 修对应 `pybluehost app <cmd>` 代码块 |
+| 真机硬件矩阵变化 | "已测试硬件"表 + "真机验证状态"表两处都改 |
+| PRD 状态变化（草案 → 已交付 / 含真机 ✅） | "项目状态"小节 + 对应 PRD 文件头 `**状态**:` 字段 |
+
+### 自动总结遇到的问题
+
+任何 AI agent 在 session 中：
+
+- 修了**根因非显然**的 bug → 在 "已知问题与经验" 章节加一行：`### Q: <现象> → A: <根因> / <commit-sha>`
+- 一次 refactor 改了 ≥ 5 个文件 → 在对应子系统的 `###` 小节加"踩坑/约定"附注
+- 上游文档跟项目内 plan 文档对不上 → 改 plan 顶部加 upstream-drift banner（参照 P.5/P.7/P.8 范式）；同时在 AGENTS.md 对应小节加"加新 X 前先 WebFetch upstream"
+- 解决了非平凡的环境问题（如 `pybluehost/lib/sig` symlink workaround）→ 加进 "已知问题与经验" 章节
+
+### Commit 前自查（改完文档跑一遍）
+
+```bash
+# 1. AGENTS.md 提到的所有路径都真实存在
+grep -oE '[A-Za-z_/.][A-Za-z0-9_/.-]+\.(py|md|yml|yaml|toml)|pybluehost/[A-Za-z_/.-]+/?' AGENTS.md \
+  | sort -u | xargs -I{} sh -c '[ -e "{}" ] || echo MISSING: {}'
+
+# 2. README 引用的 CLI 命令都还活着
+for cmd in $(grep -oE "pybluehost (app|tools) [a-z-]+" README.md | awk '{print $3}' | sort -u); do
+  uv run pybluehost --help 2>&1 | grep -qE "[[:space:]]$cmd\b" || \
+    uv run pybluehost app --help 2>&1 | grep -qE "[[:space:]]$cmd\b" || \
+    uv run pybluehost tools --help 2>&1 | grep -qE "[[:space:]]$cmd\b" || \
+    echo "stale CLI in README: $cmd"
+done
+
+# 3. 版本号 / pyproject / __init__ 一致
+uv run pytest tests/unit/test_version_sync.py
+```
+
+任何一条报错 → 修完再 commit。
+
+### 反例（❌ 不要这么干）
+
+- 留 `TODO: 更新` 标记 → 上线即忘
+- 用 `~~strikethrough~~` 保留旧内容 → 噪音；直接删
+- 让 "v1.x 草案" 标签悬空 → PRD 真交付了立刻改 "已交付"
+- 把会话过程（"试了 A 再试 B 最后用 C"）写进文档 → 只留最终决定，过程在 git log
+- 在 STATUS.md 之外另抄一份 Plan 进度表 → 单一来源；AGENTS.md / README 引用即可
+- 描述只用一次的 session 临时状态 → 只写永久结论
+
+---
+
 ## 已交付子系统 — AI Agent 上手指南
 
 > v1.0 PRD 之后又交付了 v1.1 / v1.2 Phase 1+2 / v2.0 / v2.1 等若干 PRD，下面是接手时必须知道的入口。详细命令使用例见 [`README.md`](README.md) §1.7–1.10；本节只讲"是什么、入口在哪、怎么扩展"。
@@ -104,6 +170,8 @@ pybluehost app pts-iut -t usb
 
 #### Phase 2：autoptsclient 自动驱动（`pybluehost app pts-tester`）
 
+> **术语速查**：**BTP** = Bluetooth Test Protocol，autoptsclient ↔ IUT 之间的二进制 TCP 协议（5-byte frame header + payload）。**MMI** = Man-Machine Interface，PTS 弹给操作员的"请让 IUT 做 X"提示。**WID** = 每个 PTS test case 的 MMI 提示用 WID 编号标识（例如 WID 42）；upstream `wid/<group>.py` 已经把"WID 编号 → BTP 命令序列"的标准映射写好了，PyBlueHost 默认全套继承，只在行为偏差处覆盖（baseline 无覆盖）。**SLC** = Service Level Connection（HFP 三阶段握手 BRSF→BAC→CIND→CMER）。
+
 适合**完整自动化 + CI 接入**：
 
 ```bash
@@ -120,12 +188,12 @@ autoptsclient --project pybluehost \
 
 - BTP 协议层：`pybluehost/pts/btp/`（`protocol.py` 帧编解码 + `services/{base,core,gap,gatt,l2cap}.py` 四个 service + `tester.py` asyncio TCP server）
 - IUT 模块（autoptsclient 加载的入口）：`auto_pts_project/pybluehost/`
-  - `iutctl.py` — `iut_init()` spawn `pybluehost app pts-tester` 子进程 + 等 BTP READY；`iut_cleanup()` 拆掉
+  - `iutctl.py` — `iut_init()` spawn `pybluehost app pts-tester` 子进程 + 等 BTP READY；`iut_cleanup()` 拆掉。**子进程用 `sys.executable -m pybluehost` 起，所以 autoptsclient 和 PyBlueHost 必须装在同一 Python 环境**（或 PYTHONPATH 覆盖 PyBlueHost）；隔离 venv 的话子进程 `ModuleNotFoundError: pybluehost` 直接挂
   - `pics.py` — 按组从 `docs/pts/pics/*.draft.yaml` 加载 → `PICS_GAP / PICS_GATT / PICS_L2CAP / PICS_SMP / PICS_HCI` 等扁平 dict
   - `ixit.py` — 手写 IXIT_* 参数 dict；**operator 改这里的 `TSPX_bd_addr_iut`**
   - `wid/{gap,gatt,l2cap,sm}.py` — WID handler 适配器，默认继承上游 `wid.<group>` dispatch 字典；通过 `PYBLUEHOST_OVERRIDES` 列表加 PyBlueHost 特有覆盖（baseline 空）
 - 操作员 README：[`auto_pts_project/pybluehost/README.md`](auto_pts_project/pybluehost/README.md)（含 quickstart + 真机 step-by-step + troubleshooting 表）
-- BTP upstream 校准：曾多次发现 plan 跟 upstream auto-pts 的 opcode 编号有出入（详见 plan 顶部 banner）；**未来加新 BTP service 之前先 WebFetch 一遍 `https://raw.githubusercontent.com/auto-pts/auto-pts/master/doc/btp_<service>.txt` 对齐**
+- BTP upstream 校准：曾多次发现 plan 跟 upstream auto-pts 的 opcode 编号有出入（详见 plan 顶部 banner）；**未来加新 BTP service 之前先 WebFetch 一遍 `https://raw.githubusercontent.com/auto-pts/auto-pts/master/doc/btp_<service>.txt` 对齐**。WebFetch 受限时备选：`gh api repos/auto-pts/auto-pts/contents/doc/btp_<service>.txt --jq .content | base64 -d`，或本地 `git clone https://github.com/auto-pts/auto-pts /tmp/auto-pts && cat /tmp/auto-pts/doc/btp_<service>.txt`
 
 #### Phase 2 状态矩阵 + CI
 
