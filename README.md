@@ -6,10 +6,14 @@ PyBlueHost 用纯 Python 实现完整的 Bluetooth Host 协议栈：HCI、L2CAP�
 适用于快速原型开发、协议学习、无硬件集成测试，以及编写自定义 BLE/Classic profile 服务端与客户端。
 
 - **纯 Python 3.10+，asyncio 原生**
-- **支持虚拟硬件** —— 内置 `VirtualController`，可在单元测试中跑完整协议栈
+- **支持虚拟硬件** —— 内置 `VirtualController` + `VirtualLELink` / `VirtualClassicLink`，可在单元测试中跑完整协议栈端到端
 - **多种 Transport** —— UART、USB（PyUSB）、TCP、UDP、btsnoop replay、Linux HCI user-channel
 - **YAML-driven service definitions** —— 声明式定义自定义服务，无需手写 handler 样板
 - **结构化 Trace** —— HCI 包按命令/事件名展开（带 SIG 查表），可彩色实时输出，也可录制为 btsnoop / JSON Lines
+- **Classic Audio**（v2.0）—— A2DP / AVRCP / HFP / HSP + SBC/CVSD/mSBC codec；v2.1 自动适配 USB SCO Alt-Setting / Realtek vendor cmd；可选 sounddevice 实时 mic/speaker
+- **LE CoC** —— `stack.l2cap.connect_le_coc_channel()` / `listen_le_coc_channel()` 原生支持 LE Credit-Based Channels（signaling + 信用流控 + 断开）
+- **PTS IUT**（v1.2）—— Phase 1 `app pts-iut` REPL 手动驱动；Phase 2 `app pts-tester` BTP 服务（Core/GAP/GATT/L2CAP）让 autoptsclient 程序化驱动
+- **Virtual Sniffer**（v1.1）—— 把 live HCI 注入 Ellisys / Wireless Protocol Suite 分析仪 UI 显示
 - **MITM 透传**（⚠ 授权测试）—— 双 radio 在目标与手机间透传 BLE/BR ACL 并抓 btsnoop，见 [`docs/MITM.md`](docs/MITM.md)
 
 ---
@@ -149,7 +153,73 @@ pybluehost app mitm --upstream usb --downstream usb:0a12:0001 --target AA:BB:CC:
 默认输出 `mitm-<时间戳>.btsnoop`，用 Wireshark/Ellisys 打开。完整说明（硬件选型、删旧 bond、
 Numeric 操作、限制、真机验证事项）见 **[docs/MITM.md](docs/MITM.md)**。
 
-## 1.7 离线工具（不需要硬件）
+## 1.7 Classic Audio profiles（v2.0）
+
+```bash
+# A2DP source：把本地 WAV 推给蓝牙音箱
+pybluehost app a2dp-source -t usb --target AA:BB:CC:DD:EE:FF --wav music.wav
+
+# A2DP sink：当蓝牙音箱接收手机推流，PCM 写到 WAV
+pybluehost app a2dp-sink -t usb --output received.wav
+
+# AVRCP controller / target —— 媒体控制（PLAY/PAUSE/VOL+/VOL-/NEXT）
+pybluehost app avrcp-control -t usb --target AA:BB:CC:DD:EE:FF
+pybluehost app avrcp-target  -t usb
+
+# HFP / HSP —— SLC + SCO 文件 loopback 或 live mic/speaker
+pybluehost app hfp-test -t usb --role=hf --target=AA:BB:CC:DD:EE:FF --wav=mic.wav --out=recv.wav
+pybluehost app hfp-test -t usb --role=hf --target=AA:BB:CC:DD:EE:FF --mic-device=2 --speaker-device=3
+
+# 集成 demo：单机模拟一部手机或一只耳机（A2DP + AVRCP + HFP 同时在线）
+pybluehost app demo-phone     -t usb --wav music.wav --ring-after=15
+pybluehost app demo-headphone -t usb --target AA:BB:CC:DD:EE:FF --avrcp-cmd=pause --avrcp-cmd-at=5
+```
+
+操作员手册（含真机 step-by-step + adapter SCO quirk 矩阵）见 **[docs/CLASSIC_AUDIO_E2E.md](docs/CLASSIC_AUDIO_E2E.md)**。
+
+## 1.8 Virtual Sniffer（v1.1，Windows-only）
+
+把 live HCI 注入 Ellisys / Wireless Protocol Suite 分析仪 UI，无需真 sniffer 硬件：
+
+```bash
+# Ellisys（需要 Ellisys 设备或 BEX400 软件运行）
+pybluehost app ble-scan -t usb --virtual-sniffer=ellisys
+
+# Wireless Protocol Suite（FTE 系列分析仪）
+pybluehost app ble-scan -t usb --virtual-sniffer=wps
+```
+
+操作员 runbook 见 **[docs/VIRTUAL_SNIFFER_VERIFY.md](docs/VIRTUAL_SNIFFER_VERIFY.md)**。
+
+## 1.9 PTS conformance（v1.2）
+
+PyBlueHost 当 IUT（Implementation Under Test）跑 SIG PTS 一致性测试。
+
+**Phase 1（手动 REPL）：** 适合不想搭 autoptsclient 的快速排查
+```bash
+pybluehost app pts-iut -t usb
+# 进 REPL 后用 advertise / connect / pair / notify / write ... 配合 PTS MMI 提示
+```
+
+**Phase 2（autoptsclient 自动）：** 给 autoptsclient 暴露 BTP 接口
+```bash
+# IUT host 上起 BTP tester
+pybluehost app pts-tester -t usb --listen=127.0.0.1:65103
+
+# 另一台机器（或同机）autoptsclient 指向本仓库 auto_pts_project/
+# 详见 auto_pts_project/pybluehost/README.md
+```
+
+PICS 半自动生成：
+
+```bash
+pybluehost tools info -t usb --json > my-adapter.json
+pybluehost tools pics-gen -c my-adapter.json -o docs/pts/pics
+```
+
+完整 PTS 操作员 runbook 见 **[docs/PTS_RUNBOOK.md](docs/PTS_RUNBOOK.md)** 和 **[auto_pts_project/pybluehost/README.md](auto_pts_project/pybluehost/README.md)**。
+
+## 1.10 离线工具（不需要硬件）
 
 ```bash
 # HCI 包十六进制 → 解码后的命令/事件
@@ -165,7 +235,7 @@ pybluehost tools fw list
 pybluehost tools fw download <chip>
 ```
 
-## 1.8 出问题怎么调试（trace）
+## 1.11 出问题怎么调试（trace）
 
 最常用的三个命令：
 
@@ -195,7 +265,7 @@ ls trace.log          # 你刚才重定向的 trace
 
 需要更细的控制（按层独立级别、ACL payload 不截断、把默认抑制的事件加回来）见 [§3.4](#34-trace-系统深度定制) 「Trace 系统深度定制」。
 
-## 1.9 安装 / 硬件常见问题
+## 1.12 安装 / 硬件常见问题
 
 **Windows：必须装 WinUSB 驱动**
 
@@ -708,20 +778,67 @@ uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-fail-under=85
 
 ## 项目状态
 
-全部 18 个实施 Plan 均已完成：
+已交付 **45 个 Plan**，**2165+ 单测 + 多组 e2e**全绿（详见 [`docs/superpowers/STATUS.md`](docs/superpowers/STATUS.md)）。
 
-- **Core 层** —— address、UUID、errors、状态机、trace、SIG 数据库
-- **Transport 层** —— UART、USB、TCP、UDP、virtual、btsnoop 回放、HCI user-channel
-- **HCI 层** —— packet codec、流控、controller、virtual controller、vendor（Intel/Realtek）
-- **L2CAP 层** —— SAR、固定/CoC 通道、ERTM、信令、manager
-- **BLE** —— ATT、GATT（server + client）、SMP、SecurityConfig、GAP（广播/扫描/连接/隐私/白名单）
-- **Classic** —— SDP、RFCOMM、SPP、GAP（inquiry/SSP/可发现性）
-- **Profiles** —— 9 个内置 BLE Profile + 装饰器驱动的自定义 Profile 框架
-- **Stack 装配** —— `Stack` 工厂，支持 virtual 模式与 async 上下文管理器
-- **测试基础设施** —— 1000+ 测试，覆盖率 86%+，btsnoop 回放，CI 矩阵（Python 3.10/3.11/3.12）
-- **CLI 工具** —— `app` 与 `tools` 双命名空间共 12 个子命令
-- **Pytest Transport 选择** —— `--transport`、`--list-transports`、自动 USB 探测 + 回落
-- **结构化 Trace** —— ConsoleSink（彩色、防刷屏）、SIG 查表格式化器、协议层 logger 注入
+### 按 PRD 版本
+
+| 版本 | 范围 | 状态 |
+|---|---|---|
+| **v1.0** | 完整 Bluetooth Host 协议栈（Core/Transport/HCI/L2CAP/BLE/Classic/Profile + CLI + Trace） | ✅ 31 plans + Hardware E2E Readiness |
+| **v1.1** | Virtual Sniffer —— live HCI 注入 Ellisys/WPS 分析仪 UI | ✅（含 CSR8510 + 真分析仪实测） |
+| **v1.2 Phase 1** | PTS IUT —— `PTSModeConfig` 5 个 opt-in flag + IutActions 动作层 + `app pts-iut` REPL + PICS 半自动生成器 | ✅（15 Task；手动驱动 PTS） |
+| **v1.2 Phase 2** | auto-pts BTP —— BTP 基础协议 + Core/GAP/GATT/L2CAP service + `app pts-tester` + auto_pts_project IUT 模块 + PTS 结果矩阵 + CI smoke | ✅ 框架（真机 pass-rate 留 operator 完成） |
+| **v2.0** | Classic Audio —— SBC/CVSD/mSBC codec + AVDTP/A2DP + AVCTP/AVRCP + HFP（SLC + SCO file loopback） + HSP + CLI/sounddevice/runbook + 集成 demo（demo-phone / demo-headphone） | ✅ 6 个 Plan（A.1-A.6）+ 集成 demo |
+| **v2.1 B.1** | USB SCO Alt-Setting 切换（Intel Alt 1/6）+ Realtek vendor cmd `0xFC8B` + iso IN/OUT EP I/O | ✅ mock 单测全覆盖（真机待 Intel/Realtek adapter） |
+| **v2.1 B.2** | 实时 PCM↔OS 音频 —— `MicToScoSender` + `ScoToSpeakerReceiver` + `hfp/hsp-test --mic-device/--speaker-device` + `tools audio list-devices` | ✅ mock 单测全覆盖（真机待 PortAudio 设备） |
+
+### LE CoC manager 扩展
+
+副产品：v1.0 协议栈现原生支持 LE Credit-Based Channels（`pybluehost/l2cap/le_signaling.py` + `stack.l2cap.connect_le_coc_channel()` / `listen_le_coc_channel()` / `disconnect_le_coc_channel()`），未来 BLE profile / 自定义 service over CoC 可直接复用。
+
+### 关键 CLI 命令一览
+
+`pybluehost app` 命名空间（需要 transport）：
+
+| 命令 | 用途 |
+|---|---|
+| `ble-scan` / `ble-adv` / `classic-inquiry` | 基础 BLE / Classic 扫描+广播 |
+| `gatt-browser` / `gatt-server` | GATT client / server |
+| `sdp-browser` / `spp-echo` | Classic SDP / RFCOMM |
+| `bridge` | UART/USB HCI ⇄ TCP/UDP H4 转接 |
+| `mitm` | BLE/BR 双 radio 透传抓包 |
+| `a2dp-source` / `a2dp-sink` | A2DP 流推 / 收（WAV 或 sounddevice） |
+| `avrcp-control` / `avrcp-target` | AVRCP 控制器 / 目标 |
+| `hfp-test` / `hsp-test` | HFP / HSP 双角色 + SCO loopback（WAV 文件或 live mic/speaker） |
+| `demo-phone` / `demo-headphone` | 集成 demo：单机模拟手机或耳机，A2DP+AVRCP+HFP 一起跑 |
+| `pts-iut` | Phase 1 PTS IUT 手动 REPL |
+| `pts-tester` | Phase 2 BTP tester，给 autoptsclient 连 |
+
+`pybluehost tools` 命名空间（离线）：
+
+| 命令 | 用途 |
+|---|---|
+| `info` / `usb` / `fw` | HCI 能力 dump / USB 诊断 / 固件加载 |
+| `decode` / `rpa` | btsnoop 解析 / RPA address 计算 |
+| `audio list-devices` | PortAudio I/O 设备索引（喂给 `--mic-device` / `--speaker-device`） |
+| `pics-gen` | 根据 HCI 能力 dump 半自动生成 PTS PICS YAML drafts |
+
+### 真机验证状态
+
+- **v1.0 BLE/Classic e2e** —— ✅ CSR8510 / Intel AX201 / Intel BE200 全套通过；Barrot BR8654A02 部分通过（厂商 RF 初始化兼容问题）
+- **v1.1 Virtual Sniffer** —— ✅ CSR8510 + 真 Ellisys / WPS 分析仪验证通过
+- **v1.2 Phase 1 PTS REPL** —— ✅ 操作员可在 PTS dongle + Windows 上手动驱动
+- **v1.2 Phase 2 BTP + autoptsclient** —— ⏳ 框架完成；真机 pass-rate 待 operator（PTS dongle + autoptsserver）
+- **v2.0 A2DP/AVRCP/HFP** —— ⏳ 虚拟控制器全过；真机 A2DP 音质/AVRCP 控制/HFP 实时通话待 adapter+耳机/手机 测试
+- **v2.1 B.1/B.2** —— ⏳ mock 单测全过；真机 SCO Alt-Setting 切换 + sounddevice 实时音频待 adapter+耳机
+
+### 测试基础设施
+
+- pytest-asyncio + virtual / hardware 双 transport
+- 2165 单测 + 多组 e2e（`tests/e2e/` + `tests/integration/`）
+- `.github/workflows/pts-virtual.yml` PTS BTP self-check CI
+- Coverage 维持 ≥ 85%（pytest --cov）
+- VirtualController + VirtualLELink + VirtualClassicLink 单进程 LE/Classic loopback
 
 ---
 
