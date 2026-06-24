@@ -20,11 +20,11 @@ v1.0 已有完整 Trace 系统（`core/trace.py`：`TraceEvent` + btsnoop/pcapng
 
 ### 已有原型
 
-`pybluehost/tools/` 下已有两家分析仪的 **working demo**（已实测跑通）：
+两家分析仪的 **working demo**（已实测跑通）—— 设计阶段在 `pybluehost/tools/`（operator scratch，gitignored）：
 - `Ellisys_live_virtual_sniffer.py`：实测 Ellisys "HCI Injection Overview" 显示 2 条 HCI Reset
 - `WirelessProtocolSuite_live_virtual_sniffer.py`：实测 WPS 显示 "4 frames analyzed"（command×2 + event×2）
 - `test_live_virtual_sniffer.py`：mock 服务器单元测试
-- 分析文档：`PTS_Sniffer_Remote_Control_Analysis.md`
+- 分析文档已 promote 到 [`docs/sniffer/operator-runbooks/`](sniffer/operator-runbooks/)（含 Ellisys/WPS/PTS sniffer remote-control 笔记 + 操作员 PowerShell 脚本 + Ellisys 烟测 trace）
 
 本版本 = **把这些 demo 产品化进 PyBlueHost**：从"发固定 HCI Reset 帧"升级为"实时流式注入所有 HCI 流量"，封装成正式 TraceSink + CLI flag。
 

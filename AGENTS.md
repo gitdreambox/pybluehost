@@ -147,6 +147,8 @@ uv run pytest tests/unit/test_version_sync.py
 - 现成实现：`ellisys.py`、`wps.py`（用 ctypes 调 Live Import DLL）
 - Spec 字段：`SnifferSpec` 在 `pybluehost/sniffer/spec.py`（注意：早期版本在 `cli/_sniffer_arg.py`，已在 Plan C.2 时反向依赖修复中搬迁）
 - 操作员 runbook：[`docs/VIRTUAL_SNIFFER_VERIFY.md`](docs/VIRTUAL_SNIFFER_VERIFY.md)
+- 分析仪集成笔记 + PowerShell 自动化 + Ellisys 烟测 trace：[`docs/sniffer/operator-runbooks/`](docs/sniffer/operator-runbooks/)（Ellisys/WPS 字节布局抓的原始 reverse 笔记，加新分析仪后端先读）
+- **`pybluehost/tools/` 是 operator 本地 scratch 区**——`.gitignore` 显式排除（见 `.gitignore` 注释行）。用于堆 vendor SDK ZIP / EXE / 探索脚本，不进 wheel、不进 git。**别把 tracked 代码或 runbook 内容放这里**——runbook 进 `docs/sniffer/operator-runbooks/`、tracked CLI 进 `pybluehost/cli/tools/`、dev 脚本进 `scripts/`。
 
 ### v1.2 PTS IUT — 两阶段并存
 
