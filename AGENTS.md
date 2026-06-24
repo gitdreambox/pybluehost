@@ -181,7 +181,7 @@ pybluehost app pts-iut -t usb
 pybluehost app pts-tester -t usb --listen=127.0.0.1:65103
 
 # 另一台机器（或同机）跑 autoptsclient，--project-path 指向我们的 IUT 模块
-autoptsclient --project pybluehost \
+autoptsclient --project pybluehost_iut \
     --project-path /path/to/pybluehost/auto_pts_project \
     --server <windows-host>:65000 \
     --workspace /path/to/PTS-workspace \
@@ -189,12 +189,12 @@ autoptsclient --project pybluehost \
 ```
 
 - BTP 协议层：`pybluehost/pts/btp/`（`protocol.py` 帧编解码 + `services/{base,core,gap,gatt,l2cap}.py` 四个 service + `tester.py` asyncio TCP server）
-- IUT 模块（autoptsclient 加载的入口）：`auto_pts_project/pybluehost/`
+- IUT 模块（autoptsclient 加载的入口）：`auto_pts_project/pybluehost_iut/`
   - `iutctl.py` — `iut_init()` spawn `pybluehost app pts-tester` 子进程 + 等 BTP READY；`iut_cleanup()` 拆掉。**子进程用 `sys.executable -m pybluehost` 起，所以 autoptsclient 和 PyBlueHost 必须装在同一 Python 环境**（或 PYTHONPATH 覆盖 PyBlueHost）；隔离 venv 的话子进程 `ModuleNotFoundError: pybluehost` 直接挂
   - `pics.py` — 按组从 `docs/pts/pics/*.draft.yaml` 加载 → `PICS_GAP / PICS_GATT / PICS_L2CAP / PICS_SMP / PICS_HCI` 等扁平 dict
   - `ixit.py` — 手写 IXIT_* 参数 dict；**operator 改这里的 `TSPX_bd_addr_iut`**
   - `wid/{gap,gatt,l2cap,sm}.py` — WID handler 适配器，默认继承上游 `wid.<group>` dispatch 字典；通过 `PYBLUEHOST_OVERRIDES` 列表加 PyBlueHost 特有覆盖（baseline 空）
-- 操作员 README：[`auto_pts_project/pybluehost/README.md`](auto_pts_project/pybluehost/README.md)（含 quickstart + 真机 step-by-step + troubleshooting 表）
+- 操作员 README：[`auto_pts_project/pybluehost_iut/README.md`](auto_pts_project/pybluehost_iut/README.md)（含 quickstart + 真机 step-by-step + troubleshooting 表）
 - BTP upstream 校准：曾多次发现 plan 跟 upstream auto-pts 的 opcode 编号有出入（详见 plan 顶部 banner）；**未来加新 BTP service 之前先 WebFetch 一遍 `https://raw.githubusercontent.com/auto-pts/auto-pts/master/doc/btp_<service>.txt` 对齐**。WebFetch 受限时备选：`gh api repos/auto-pts/auto-pts/contents/doc/btp_<service>.txt --jq .content | base64 -d`，或本地 `git clone https://github.com/auto-pts/auto-pts /tmp/auto-pts && cat /tmp/auto-pts/doc/btp_<service>.txt`
 
 #### Phase 2 状态矩阵 + CI

@@ -214,7 +214,7 @@ pybluehost app pts-iut -t usb
 pybluehost app pts-tester -t usb --listen=127.0.0.1:65103
 
 # 另一台机器（或同机）autoptsclient 指向本仓库 auto_pts_project/
-# 详见 auto_pts_project/pybluehost/README.md
+# 详见 auto_pts_project/pybluehost_iut/README.md
 ```
 
 PICS 半自动生成：
@@ -224,7 +224,7 @@ pybluehost tools info -t usb --json > my-adapter.json
 pybluehost tools pics-gen -c my-adapter.json -o docs/pts/pics
 ```
 
-完整 PTS 操作员 runbook 见 **[docs/PTS_RUNBOOK.md](docs/PTS_RUNBOOK.md)** 和 **[auto_pts_project/pybluehost/README.md](auto_pts_project/pybluehost/README.md)**。
+完整 PTS 操作员 runbook 见 **[docs/PTS_RUNBOOK.md](docs/PTS_RUNBOOK.md)** 和 **[auto_pts_project/pybluehost_iut/README.md](auto_pts_project/pybluehost_iut/README.md)**。
 
 ## 1.10 离线工具（不需要硬件）
 

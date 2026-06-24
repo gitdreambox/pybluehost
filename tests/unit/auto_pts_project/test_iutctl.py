@@ -15,21 +15,21 @@ def _alloc_port() -> int:
 
 def test_iutctl_module_has_required_surface():
     """autoptsclient discovery hook check."""
-    from auto_pts_project.pybluehost import iutctl
+    from auto_pts_project.pybluehost_iut import iutctl
     assert callable(getattr(iutctl, "iut_init", None))
     assert callable(getattr(iutctl, "iut_cleanup", None))
     assert callable(getattr(iutctl, "iut_log", None))
 
 
-def test_iutctl_project_name_is_pybluehost():
-    from auto_pts_project import pybluehost
-    assert pybluehost.PROJECT_NAME == "pybluehost"
+def test_iutctl_project_name_is_pybluehost_iut():
+    from auto_pts_project import pybluehost_iut
+    assert pybluehost_iut.PROJECT_NAME == "pybluehost_iut"
 
 
 @pytest.mark.asyncio
 async def test_iutctl_init_spawns_pts_tester_and_waits_ready():
     """iut_init blocks until the tester is listening and has emitted READY."""
-    from auto_pts_project.pybluehost import iutctl
+    from auto_pts_project.pybluehost_iut import iutctl
 
     port = _alloc_port()
     ctx = {"listen": f"127.0.0.1:{port}", "transport": "virtual"}
@@ -48,7 +48,7 @@ async def test_iutctl_init_spawns_pts_tester_and_waits_ready():
 
 @pytest.mark.asyncio
 async def test_iutctl_cleanup_kills_subprocess():
-    from auto_pts_project.pybluehost import iutctl
+    from auto_pts_project.pybluehost_iut import iutctl
 
     port = _alloc_port()
     ctx = {"listen": f"127.0.0.1:{port}", "transport": "virtual"}
@@ -65,10 +65,10 @@ async def test_iutctl_cleanup_kills_subprocess():
 @pytest.mark.asyncio
 async def test_iutctl_cleanup_idempotent_without_init():
     """Calling cleanup before init shouldn't raise."""
-    from auto_pts_project.pybluehost import iutctl
+    from auto_pts_project.pybluehost_iut import iutctl
     await iutctl.iut_cleanup({})
 
 
 def test_iutctl_log_doesnt_raise():
-    from auto_pts_project.pybluehost import iutctl
+    from auto_pts_project.pybluehost_iut import iutctl
     iutctl.iut_log("test", "message")

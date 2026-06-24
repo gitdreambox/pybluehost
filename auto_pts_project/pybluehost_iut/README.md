@@ -22,7 +22,7 @@ Phase 1 (`pybluehost app pts-iut`).
                            │ XML-RPC
                            ▼
    IUT host ────┐  autoptsclient
-                │   ├── projects/pybluehost/    ◄── this package
+                │   ├── projects/pybluehost_iut/    ◄── this package
                 │   │     iutctl.py             ── spawns pts-tester subprocess
                 │   │     pics.py               ── per-group PICS_<GROUP> dicts
                 │   │     ixit.py               ── IXIT_<GROUP> param dicts
@@ -49,7 +49,7 @@ same Linux host is the simplest setup.
 
 | File | Purpose |
 |---|---|
-| `__init__.py` | Package marker; exposes `PROJECT_NAME = "pybluehost"` |
+| `__init__.py` | Package marker; exposes `PROJECT_NAME = "pybluehost_iut"` |
 | `iutctl.py` | `iut_init()` spawns `pybluehost app pts-tester` + waits for BTP READY; `iut_cleanup()` tears it down. |
 | `pics.py` | `PICS_GAP / PICS_GATT / PICS_L2CAP / PICS_SMP / PICS_HCI / PICS_SDP / PICS_RFCOMM` — flat `dict[FEATURE_ID, bool]` loaded from `docs/pts/pics/*.draft.yaml`. |
 | `ixit.py` | `IXIT_<GROUP>` flat string dicts. **Customise `TSPX_bd_addr_iut` before runs.** |
@@ -67,7 +67,7 @@ pip install autopts       # if available on PyPI; otherwise checkout + pip insta
 # 2. Smoke check: PyBlueHost spawns the BTP tester on virtual transport
 uv run python -c "
 import asyncio
-from auto_pts_project.pybluehost import iutctl
+from auto_pts_project.pybluehost_iut import iutctl
 
 async def main():
     ctx = {'listen': '127.0.0.1:65103', 'transport': 'virtual'}
@@ -110,7 +110,7 @@ adapter. `pics.py` picks them up automatically.
 
 ### Step 2: Customise IXIT
 
-Edit `auto_pts_project/pybluehost/ixit.py` and set
+Edit `auto_pts_project/pybluehost_iut/ixit.py` and set
 `TSPX_bd_addr_iut` (all four groups) to your adapter's BD address —
 **uppercase hex, no separators**, e.g. `AC1F09FFEE12`.
 
@@ -120,7 +120,7 @@ From the autoptsclient checkout:
 
 ```bash
 autoptsclient \
-  --project pybluehost \
+  --project pybluehost_iut \
   --project-path /path/to/pybluehost/auto_pts_project \
   --server <windows-host>:65000 \
   --workspace /path/to/PTS-workspace \
@@ -128,7 +128,7 @@ autoptsclient \
 ```
 
 The client:
-1. Imports `auto_pts_project.pybluehost`
+1. Imports `auto_pts_project.pybluehost_iut`
 2. Calls `iutctl.iut_init({'transport': 'usb', 'listen': '127.0.0.1:65103'})`
 3. Pulls `PICS_GAP / PICS_GATT / ...` and `IXIT_GAP / ...`
 4. Issues `autoptsserver.RunTestCase(...)` for each requested test case
@@ -145,7 +145,7 @@ Results land in autoptsclient's log directory (run with `--log-dir` to control).
 If a specific WID needs PyBlueHost-specific logic (rare — baseline reuses upstream):
 
 ```python
-# auto_pts_project/pybluehost/wid/gap.py
+# auto_pts_project/pybluehost_iut/wid/gap.py
 
 def _wid_42_pybluehost_specific(desc, *args, **kwargs):
     """PyBlueHost-specific handler for WID 42."""
