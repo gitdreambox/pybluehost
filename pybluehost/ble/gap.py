@@ -304,6 +304,56 @@ class BLEConnectionManager:
         await self._hci.send_command(_make_cmd(HCI_DISCONNECT, params))
         self._connections.pop(handle, None)
 
+    async def set_phy(
+        self,
+        connection_handle: int,
+        tx_phys: int,
+        rx_phys: int,
+        *,
+        phy_options: int = 0,
+        timeout_s: float = 5.0,
+    ) -> "LEPhyUpdateComplete":
+        """Request a PHY update on an LE connection.
+
+        ``tx_phys`` and ``rx_phys`` are bitmasks (``LEPhyMask.LE_1M`` /
+        ``LE_2M`` / ``LE_CODED``, OR'd together). Returns the parsed
+        ``LE_PHY_Update_Complete`` subevent the controller emits after the
+        peer accepts (or rejects) the request. Raises ``asyncio.TimeoutError``
+        if the event doesn't arrive within ``timeout_s``.
+
+        Note: passing a tx/rx of 0 + setting bit 0/1 of all_phys lets the
+        controller choose. This helper always sets ``all_phys=0`` (explicit
+        preference) because that's the common operator intent — set both
+        sides to 2M, for example.
+        """
+        import asyncio
+        from pybluehost.hci.packets import HCI_LE_Set_PHY
+
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+
+        def _on_update(parsed):  # parsed: LEPhyUpdateComplete
+            if parsed.connection_handle != connection_handle:
+                return
+            if not fut.done():
+                fut.set_result(parsed)
+
+        self._hci.on_le_phy_update(_on_update)
+        try:
+            await self._hci.send_command(HCI_LE_Set_PHY(
+                connection_handle=connection_handle,
+                all_phys=0,
+                tx_phys=tx_phys,
+                rx_phys=rx_phys,
+                phy_options=phy_options,
+            ))
+            return await asyncio.wait_for(fut, timeout=timeout_s)
+        finally:
+            try:
+                self._hci._le_phy_update_listeners.remove(_on_update)
+            except (ValueError, AttributeError):
+                pass
+
 
 # ---------------------------------------------------------------------------
 # PrivacyManager

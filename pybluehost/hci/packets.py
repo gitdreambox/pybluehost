@@ -34,6 +34,7 @@ from pybluehost.hci.constants import (
     HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST,
     HCI_LE_CLEAR_RESOLVING_LIST,
     HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE,
+    HCI_LE_SET_PHY,
     HCI_LE_SET_PRIVACY_MODE,
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
     HCI_READ_LOCAL_EXTENDED_FEATURES,
@@ -275,6 +276,48 @@ class HCI_LE_Set_Scan_Enable(HCICommand):
     def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Scan_Enable:
         enable, dup = struct.unpack_from("<BB", parameters)
         return cls(le_scan_enable=enable, filter_duplicates=dup)
+
+
+@PacketRegistry.register_command(HCI_LE_SET_PHY)
+@dataclass
+class HCI_LE_Set_PHY(HCICommand):
+    """HCI_LE_Set_PHY (OGF=0x08, OCF=0x32) — request a PHY update on an LE link.
+
+    Core Spec Vol 4 Part E §7.8.49. Reply is a Command Status followed
+    eventually by an LE_PHY_Update_Complete subevent (0x0C) once the peer
+    has accepted or rejected the change.
+
+    `all_phys` bit 0 set means "host has no TX preference, controller picks";
+    bit 1 set means "no RX preference". `tx_phys`/`rx_phys` are bitmasks per
+    `LEPhyMask` (bit 0=1M, 1=2M, 2=Coded).
+    """
+
+    opcode: int = field(default=HCI_LE_SET_PHY, init=False)
+    connection_handle: int = 0
+    all_phys: int = 0
+    tx_phys: int = 0
+    rx_phys: int = 0
+    phy_options: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return struct.pack(
+            "<HBBBH",
+            self.connection_handle, self.all_phys,
+            self.tx_phys, self.rx_phys, self.phy_options,
+        )
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass  # derived from fields
+
+    @classmethod
+    def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_PHY:
+        handle, all_phys, tx, rx, opts = struct.unpack_from("<HBBBH", parameters)
+        return cls(
+            connection_handle=handle, all_phys=all_phys,
+            tx_phys=tx, rx_phys=rx, phy_options=opts,
+        )
 
 
 @PacketRegistry.register_command(HCI_READ_BD_ADDR)
@@ -1013,6 +1056,32 @@ def parse_le_advertising_reports(subevent_parameters: bytes) -> list[LEAdvertisi
             rssi=rssi,
         ))
     return reports
+
+
+@dataclass
+class LEPhyUpdateComplete:
+    """Parsed body of an LE_PHY_Update_Complete subevent (Vol 4 Part E §7.7.65.12).
+
+    `tx_phy` / `rx_phy` are single values from `LEPhy` (1M=0x01, 2M=0x02,
+    Coded=0x03) — the actual PHY currently in use, not a mask.
+    """
+
+    status: int
+    connection_handle: int
+    tx_phy: int
+    rx_phy: int
+
+
+def parse_le_phy_update_complete(subevent_parameters: bytes) -> LEPhyUpdateComplete:
+    """Parse the 5-byte body of an LE_PHY_Update_Complete subevent."""
+    if len(subevent_parameters) < 5:
+        raise ValueError(
+            f"LE_PHY_Update_Complete needs 5 bytes, got {len(subevent_parameters)}",
+        )
+    status, handle, tx, rx = struct.unpack_from("<BHBB", subevent_parameters)
+    return LEPhyUpdateComplete(
+        status=status, connection_handle=handle, tx_phy=tx, rx_phy=rx,
+    )
 
 
 # ---------------------------------------------------------------------------

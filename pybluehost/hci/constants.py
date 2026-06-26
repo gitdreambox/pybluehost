@@ -104,6 +104,28 @@ HCI_LE_GENERATE_DHKEY = make_opcode(OGF.LE, 0x0026)
 HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST = make_opcode(OGF.LE, 0x27)
 HCI_LE_CLEAR_RESOLVING_LIST = make_opcode(OGF.LE, 0x29)
 HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE = make_opcode(OGF.LE, 0x2D)
+HCI_LE_SET_PHY = make_opcode(OGF.LE, 0x32)
+
+
+# LE PHY values (Core Spec Vol 4 Part E §7.8.49 LE_Set_PHY,
+# §7.7.65.12 LE_PHY_Update_Complete event).
+#
+# Command parameters TX_PHYS/RX_PHYS are bitfields (bit 0=1M, 1=2M, 2=Coded),
+# while the event reports a single negotiated value per direction:
+class LEPhy:
+    """Single-PHY values reported by LE_PHY_Update_Complete."""
+
+    LE_1M = 0x01
+    LE_2M = 0x02
+    LE_CODED = 0x03
+
+
+class LEPhyMask:
+    """Bitmask values for LE_Set_PHY TX_PHYS / RX_PHYS parameters."""
+
+    LE_1M = 0x01  # bit 0
+    LE_2M = 0x02  # bit 1
+    LE_CODED = 0x04  # bit 2
 # Note: Bluetooth Core Spec 6.1 renamed HCI_LE_Read_Local_Supported_Features
 # (OCF 0x0003) to HCI_LE_Read_Local_Supported_Features_Page and added an
 # optional 1-byte page_number parameter. SAME OCF 0x0003; SAME

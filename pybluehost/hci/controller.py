@@ -169,6 +169,7 @@ class HCIController:
         # Encryption event listeners
         self._encryption_change_listeners: list = []
         self._le_ltk_request_listeners: list = []
+        self._le_phy_update_listeners: list = []
 
         # SCO setup — pending futures keyed by ACL handle awaiting
         # Synchronous_Connection_Complete (event code 0x2C).
@@ -212,6 +213,16 @@ class HCIController:
     def on_le_ltk_request(self, listener) -> None:
         """Register listener called as (handle: int, rand: bytes, ediv: int) when LE_LTK_Request subevent arrives."""
         self._le_ltk_request_listeners.append(listener)
+
+    def on_le_phy_update(self, listener) -> None:
+        """Register listener invoked when LE_PHY_Update_Complete subevent (0x0C) arrives.
+
+        Listener is called as ``listener(LEPhyUpdateComplete)`` — i.e. with a
+        parsed object containing ``status``, ``connection_handle``, ``tx_phy``,
+        ``rx_phy``. Both spontaneous controller-initiated updates and the
+        response to HCI_LE_Set_PHY surface here.
+        """
+        self._le_phy_update_listeners.append(listener)
 
     def on_io_capability_request(self, listener) -> None:
         """Register listener called as (addr: BDAddress) when IO_Capability_Request fires."""
@@ -791,6 +802,17 @@ class HCIController:
                 ediv = int.from_bytes(params[10:12], "little")
                 for listener in list(self._le_ltk_request_listeners):
                     result = listener(handle, rand_b, ediv)
+                    _schedule_listener_result(result)
+
+        if isinstance(event, HCI_LE_Meta_Event) and event.subevent_code == LEMetaSubEvent.LE_PHY_UPDATE_COMPLETE:
+            from pybluehost.hci.packets import parse_le_phy_update_complete
+            try:
+                parsed = parse_le_phy_update_complete(event.subevent_parameters)
+            except ValueError:
+                parsed = None
+            if parsed is not None:
+                for listener in list(self._le_phy_update_listeners):
+                    result = listener(parsed)
                     _schedule_listener_result(result)
 
         # SC (SSP) event listeners
