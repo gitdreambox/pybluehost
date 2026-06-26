@@ -216,6 +216,32 @@ A2DP / AVRCP / HFP / HSP 全实装。`pybluehost/profiles/classic/` 下：
 - 集成 demo：`pybluehost app demo-phone` / `app demo-headphone` 在单进程里把 A2DP+AVRCP+HFP 三个 profile 串起来，配 `tests/e2e/test_integrated_demo.py`
 - 操作员手册：[`docs/CLASSIC_AUDIO_E2E.md`](docs/CLASSIC_AUDIO_E2E.md)（含 adapter SCO quirk 矩阵）
 
+### PHY / EDR 控制 + 双设备 throughput 基线
+
+PHY 切换（BLE LE 1M ↔ LE 2M ↔ LE Coded）+ Classic EDR 包类型约束（2-DH / 3-DH）是为了双设备 throughput 基线测试加的，**也是任何想衡量"换 PHY 之后速度差多少"的工具的前提**。
+
+```python
+# BLE: 把活跃 LE 连接切到 LE 2M PHY
+from pybluehost.hci.constants import LEPhyMask
+result = await stack.gap.ble_connections.set_phy(
+    handle, tx_phys=LEPhyMask.LE_2M, rx_phys=LEPhyMask.LE_2M,
+)
+# result.status == 0 → 成功；result.tx_phy/rx_phy 是协商后真用的 PHY
+
+# Classic: 强制只能用 2-Mbps EDR（2-DH 包类型）
+pt = await stack.gap.classic_connections.set_acl_packet_types(
+    handle, allow_br=False, allow_2dh=True, allow_3dh=False,
+)
+# pt.status == 0 → 成功；pt.packet_type 是新生效的 mask
+```
+
+- **LE PHY**：`pybluehost/hci/packets.py::HCI_LE_Set_PHY` + `parse_le_phy_update_complete` + `LEPhyUpdateComplete`；controller listener `on_le_phy_update`；stack API `BLEConnectionManager.set_phy`
+- **Classic EDR**：`pybluehost/hci/packets.py::HCI_Change_Connection_Packet_Type` + `parse_connection_packet_type_changed` + `ConnectionPacketTypeChanged`；controller listener `on_connection_packet_type_changed`；stack API `ClassicConnectionManager.set_acl_packet_types`
+- **Spec 坑**：`ClassicPacketType` 的 BR 位是"set=允许"，但 EDR 位（2-DH/3-DH）是 **"set=禁止"**——`stack.gap.classic_connections.set_acl_packet_types` 把这个反转封装好了；底层 mask 构造看 `pybluehost/classic/gap.py::set_acl_packet_types`
+- **测试位置**：`tests/unit/hci/test_le_set_phy.py`（11）+ `tests/unit/ble/test_set_phy.py`（6）+ `tests/unit/hci/test_change_connection_packet_type.py`（10）+ `tests/unit/classic/test_set_acl_packet_types.py`（6）= 33 unit
+- **双设备 throughput**：`tests/hardware/test_throughput_real.py`——BLE LE CoC + SPP × {1M/2M} 或 {2-DH/3-DH} × {uplink/downlink} = 8 parametrized cells。需要两块 USB adapter + `--transport-peer=usb:...`，operator runbook 在 [`docs/THROUGHPUT_VERIFY.md`](docs/THROUGHPUT_VERIFY.md)
+- **加新 PHY API（LE Coded / S=2 / S=8）**：参照 `LE_Set_PHY` 同样的命令 + 事件 + listener + manager method 四件套；`LEPhyMask.LE_CODED=0x04` 已经定义好了，stack-level method 直接传它就行
+
 ### LE CoC manager（L2CAP LE Credit-Based Channel）
 
 v1.0 协议栈原本只有 Classic L2CAP signaling；v1.2 Phase 2 P.8 之前为了让 BTP L2CAP service 能跑，**专门加了 LE CoC manager 扩展**（独立 Plan，6 Task），现在 v1.0 协议栈原生支持 LE CoC：
