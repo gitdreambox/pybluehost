@@ -42,6 +42,39 @@ HCI_ACCEPT_CONNECTION_REQ = make_opcode(OGF.LINK_CONTROL, 0x09)
 HCI_REJECT_CONNECTION_REQ = make_opcode(OGF.LINK_CONTROL, 0x0A)
 HCI_LINK_KEY_REQUEST_REPLY = make_opcode(OGF.LINK_CONTROL, 0x0B)
 HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY = make_opcode(OGF.LINK_CONTROL, 0x0C)
+HCI_CHANGE_CONNECTION_PACKET_TYPE = make_opcode(OGF.LINK_CONTROL, 0x0F)
+
+
+# Classic ACL packet-type mask bits (Core Spec Vol 4 Part E §7.1.14).
+#
+# Spec quirk worth burning in: BR bits ("may be used") are positive, but
+# EDR bits ("shall NOT be used") are INVERTED. That is, setting bit
+# TWO_DH1_DISALLOW disables 2-DH1; clearing it allows. Real adapters silently
+# fall back to whatever the mask permits, so getting these wrong looks like
+# "throughput just went down" rather than a hard error.
+class ClassicPacketType:
+    """Bitmask values for HCI_Change_Connection_Packet_Type."""
+
+    # BR (1 Mbps) — set bit = packet type allowed
+    DM1 = 0x0008
+    DH1 = 0x0010
+    DM3 = 0x0400
+    DH3 = 0x0800
+    DM5 = 0x4000
+    DH5 = 0x8000
+
+    # EDR (2 Mbps / 3 Mbps) — set bit = packet type DISALLOWED
+    TWO_DH1_DISALLOW = 0x0002
+    THREE_DH1_DISALLOW = 0x0004
+    TWO_DH3_DISALLOW = 0x0100
+    THREE_DH3_DISALLOW = 0x0200
+    TWO_DH5_DISALLOW = 0x1000
+    THREE_DH5_DISALLOW = 0x2000
+
+    # Convenience aggregates
+    ALL_BR = DM1 | DH1 | DM3 | DH3 | DM5 | DH5
+    ALL_2DH_DISALLOW = TWO_DH1_DISALLOW | TWO_DH3_DISALLOW | TWO_DH5_DISALLOW
+    ALL_3DH_DISALLOW = THREE_DH1_DISALLOW | THREE_DH3_DISALLOW | THREE_DH5_DISALLOW
 HCI_PIN_CODE_REQUEST_REPLY = make_opcode(OGF.LINK_CONTROL, 0x0D)
 HCI_PIN_CODE_REQUEST_NEGATIVE_REPLY = make_opcode(OGF.LINK_CONTROL, 0x0E)
 HCI_AUTH_REQUESTED = make_opcode(OGF.LINK_CONTROL, 0x11)
@@ -165,6 +198,7 @@ class EventCode(IntEnum):
     LINK_KEY_NOTIFICATION = 0x18
     DATA_BUFFER_OVERFLOW = 0x1A
     MAX_SLOTS_CHANGE = 0x1B
+    CONNECTION_PACKET_TYPE_CHANGED = 0x1D  # Core §7.7.29
     SYNCHRONOUS_CONNECTION_COMPLETE = 0x2C  # Core §7.7.35
     IO_CAPABILITY_REQUEST = 0x31
     IO_CAPABILITY_RESPONSE = 0x32

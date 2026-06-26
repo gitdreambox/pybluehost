@@ -33,6 +33,7 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_RANDOM_ADDRESS,
     HCI_LE_ADD_DEVICE_TO_RESOLVING_LIST,
     HCI_LE_CLEAR_RESOLVING_LIST,
+    HCI_CHANGE_CONNECTION_PACKET_TYPE,
     HCI_LE_SET_ADDRESS_RESOLUTION_ENABLE,
     HCI_LE_SET_PHY,
     HCI_LE_SET_PRIVACY_MODE,
@@ -276,6 +277,41 @@ class HCI_LE_Set_Scan_Enable(HCICommand):
     def from_bytes(cls, opcode: int, parameters: bytes) -> HCI_LE_Set_Scan_Enable:
         enable, dup = struct.unpack_from("<BB", parameters)
         return cls(le_scan_enable=enable, filter_duplicates=dup)
+
+
+@PacketRegistry.register_command(HCI_CHANGE_CONNECTION_PACKET_TYPE)
+@dataclass
+class HCI_Change_Connection_Packet_Type(HCICommand):
+    """HCI_Change_Connection_Packet_Type (OGF=0x01, OCF=0x0F) — request a
+    different ACL packet-type mask on an existing Classic connection.
+
+    Core Spec Vol 4 Part E §7.1.14. The controller replies with a Command
+    Status, then fires Connection_Packet_Type_Changed (event 0x1D) with the
+    newly negotiated mask once the peer LMP exchange completes.
+
+    Packet-type bits live in ``ClassicPacketType``. Mind the inversion:
+    EDR (2-DH / 3-DH) bits being SET means "disallow", while BR (DM/DH)
+    bits being SET means "allow".
+    """
+
+    opcode: int = field(default=HCI_CHANGE_CONNECTION_PACKET_TYPE, init=False)
+    connection_handle: int = 0
+    packet_type: int = 0
+
+    @property
+    def parameters(self) -> bytes:  # type: ignore[override]
+        return struct.pack("<HH", self.connection_handle, self.packet_type)
+
+    @parameters.setter
+    def parameters(self, value: bytes) -> None:
+        pass  # derived
+
+    @classmethod
+    def from_bytes(
+        cls, opcode: int, parameters: bytes,
+    ) -> HCI_Change_Connection_Packet_Type:
+        handle, mask = struct.unpack_from("<HH", parameters)
+        return cls(connection_handle=handle, packet_type=mask)
 
 
 @PacketRegistry.register_command(HCI_LE_SET_PHY)
@@ -1070,6 +1106,33 @@ class LEPhyUpdateComplete:
     connection_handle: int
     tx_phy: int
     rx_phy: int
+
+
+@dataclass
+class ConnectionPacketTypeChanged:
+    """Parsed body of a Connection_Packet_Type_Changed event (§7.7.29).
+
+    ``packet_type`` is the new mask in effect — same bit layout as
+    ``ClassicPacketType``, so you can introspect which packet types the
+    controller actually negotiated (peer may have refused 3-DH on a noisy
+    link, for example).
+    """
+
+    status: int
+    connection_handle: int
+    packet_type: int
+
+
+def parse_connection_packet_type_changed(parameters: bytes) -> ConnectionPacketTypeChanged:
+    """Parse the 5-byte body of a Connection_Packet_Type_Changed event."""
+    if len(parameters) < 5:
+        raise ValueError(
+            f"Connection_Packet_Type_Changed needs 5 bytes, got {len(parameters)}",
+        )
+    status, handle, mask = struct.unpack_from("<BHH", parameters)
+    return ConnectionPacketTypeChanged(
+        status=status, connection_handle=handle, packet_type=mask,
+    )
 
 
 def parse_le_phy_update_complete(subevent_parameters: bytes) -> LEPhyUpdateComplete:

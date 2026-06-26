@@ -272,6 +272,64 @@ class ClassicConnectionManager:
             )
         )
 
+    async def set_acl_packet_types(
+        self,
+        connection_handle: int,
+        *,
+        allow_br: bool = True,
+        allow_2dh: bool = True,
+        allow_3dh: bool = True,
+        timeout_s: float = 5.0,
+    ):
+        """Constrain which ACL packet types the controller may use on this link.
+
+        Used to force EDR rate selection for throughput measurement:
+
+        - ``allow_br=True, allow_2dh=True, allow_3dh=True`` (default):
+          let controller pick — adapters normally pick 3-DH if peer supports.
+        - ``allow_br=False, allow_2dh=True, allow_3dh=False``: force 2 Mbps EDR.
+        - ``allow_br=False, allow_2dh=False, allow_3dh=True``: force 3 Mbps EDR.
+
+        Returns the parsed ``Connection_Packet_Type_Changed`` event the
+        controller emits once the LMP packet-type exchange completes. The
+        reported ``packet_type`` mask may differ from what was requested
+        (peer may refuse 3-DH on a noisy link, etc.) — that's the real
+        result. Raises ``asyncio.TimeoutError`` if no event arrives within
+        ``timeout_s``.
+        """
+        import asyncio
+        from pybluehost.hci.constants import ClassicPacketType
+        from pybluehost.hci.packets import HCI_Change_Connection_Packet_Type
+
+        mask = 0
+        if allow_br:
+            mask |= ClassicPacketType.ALL_BR
+        if not allow_2dh:
+            mask |= ClassicPacketType.ALL_2DH_DISALLOW
+        if not allow_3dh:
+            mask |= ClassicPacketType.ALL_3DH_DISALLOW
+
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+
+        def _on_change(parsed):
+            if parsed.connection_handle != connection_handle:
+                return
+            if not fut.done():
+                fut.set_result(parsed)
+
+        self._hci.on_connection_packet_type_changed(_on_change)
+        try:
+            await self._hci.send_command(HCI_Change_Connection_Packet_Type(
+                connection_handle=connection_handle, packet_type=mask,
+            ))
+            return await asyncio.wait_for(fut, timeout=timeout_s)
+        finally:
+            try:
+                self._hci._connection_packet_type_changed_listeners.remove(_on_change)
+            except (ValueError, AttributeError):
+                pass
+
 
 # ---------------------------------------------------------------------------
 # SSPManager

@@ -170,6 +170,7 @@ class HCIController:
         self._encryption_change_listeners: list = []
         self._le_ltk_request_listeners: list = []
         self._le_phy_update_listeners: list = []
+        self._connection_packet_type_changed_listeners: list = []
 
         # SCO setup — pending futures keyed by ACL handle awaiting
         # Synchronous_Connection_Complete (event code 0x2C).
@@ -223,6 +224,15 @@ class HCIController:
         response to HCI_LE_Set_PHY surface here.
         """
         self._le_phy_update_listeners.append(listener)
+
+    def on_connection_packet_type_changed(self, listener) -> None:
+        """Register listener for Connection_Packet_Type_Changed (event 0x1D).
+
+        Called as ``listener(ConnectionPacketTypeChanged)``. Both
+        host-requested mask changes (via HCI_Change_Connection_Packet_Type)
+        and controller-initiated changes surface here.
+        """
+        self._connection_packet_type_changed_listeners.append(listener)
 
     def on_io_capability_request(self, listener) -> None:
         """Register listener called as (addr: BDAddress) when IO_Capability_Request fires."""
@@ -812,6 +822,17 @@ class HCIController:
                 parsed = None
             if parsed is not None:
                 for listener in list(self._le_phy_update_listeners):
+                    result = listener(parsed)
+                    _schedule_listener_result(result)
+
+        if event.event_code == EventCode.CONNECTION_PACKET_TYPE_CHANGED:
+            from pybluehost.hci.packets import parse_connection_packet_type_changed
+            try:
+                parsed = parse_connection_packet_type_changed(event.parameters)
+            except ValueError:
+                parsed = None
+            if parsed is not None:
+                for listener in list(self._connection_packet_type_changed_listeners):
                     result = listener(parsed)
                     _schedule_listener_result(result)
 
