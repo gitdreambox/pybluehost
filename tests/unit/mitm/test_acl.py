@@ -58,7 +58,7 @@ def test_reassembler_two_pdus_in_one_fragment():
 
 
 def test_fragment_fits_in_one():
-    pdu = bytes([0x03, 0x00, 0x04, 0x00, 0x0A, 0x03, 0x00])  # 7 字节
+    pdu = bytes([0x03, 0x00, 0x04, 0x00, 0x0A, 0x03, 0x00])  # 7 bytes
     frags = fragment(handle=0x40, l2cap_pdu=pdu, max_payload=27)
     assert len(frags) == 1
     assert frags[0].handle == 0x40

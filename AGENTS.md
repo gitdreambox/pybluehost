@@ -510,6 +510,47 @@ PYBLUEHOST_TRACE=hci=debug uv run --frozen pytest tests/                    # �
 - UARTTransport 依赖 `pyserial-asyncio>=0.6`，`uv sync --extra dev` 会自动安装
 - 在没有串口设备的环境中，UART 相关测试使用 mock，不需要真实硬件
 
+### Q: BR/EDR MITM relay 播放一段时间后无声（约 41s 后）→ A: ① init 时 LE ACL 缓冲池覆盖 BR/EDR 池致超发打爆耳机侧 dongle ② relay 出站内联 await 把一侧楔死放大成全链路断流 / 修复提交 b42da27 + 4dd7121
+
+> BR/EDR MITM 授权测试环境：`手机(ColorOS) ⇄ phone侧BE200 ⇄ earbud侧BE200 ⇄ TWS耳机`，relay 代码在 `pybluehost/cli/app/mitm/`（本 worktree 分支，未并 master）。
+
+- **现象**：手机连 `WQ7035_MITM` 播音乐，前 ~41s 正常（A2DP 媒体 43 帧/s），随后无声；链路逻辑上还「连着」（无 Disconnection_Complete），relay 不触发重连。
+- **鉴别三种「无声」（看 per-dongle trace，`scripts/mitm_traced.py --trace-prefix hci` 录 `hci-earbud/hci-phone-*.btsnoop`）**：
+  - **A. 手机停发**（ColorOS 音频焦点/外放切换）：媒体**平滑**降到 0，链路/事件正常。dongle 不挂。
+  - **B. phone 侧 dongle ACL bulk 腿楔死**（BE200 固件 bug）：媒体 **43/s 断崖**到 ~1/s 再归 0；全程 0 个 Disconnection；**interrupt（事件）腿仍活**、冻结后每 30.000s 准点一个 `0x57` 事件（固件卡死报警）；bulk(ACL) 腿彻底死。带存活 ACL 退出会让固件挂死、重启不响应 HCI Reset，只能拔插（或 `scripts/dongle_reset.py` 软复位）。
+  - **C. earbud 侧 dongle Data_Buffer_Overflow**（本次主 bug，**已修**）：earbud 侧 trace 抛 `0x1A` 事件 → 其 NCP(Number_Of_Completed_Packets)从 43/s 断崖到 ~4/s。
+- **根因 C-1（主 bug，b42da27）**：`HCIController._initialize` 先 `Read_Buffer_Size`（BR/EDR 池 4×1021）后 `LE_Read_Buffer_Size`（LE 池 6×251），**两者写进同一个 `_acl_flow`，LE 把 BR/EDR 覆盖成 6**。BR/EDR 中继于是以为有 6 个 TX credit，而 BR/EDR 控制器实际只有 4 个 buffer → 超发 → earbud 侧 dongle 抛 `Data_Buffer_Overflow(0x1A)` → TX 楔死。**关键认知：BR/EDR 与 LE 的 ACL buffer 池是否共享是实现定义（响应里没有标志位），这批 Intel dongle 是分离的**（BR/EDR=4×1021、LE=6×251，数量/长度都不同，不可能是同一物理池）。修法：拆成独立 `_acl_flow`/`_le_acl_flow`，新增 `_conn_link_type` 按 handle 记连接类型（Connection_Complete 0x03 / LE_ConnComplete 0x01/0x0A 登记、Disconnection 0x05 移除），`send_acl_data` 与 NCP 按 handle 路由到对应池；LE 报 0（共用池）时 `_acl_flow_for` 回落 BR/EDR 池。**附带（Option A）**：init 不再发 `Host_Buffer_Size`——原代码声明了 host buffer（512/20）却既不开 0x0C31 流控也不回 0x0C35 credit，是个坏半态；移除后回 spec 默认关，控制器用原生 1021 MTU，不再被切成 512 碎片。
+- **根因 C-2（放大器，4dd7121）**：`AclRelay._handle` 里 `await dst.send_acl(...)` **内联**在 `on_phone_acl`/`on_target_acl`（= 对侧 controller 的 bulk 读循环回调）里。earbud 侧一楔死，send 卡在 `acl_flow.acquire` → 回压 stall **phone 侧** `_read_bulk_loop` → phone 侧 dongle 的 bulk-IN 不被 drain → 手机媒体在 USB 层被静默丢。**修法：出站解耦**——每个目的侧挂一个有界 `asyncio.Queue` + 后台 drain 任务，`_handle` 只 `put_nowait` 完整 L2CAP PDU 即返回；分片+send+抓包移到 drain。dst 楔死只堵它自己的队列（满则丢最旧保新鲜、`dropped` 计数+限速告警），绝不回压 src 读循环。队列元素是完整 PDU（fragment 在 drain 侧做），丢弃是整条原子丢弃。`stop()`（重连断链时调，不关共享 capture）/ `flush()`（测试等排空）/ `teardown()=stop+钩子+关capture`。
+- **dongle  teardown 纪律（c7044ee/7e02d08/aa561a6 等）**：带存活 ACL 直接关 USB/杀进程会让 BE200 固件挂死只能拔插。`ControllerPair.close()` 关 USB 前对两侧**并发**发 HCI_Reset 清干净态；`_run_relay_bredr` 收尾**并发** graceful disconnect（`return_exceptions=True`）+ 先 `relay.stop()`；并发是关键——一只楔死的 dongle 吃超时不能拖累另一只的清理。**永不强杀 relay 进程**（TerminateProcess 拦不住 finally）。
+- **btsnoop 纪元（4530292）**：标准 btsnoop（Android/Wireshark/Frontline WPS）用 **0-AD 纪元**（常量 `62167219200_000_000` µs），不是 2000-01-01。误用后者会在 WPS 里减完纪元变负数、时间全显示 -1。`pybluehost/core/trace.py::_BTSNOOP_EPOCH_DELTA_US`。
+- **回归测试**：`tests/unit/hci/test_controller.py::test_le_buffer_size_configures_separate_le_pool`（分池不互覆）/`test_acl_flow_for_*`（按 link_type 路由、共用池回落）；`tests/unit/mitm/test_relay.py::test_blocking_peer_does_not_stall_source_read` / `test_queue_full_drops_oldest_and_counts` / `test_stop_cancels_drain_and_drops_further_input`。
+- **真机验证（2026-09-03）**：535s 全程 0 次 `0x1A`、earbud 侧 NCP 稳定 43.4/s，播 5 分钟正常。
+
+### Q: BR/EDR MITM 换耳机/换手机后三连失败 → A: ① 耳机对 L2CAP 回 authorization pending 等本端主动认证 ② Intel ACL 期间暂停 inquiry scan 不恢复 ③ 耳机被释放后自动回连 dongle，对它发 page 永远超时 / 修复提交（本 session）
+
+> 注：本条为已删除的 orchestrator.py 时代的记录——「prev-forward 纪律」及 `_install_bredr_conn_tracker`/`_await_bredr_connection`/`_make_link_watch` 均已随重构废除，现行结构见下条「MITM 模块重构(session.py)后的结构」。
+
+> 承接上一条环境（`手机 ⇄ phone侧BE200 ⇄ earbud侧BE200 ⇄ TWS耳机`，目标 JBL Live Beam 4）。
+
+- **根因 1（无声主根因，~30-60s 后 0x05 断链）**：TWS 耳机对 AVDTP/RFCOMM 的 L2CAP Connection Request 一律回 `result=0x0001(pending)+status=0x0002(authorization pending)`，**等本端发起认证**——SspTermination 只被动应答 SSP 事件（IO_Capability/User_Confirmation/Link_Key），没人发 `HCI_Authentication_Requested` 耳机就一直 pending，超时后以 0x05(Authentication Failure) 断链（两次真机 trace 实证）。修法 `orchestrator.py::_secure_target_link`：relay 建立即 AUTH_REQUESTED →（本端无 bond 时 Link_Key_Request→negative reply→SSP 配对，新 key 落盘 key_log；有 bond 直接过）→ AUTH_COMPLETE status=0 → `HCI_Set_Connection_Encryption`。**关键认知： initiator 侧的 SSP 完成不等于认证完成——耳机要 host 显式请求认证才放行 profile 连接。**
+- **根因 2（WQ7035_MITM 搜不到/搜得慢）**：Intel 控制器在 ACL 建立期间自动暂停 inquiry scan，断链后**不恢复**；且默认 scan window 小（~11-18ms/1.28s）。修法：① impersonate 写 `Write_Inquiry/Page_Scan_Activity` interval==window=0x0028（25ms ≈ 常开）；② 重连循环每轮 `_ensure_phone_visible()` 重发 `Write_Scan_Enable=0x03`。
+- **根因 3（换手机场景）**：TWS 耳机被手机释放后，会把**最近配对设备**（= earbud 侧 dongle，已有 bond）当手机**自动回连**；relay 不知道，继续对已连接设备发 page → 5×connect_timeout 全超时，新手机等不及断开。耳机还会反过来 page 下游伪装设备（当另一台已配对手机）。修法：① `_install_bredr_conn_tracker` 在 upstream 维护连接表（addr_le_hex→handle，Connection/Disconnection_Complete 增删）；② `_connect_bredr_target` 每轮迭代开头查表——有记录直接复用现有连接不发 page；page 间隙（非 in_flight）到达的成功 Connection_Complete 从「当 stale 丢弃」改为**记入连接表下轮采纳**；③ `_await_bredr_connection` 对与伪装身份相同的 page 回 `HCI_Reject_Connection_Request(0x0D)`（不 accept、不解析 future），Connection_Complete 地址=伪装身份的也不当手机。
+- **纪律：所有 hci_event hook 必须 prev-forward**：`set_upstream` 是全量替换语义——新 hook 处理完必须转发给进入前保存的 `_on_hci_event`（`result = prev(event); if asyncio.iscoroutine(result): ensure_future(result)`），否则前置 hook（tracker/SspTermination）在整个连接期失明。本 session 顺带修了 `_make_link_watch` 不转发导致 SspTermination 连接期失明的老 bug（新增 `controller=` 可选参数）。
+- **配套**：耳机非配对模式时 inquiry 扫不到——`inquiry_for_target(total_timeout=90)` 多轮重扫（每轮 HCI_Inquiry ~10.24s，超时 cancel 后继续），预算耗尽才 TimeoutError；`scripts/mitm_traced.py`（operator scratch，不入库）recon 超时后无限重试——等的是人的操作，别退进程。
+- **回归测试**：`tests/unit/mitm/test_session_bredr.py`（认证成功→加密/失败不加密/scan 重开）；`test_session_bredr.py::test_connect_reuses_tracked_earbud_connection_without_paging`/`test_connect_adopts_earbud_connection_arriving_between_attempts`；`test_session_bredr.py::test_auto_accept_rejects_target_earbud_page`；`test_bredr_recon_rnr.py`（多轮重扫/总超时）；`test_bredr_impersonate.py::test_impersonation_sets_fast_scan_activity`。
+- **真机验证（2026-09-05）**：换手机场景全链路打通——第 1 轮 relay 服务一加（38:6F:6B:A5:E8:20）期间耳机放弃断开（0x13）→ 循环重启 → 第 2 轮新手机（14:C1:4E:FE:BE:61）page 1ms 内被 accept（handle=0x200）→ 连接表复用耳机回连（handle=0x100）→ A2DP 媒体 45 帧/s / 165 kb/s 1:1 转发，听歌正常。
+- **遗留（占线不接管）**：relay 服务一台手机期间，第二台手机的 page **无人应答**（`_await_bredr_connection` 的 auto-accept 已随连接退出；`_make_link_watch` 只看 DISCONNECT）→ 对方 page 超时显示"连接不上"，要等耳机先放弃断链、循环重启后重试才成功（真机 11:48 首次失败/11:54 重试成功的实证）。修法方向：connected 态检测到非当前手机的 Connection_Request → 立即断旧链触发重连循环（后连的顶掉先连的，与真耳机行为一致）。
+
+### Q: MITM 模块重构(session.py)后的结构? → A: orchestrator.py(1114 行 god-class)已删,改 `session.py` 的 MitmSession
+
+- 每 controller 的 set_upstream **唯一属主**：HCI 事件 subscribe/unsubscribe 多点订阅，ACL 按 handle 的 if/else 分发到各链路 AclRelay（prev-forward 链式 hook 从此不存在）；
+- BR 的 SspTermination 在 run() 启动段 attach（等手机之前，G3 时序）；
+- _run_link 一份骨架，LE/BR 各一个；两链独立重连互不联动；
+- LE 补真：LE_Create_Connection、连接事件真实地址喂 SMP（f5/f6）、LTK JSONL 持久化；
+- CLI 两步式：`mitm scan`（全发现+列表选设备→ mitm-targets.json，按段合并）→ `mitm relay`（默认读 mitm-targets.json / mitm-keys.jsonl，秒起）；
+- transform：transform.py 的 DEMO_RULES 正则替换（用户改规则），AclRelay 唯一新增钩子。
+设计稿：docs/superpowers/specs/2026-09-03-mitm-redesign-design.md
+
 ---
 
 ## 文件约定

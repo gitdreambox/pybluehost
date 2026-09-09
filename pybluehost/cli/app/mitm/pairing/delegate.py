@@ -1,7 +1,8 @@
-"""PairingDelegate:Numeric Comparison 由测试者确认。
+"""PairingDelegate: Numeric Comparison confirmed by the tester.
 
-默认 AutoConfirmDelegate 在两侧都自动 yes(授权测试场景;数字不一致也接受,
-见 spec §3.1)。CLI 的 --pairing numeric 用交互实现替换它。
+The default AutoConfirmDelegate auto-answers yes on both sides (authorized-test scenario;
+accepts even mismatched numbers, see spec §3.1). The CLI's --pairing numeric replaces it with
+an interactive implementation.
 """
 from __future__ import annotations
 
@@ -20,14 +21,16 @@ class AutoConfirmDelegate:
 
 
 async def _default_ask(prompt: str) -> str:
-    # 在线程里读 stdin,避免阻塞事件循环
+    # Read stdin in a thread to avoid blocking the event loop
     return await asyncio.to_thread(input, prompt)
 
 
 class InteractiveNumericDelegate:
-    """Numeric Comparison:把 6 位数字打给测试者,在每一侧分别确认 y/n。
+    """Numeric Comparison: print the 6-digit number to the tester and confirm y/n on each
+    side separately.
 
-    授权测试场景两端都在测试者手上,即使两侧数字不同也可分别接受(见 spec §3.1)。
+    In the authorized-test scenario both ends are in the tester's hands, so each side may be
+    accepted even if the two numbers differ (see spec §3.1).
     """
 
     def __init__(self, ask: Callable[[str], Awaitable[str]] = _default_ask) -> None:

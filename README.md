@@ -141,20 +141,32 @@ UART 使用统一 transport 规则 `uart:<port>[@baud]`；Windows 串口可写�
 
 在**目标设备**与**手机**之间插入中间人，双向透传 BLE 与 BR/EDR ACL，并把两侧明文抓成 btsnoop。
 需要**两个 USB 适配器**（上游连目标、下游对手机伪装）。仅用于授权安全研究/教学。
+**两步式**：先 `scan` 探测落盘身份 JSON，之后日常 `relay` 秒起。
 
 ```bash
-# 默认:自身地址 + 克隆应用层身份, Just Works, both(LE+BR)
-pybluehost app mitm --upstream usb:8087:0036 --downstream usb:0a12:0001 --target AA:BB:CC:DD:EE:FF
+# 第 0 步:确认两个适配器的 transport 名(形如 usb:VID:PID#序号)
+pybluehost tools usb probe
 
-# 只做 BLE + Numeric Comparison(两侧终端确认)
-pybluehost app mitm --upstream usb --downstream usb:0a12:0001 --target-name "Watch" --transport-mode le --pairing numeric
+# 第 1 步:探测(每台目标设备只需扫一次)。--target 指定设备探测。
+pybluehost app mitm scan --upstream usb:<上游> --mode bredr
+pybluehost app mitm scan --upstream usb:<上游> --mode le
+pybluehost app mitm scan --upstream usb:<上游> --mode both 
+pybluehost app mitm scan --upstream usb:<上游> --mode bredr --target AA:BB:CC:DD:EE:FF
+# e.g. pybluehost app mitm scan --upstream usb:8087:0036#1 --mode bredr --target 98:1D:F9:90:11:1E
 
-# 地址锁定的重连场景:克隆目标 BD_ADDR(下游需 Broadcom dongle)
-pybluehost app mitm --upstream usb --downstream usb:0a12:0001 --target AA:BB:CC:DD:EE:FF --clone-address
+# 第 2 步 A:BR 中继(最常用)。配对一次,之后断开重连零配对
+pybluehost app mitm relay --upstream usb:<上游> --downstream usb:<下游> --mode bredr
+pybluehost app mitm relay --upstream usb:<上游> --downstream usb:<下游> --mode le
+pybluehost app mitm relay --upstream usb:<上游> --downstream usb:<下游> --mode both
+# e.g. pybluehost app mitm relay --upstream usb:8087:0036#1 --downstream usb:8087:0036#2 --mode bredr
 ```
 
-默认输出 `mitm-<时间戳>.btsnoop`，用 Wireshark/Ellisys 打开。完整说明（硬件选型、删旧 bond、
-Numeric 操作、限制、真机验证事项）见 **[docs/MITM.md](docs/MITM.md)**。
+全量发现交互列表:`app mitm scan --upstream usb:<上游> --mode both`(`编号` 选定 / `r` 重扫 / `q` 退出)。
+
+默认值互相衔接:`scan --save` / `relay --identity` 同为 `mitm-targets.json`,key-log 固定
+`mitm-keys.jsonl`(SSP link key + LE LTK 同文件,跨重启复用,重连零配对)。默认输出
+`mitm-<时间戳>.btsnoop`(单文件含双链路),用 Wireshark/Ellisys 打开。完整说明(硬件选型、
+删旧 bond、四 dongle 自闭环测试、限制、真机验证状态)见 **[docs/MITM.md](docs/MITM.md)**。
 
 ## 1.7 Classic Audio profiles（v2.0）
 
@@ -826,7 +838,7 @@ uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-fail-under=85
 | `gatt-browser` / `gatt-server` | GATT client / server |
 | `sdp-browser` / `spp-echo` | Classic SDP / RFCOMM |
 | `bridge` | UART/USB HCI ⇄ TCP/UDP H4 转接 |
-| `mitm` | BLE/BR 双 radio 透传抓包 |
+| `mitm` | BLE/BR 双 radio 透传抓包(scan/relay 两步式,详见 docs/MITM.md) |
 | `a2dp-source` / `a2dp-sink` | A2DP 流推 / 收（WAV 或 sounddevice） |
 | `avrcp-control` / `avrcp-target` | AVRCP 控制器 / 目标 |
 | `hfp-test` / `hsp-test` | HFP / HSP 双角色 + SCO loopback（WAV 文件或 live mic/speaker） |

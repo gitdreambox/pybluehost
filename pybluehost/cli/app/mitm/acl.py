@@ -1,7 +1,7 @@
-"""HCI ACL 透传核心:L2CAP PDU 重组、CID 分流、跨 buffer 重分片。
+"""HCI ACL transparent-relay core: L2CAP PDU reassembly, CID routing, cross-buffer refragmentation.
 
-本模块只认 HCI 分片边界 + L2CAP basic header(2 字节 length + 2 字节 CID),
-与 BLE/BR 无关,故两种 transport 共用。
+This module only understands HCI fragment boundaries + the L2CAP basic header (2-byte
+length + 2-byte CID), is BLE/BR-agnostic, and is therefore shared by both transports.
 """
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ from enum import Enum, auto
 from pybluehost.hci.packets import HCIACLData
 
 # HCI ACL Packet Boundary flags (Core Vol4 Part E §5.4.2)
-PB_FIRST_NON_FLUSH = 0x00  # host→controller 首片(非自动 flush)
-PB_CONTINUATION = 0x01     # 续片
-PB_FIRST_FLUSH = 0x02      # 首片(自动 flush;接收方向常见)
+PB_FIRST_NON_FLUSH = 0x00  # host→controller first fragment (non-auto-flush)
+PB_CONTINUATION = 0x01     # continuation fragment
+PB_FIRST_FLUSH = 0x02      # first fragment (auto-flush; common on the receive path)
 
-# 固定 CID
+# Fixed CIDs
 CID_BR_SIGNALING = 0x0001
 CID_ATT = 0x0004
 CID_LE_SIGNALING = 0x0005
@@ -28,27 +28,28 @@ class RelayDirection(Enum):
 
 
 class CidAction(Enum):
-    RELAY = auto()          # 透明转发(ATT/动态/signaling)
-    TERMINATE_SMP = auto()  # 本地终结(BLE SMP, MITM-2 接管)
+    RELAY = auto()          # forward transparently (ATT/dynamic/signaling)
+    TERMINATE_SMP = auto()  # terminate locally (BLE SMP, taken over by MITM-2)
 
 
 def classify(cid: int) -> CidAction:
-    """决定一个 L2CAP CID 是本地终结还是透明转发。"""
+    """Decide whether an L2CAP CID is terminated locally or forwarded transparently."""
     if cid == CID_SMP:
         return CidAction.TERMINATE_SMP
     return CidAction.RELAY
 
 
 def encode_l2cap_basic(cid: int, payload: bytes) -> bytes:
-    """把 (cid, payload) 编成 L2CAP basic header 帧。"""
+    """Encode (cid, payload) into an L2CAP basic-header frame."""
     return struct.pack("<HH", len(payload), cid) + payload
 
 
 class L2capReassembler:
-    """单方向 HCI ACL 分片 → 完整 L2CAP PDU 重组。
+    """Reassemble a single direction of HCI ACL fragments → complete L2CAP PDUs.
 
-    用法:每个连接方向一个实例;按 PB flag 累积,剥出所有完整 PDU。
-    续片(PB_CONTINUATION)追加到缓冲;非续片视为新消息的开始(覆盖缓冲)。
+    Usage: one instance per connection direction; accumulates by PB flag and peels out all
+    complete PDUs. A continuation fragment (PB_CONTINUATION) appends to the buffer; a
+    non-continuation is treated as the start of a new message (overwrites the buffer).
     """
 
     def __init__(self) -> None:
@@ -76,10 +77,10 @@ def fragment(
     *, handle: int, l2cap_pdu: bytes, max_payload: int,
     first_pb: int = PB_FIRST_NON_FLUSH,
 ) -> list[HCIACLData]:
-    """把完整 L2CAP PDU 按 max_payload 切成 HCI ACL 分片。
+    """Split a complete L2CAP PDU into HCI ACL fragments of at most max_payload.
 
-    首片用 first_pb,其余用 PB_CONTINUATION。max_payload 取对侧控制器的
-    acl_packet_length / le_acl_packet_length。
+    The first fragment uses first_pb, the rest PB_CONTINUATION. max_payload comes from the
+    peer controller's acl_packet_length / le_acl_packet_length.
     """
     if max_payload <= 0:
         raise ValueError("max_payload 必须 > 0")

@@ -1,23 +1,25 @@
-"""ScPairing — LE Secure Connections 最小配对状态机(Just Works / Numeric Comparison)。
+"""ScPairing — minimal LE Secure Connections pairing state machine (Just Works / Numeric Comparison).
 
-纯协议状态机:不触碰 HCI/transport。通过 ``feed(pdu)`` 消费入站 SMP PDU,
-通过 ``set_output(cb)`` 注册的回调发出出站 SMP PDU,成功后 ``self.ltk`` 暴露 16 字节 LTK。
+Pure protocol state machine: does not touch HCI/transport. Inbound SMP PDUs are consumed
+via ``feed(pdu)``; outbound SMP PDUs are emitted through the callback registered with
+``set_output(cb)``. On success ``self.ltk`` exposes the 16-byte LTK.
 
-两个 ScPairing 实例可对接("pump")以离线验证完整流程。
+Two ScPairing instances can be back-to-backed ("pumped") to verify the full flow offline.
 
-加密参数约定严格镜像 ``pybluehost/ble/_smp_state.py``(权威参考):
-  - 公钥小端上线,直接用于 f4/g2(不反转);PKx = 公钥前 32 字节。
-  - f4(PKx_self, PKx_peer_or_init, N, 0)(Z 为 int 0)。
-  - f5(DHKey, Na, Nb, A1, A2);A1=initiator 地址,A2=responder 地址。
-  - Ea = f6(MacKey, Na, Nb, 0, IOcapA, A1, A2)。
-  - Eb = f6(MacKey, Nb, Na, 0, IOcapB, A2, A1)。
-  - g2(PKa_x, PKb_x, Na, Nb)。
-  - IOcap = bytes([auth_req, 0x00, io_cap]);Na=initiator 随机数,Nb=responder 随机数。
+Encryption-parameter conventions strictly mirror ``pybluehost/ble/_smp_state.py`` (authoritative reference):
+  - Public keys are little-endian on the wire and used directly by f4/g2 (no reversal); PKx = first 32 bytes of the public key.
+  - f4(PKx_self, PKx_peer_or_init, N, 0) (Z is the integer 0).
+  - f5(DHKey, Na, Nb, A1, A2); A1 = initiator address, A2 = responder address.
+  - Ea = f6(MacKey, Na, Nb, 0, IOcapA, A1, A2).
+  - Eb = f6(MacKey, Nb, Na, 0, IOcapB, A2, A1).
+  - g2(PKa_x, PKb_x, Na, Nb).
+  - IOcap = bytes([auth_req, 0x00, io_cap]); Na = initiator nonce, Nb = responder nonce.
 
-HARD RULE:不 import pybluehost.l2cap/.ble/.classic/.gap/.profiles/.stack。
+HARD RULE: do not import pybluehost.l2cap/.ble/.classic/.gap/.profiles/.stack.
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Callable, Optional
 
@@ -42,6 +44,8 @@ from .smp_pdu import (
 _AUTH_REQ = AUTHREQ_SC | AUTHREQ_BONDING  # 0x09
 _IO_CAP = IOCAP_NO_INPUT_NO_OUTPUT  # 0x03
 
+logger = logging.getLogger(__name__)
+
 # PAIRING_FAILED reason codes
 _REASON_CONFIRM_FAILED = 0x04
 _REASON_UNSPECIFIED = 0x0A
@@ -55,7 +59,7 @@ def _pairing_body() -> bytes:
 
 
 class ScPairing:
-    """LE Secure Connections Just Works / Numeric Comparison 状态机。"""
+    """LE Secure Connections Just Works / Numeric Comparison state machine."""
 
     def __init__(
         self,
@@ -74,7 +78,7 @@ class ScPairing:
         self.delegate = delegate
         self.side_name = side_name
 
-        # A1 = initiator addr, A2 = responder addr (7-byte type+addr6),与角色无关
+        # A1 = initiator addr, A2 = responder addr (7-byte type+addr6), independent of role
         if role == "initiator":
             self.a1 = self.local_addr
             self.a2 = self.peer_addr
@@ -86,16 +90,16 @@ class ScPairing:
         self._peer_pub: Optional[bytes] = None
         self._dhkey: Optional[bytes] = None
 
-        # Na = initiator 随机数,Nb = responder 随机数(与角色无关命名)
+        # Na = initiator nonce, Nb = responder nonce (role-independent names)
         self._na: Optional[bytes] = None
         self._nb: Optional[bytes] = None
-        self._peer_confirm: Optional[bytes] = None  # 仅 initiator 用(responder 的 Cb)
+        self._peer_confirm: Optional[bytes] = None  # only used by initiator (responder's Cb)
         self._mac_key: Optional[bytes] = None
-        self._ltk_candidate: Optional[bytes] = None  # 仅 DHKey 校验通过后才提升为 self.ltk
+        self._ltk_candidate: Optional[bytes] = None  # promoted to self.ltk only after DHKey check passes
 
-        # Pairing Request/Response body(用于从对端实际能力派生 IOcapA/IOcapB)
-        self._req_body: Optional[bytes] = None  # initiator 的 Pairing Request body
-        self._rsp_body: Optional[bytes] = None  # responder 的 Pairing Response body
+        # Pairing Request/Response bodies (used to derive IOcapA/IOcapB from peer capabilities)
+        self._req_body: Optional[bytes] = None  # initiator's Pairing Request body
+        self._rsp_body: Optional[bytes] = None  # responder's Pairing Response body
 
         self.ltk: Optional[bytes] = None
         self._complete = False
@@ -142,20 +146,20 @@ class ScPairing:
             pass
 
     def _require_len(self, body: bytes, n: int) -> bool:
-        """长度不足则发 PAIRING_FAILED 并返回 False(避免畸形 PDU 抛异常)。"""
+        """If length is insufficient, send PAIRING_FAILED and return False (prevents malformed PDUs from raising)."""
         if len(body) < n:
             self._fail(_REASON_UNSPECIFIED)
             return False
         return True
 
     def _iocap_a(self) -> bytes:
-        # initiator 的 IOcap = auth_req || oob || io_cap,取自 Pairing Request body
+        # initiator's IOcap = auth_req || oob || io_cap, taken from Pairing Request body
         b = self._req_body
         assert b is not None
         return bytes([b[2], b[1], b[0]])
 
     def _iocap_b(self) -> bytes:
-        # responder 的 IOcap,取自 Pairing Response body
+        # responder's IOcap, taken from Pairing Response body
         b = self._rsp_body
         assert b is not None
         return bytes([b[2], b[1], b[0]])
@@ -183,13 +187,21 @@ class ScPairing:
         assert self._dhkey is not None and self._na is not None and self._nb is not None
         mac_key, ltk = f5(self._dhkey, self._na, self._nb, self.a1, self.a2)
         self._mac_key = mac_key
-        self._ltk_candidate = ltk  # 提升到 self.ltk 推迟到 DHKey 校验通过
+        self._ltk_candidate = ltk  # promotion to self.ltk deferred until DHKey check passes
 
     # ---------------------------------------------------- initiator handlers
     async def _i_on_response(self, body: bytes) -> None:
         if not self._require_len(body, 6):
             return
-        # 记录 responder 的能力(用于 IOcapB),再发自己的公钥
+        # ScPairing is SC-only: if SC is not negotiated, fail immediately; sending SC-only PDUs would violate spec and deadlock the peer state machine
+        rsp_auth = body[2]
+        if not (rsp_auth & AUTHREQ_SC):
+            logger.warning(
+                "对端拒绝 SC(responder auth_req=0x%02x),ScPairing 仅支持 SC,配对终止", rsp_auth
+            )
+            self._fail(_REASON_UNSPECIFIED)
+            return
+        # record responder capabilities (for IOcapB), then send own public key
         self._rsp_body = body[:6]
         self._send(PAIRING_PUBLIC_KEY, self._pub)
 
@@ -241,7 +253,15 @@ class ScPairing:
     async def _r_on_request(self, body: bytes) -> None:
         if not self._require_len(body, 6):
             return
-        # 记录 initiator 的能力(用于 IOcapA),再发自己的响应
+        # ScPairing is SC-only: if SC is not negotiated, fail immediately; sending SC-only PDUs would violate spec and deadlock the peer state machine
+        req_auth = body[2]
+        if not (req_auth & AUTHREQ_SC):
+            logger.warning(
+                "对端拒绝 SC(initiator auth_req=0x%02x),ScPairing 仅支持 SC,配对终止", req_auth
+            )
+            self._fail(_REASON_UNSPECIFIED)
+            return
+        # record initiator capabilities (for IOcapA), then send own response
         self._req_body = body[:6]
         self._rsp_body = _pairing_body()
         self._send(PAIRING_RESPONSE, self._rsp_body)

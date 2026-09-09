@@ -53,7 +53,7 @@ async def test_sc_numeric_reject_no_ltk():
                   delegate=_RejectDelegate(), side_name="A")
     b = ScPairing(role="responder", local_addr=resp_addr, peer_addr=init_addr,
                   delegate=_RejectDelegate(), side_name="B")
-    # 拒绝 → 永不完成,_pump 会抛 AssertionError(预期)
+    # rejection → never completes; _pump raises AssertionError (expected)
     with pytest.raises(AssertionError):
         await _pump(a, b)
     assert not a.is_complete() and not b.is_complete()
@@ -70,7 +70,39 @@ async def test_malformed_public_key_fails_gracefully():
     sent: list[bytes] = []
     resp.set_output(sent.append)
     await resp.feed(P.encode(P.PAIRING_REQUEST, bytes([0x03, 0x00, 0x09, 16, 0, 0])))
-    # 过短公钥:应 _fail 而非抛异常
+    # public key too short: should _fail instead of raising
     await resp.feed(P.encode(P.PAIRING_PUBLIC_KEY, b"\x01\x02\x03"))
     assert resp._failed is True
     assert not resp.is_complete()
+
+
+async def test_initiator_aborts_when_peer_refuses_sc():
+    init = ScPairing(
+        role="initiator",
+        local_addr=bytes([0]) + bytes.fromhex("aabbccddeeff"),
+        peer_addr=bytes([0]) + bytes.fromhex("112233445566"),
+        delegate=AutoConfirmDelegate(), side_name="A",
+    )
+    sent: list[bytes] = []
+    init.set_output(sent.append)
+    # responder replies auth_req=0x01 (bonding only, SC bit not set) → must abort, must not send PUBLIC_KEY
+    await init.feed(P.encode(P.PAIRING_RESPONSE, bytes([0x03, 0x00, 0x01, 16, 0, 0])))
+    assert init._failed is True
+    assert not init.is_complete()
+    assert all(P.decode(p)[0] != P.PAIRING_PUBLIC_KEY for p in sent)
+
+
+async def test_responder_aborts_when_initiator_requests_legacy():
+    resp = ScPairing(
+        role="responder",
+        local_addr=bytes([0]) + bytes.fromhex("112233445566"),
+        peer_addr=bytes([0]) + bytes.fromhex("aabbccddeeff"),
+        delegate=AutoConfirmDelegate(), side_name="B",
+    )
+    sent: list[bytes] = []
+    resp.set_output(sent.append)
+    # initiator requests auth_req=0x01 (bonding only, SC bit not set) → must abort, must not send PAIRING_RESPONSE
+    await resp.feed(P.encode(P.PAIRING_REQUEST, bytes([0x03, 0x00, 0x01, 16, 0, 0])))
+    assert resp._failed is True
+    assert not resp.is_complete()
+    assert all(P.decode(p)[0] != P.PAIRING_RESPONSE for p in sent)

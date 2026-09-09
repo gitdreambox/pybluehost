@@ -1,4 +1,4 @@
-"""SMP PDU(L2CAP CID 0x06)操作码与编解码。"""
+"""SMP PDU (L2CAP CID 0x06) opcodes and encode/decode."""
 from __future__ import annotations
 
 PAIRING_REQUEST = 0x01
@@ -9,7 +9,7 @@ PAIRING_FAILED = 0x05
 PAIRING_PUBLIC_KEY = 0x0C
 PAIRING_DHKEY_CHECK = 0x0D
 
-# authreq 位
+# authreq bits
 AUTHREQ_BONDING = 0x01
 AUTHREQ_MITM = 0x04
 AUTHREQ_SC = 0x08

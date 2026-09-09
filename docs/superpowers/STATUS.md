@@ -544,3 +544,20 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
   - CLI demo 测试必须断言 HCI command、ATT PDU、SDP record、RFCOMM frame 或连接/错误事件之一。
   - 只验证 start/stop cleanly 的 demo 测试视为覆盖不足。
   - 未完成底层必须显式 `NotImplementedError`，不能静默 no-op。
+
+### 🔄 Plan: BR/EDR MITM relay 硬件就绪化
+
+- **Plan 文档**: `docs/superpowers/plans/2026-08-31-bredr-mitm-relay-hardening.md`
+- **Spec 文档**: `docs/superpowers/specs/2026-08-31-bredr-mitm-test-plan.md`
+- **认领人**: Claude session
+- **当前进度**: Task 7 完成（runbook + STATUS 登记 + 全套回归）
+- **最后更新**: 2026-09-01
+- **代码路径**: `pybluehost/cli/app/mitm/`, `scripts/mitm_phone.py`, `scripts/mitm_media_analyze.py`, `docs/MITM_BREDR_RUNBOOK.md`
+- **关键交付物**:
+  - 真机 runbook `docs/MITM_BREDR_RUNBOOK.md`（G0–G6 关卡步骤 + 故障定位 + 分片风险提示）
+  - STATUS.md 本登记条目
+- **回归验证**:
+  - `./.venv/Scripts/python.exe -m pytest tests/ -q --transport=virtual`
+  - 结果：2476 collected / 2448 ran / 2403 passed / 37 skipped / **8 failed**
+  - 失败项全部是 master 预存在 baseline：`test_pts_tester_cli_app_starts_btp_tester_and_stops_cleanly` + 7 个 `test_btp_e2e_*_via_bridge`，与预期约 8 个 BTP bridge integration / pts_tester lifecycle baseline 一致
+  - MITM / scripts 新增测试无失败；已知 flaky `test_btsnoop_tap_preserves_order_and_drains_on_close` 本次通过

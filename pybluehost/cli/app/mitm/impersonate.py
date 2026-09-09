@@ -30,8 +30,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ADV_DATA_MAX = 31
-# 广播间隔(单位 0.625ms);0x00A0 = 160 → 100ms。
-_ADV_INTERVAL_DEFAULT = 0x00A0
+# Advertising interval (units of 0.625ms): fixed fast 30ms (0x0030). A fixed fast
+# interval was requested rather than mirroring the target's (unreliably probed);
+# fast advertising lets the phone discover/connect the impersonated device sooner.
+# Advertising is still stopped while connected to target (session._set_le_advertising),
+# so concurrent interference is not worsened.
+_ADV_INTERVAL_DEFAULT = 0x0030
 
 
 def _addr_str_to_le_bytes(addr: str) -> bytes:

@@ -1,4 +1,4 @@
-"""MITM 透传应用 —— 独立应用,仅复用 transport + hci,不导入协议栈上层。"""
+"""MITM transparent-relay app — a standalone app reusing only transport + hci, never importing the upper stack layers."""
 from pybluehost.cli.app.mitm.acl import (
     CID_ATT,
     CID_BR_SIGNALING,

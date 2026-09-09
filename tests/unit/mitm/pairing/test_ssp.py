@@ -1,6 +1,8 @@
 """Unit tests for SspTermination (BR/EDR Secure Simple Pairing HCI termination)."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from pybluehost.core.address import BDAddress
@@ -83,7 +85,10 @@ class FakeController:
 # ---------------------------------------------------------------------------
 
 _ADDR = BDAddress.from_string("AA:BB:CC:DD:EE:FF")
-_ADDR_BYTES = _ADDR.address  # 6 bytes used as bd_addr in params
+# The bd_addr in an HCI command is little-endian wire order (to_hci),
+# not the display-order big-endian .address.
+# (Real-device G3: using .address made the controller silently drop the reply → phone pairing timeout 0x05.)
+_ADDR_BYTES = _ADDR.to_hci()  # 6 bytes used as bd_addr in params
 
 _LINK_KEY = bytes(range(16))  # 16-byte test key
 
@@ -185,7 +190,7 @@ async def test_link_key_store_and_reply_known_addr():
     assert len(ctrl.sent) == 1
     opcode, params = ctrl.sent[0]
     assert opcode == HCI_LINK_KEY_REQUEST_REPLY
-    # Link_Key_Request_Reply 用专用 command 类,bd_addr 反转为小端 wire(同 classic/gap.py)
+    # Link_Key_Request_Reply uses a dedicated command class; bd_addr is reversed to little-endian wire (same as classic/gap.py)
     assert params[:6] == _ADDR.address[::-1]
     assert params[6:22] == _LINK_KEY
 
@@ -201,7 +206,43 @@ async def test_link_key_request_unknown_addr_negative_reply():
     assert len(ctrl.sent) == 1
     opcode, params = ctrl.sent[0]
     assert opcode == HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY
-    assert params[:6] == unknown.address
+    assert params[:6] == unknown.to_hci()
+
+
+async def test_key_log_loaded_at_init_replies_without_repair(tmp_path):
+    """Keys captured in key_log are loaded at startup: on peer reconnect,
+    LKR replies with the key directly instead of re-pairing.
+
+    Real-device requirement (user): pair once; afterwards reconnects go
+    straight to ACL relay, skipping the pairing process.
+    """
+    log = tmp_path / "keys.jsonl"
+    log.write_text(
+        json.dumps({"side": "phone", "addr": str(_ADDR),
+                    "link_key": _LINK_KEY.hex(), "key_type": 8}) + "\n",
+        encoding="utf-8",
+    )
+    ctrl = FakeController()
+    ssp = SspTermination(ctrl, delegate=AutoConfirmDelegate(),
+                         side_name="phone", key_log_path=log)
+    ssp.attach()
+    await ctrl.fire_lkr(_ADDR)
+    assert len(ctrl.sent) == 1
+    opcode, params = ctrl.sent[0]
+    assert opcode == HCI_LINK_KEY_REQUEST_REPLY
+    assert params[6:22] == _LINK_KEY
+
+
+async def test_key_log_missing_file_tolerated(tmp_path):
+    """Missing key_log file (first run) must not crash; LKR falls back to negative reply."""
+    ctrl = FakeController()
+    ssp = SspTermination(ctrl, delegate=AutoConfirmDelegate(), side_name="phone",
+                         key_log_path=tmp_path / "nope.jsonl")
+    ssp.attach()
+    await ctrl.fire_lkr(_ADDR)
+    assert len(ctrl.sent) == 1
+    opcode, _ = ctrl.sent[0]
+    assert opcode == HCI_LINK_KEY_REQUEST_NEGATIVE_REPLY
 
 
 async def test_link_key_store_multiple_addrs():

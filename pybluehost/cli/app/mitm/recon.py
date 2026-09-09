@@ -240,3 +240,106 @@ async def scan_for_target(
         scan_response=final_rsp,
         name=name,
     )
+
+
+# ---------------------------------------------------------------------------
+# ScanEntry / ble_scan_all — full advertising scan (used by the scan subcommand)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ScanEntry:
+    """One device seen during a full scan: identity + optional RSSI (standard BR inquiry has no RSSI)."""
+    identity: ClonedIdentity
+    rssi: int | None = None
+
+
+async def ble_scan_all(
+    controller: "HCIController", *, window: float = 10.0
+) -> list[ScanEntry]:
+    """Full BLE advertising scan: collect every advertiser seen within `window` seconds.
+
+    Unlike scan_for_target: no match criteria and no early stop — returns everything
+    once the window elapses. adv_data and scan_response are merged per address; the
+    name is the first non-None parse_adv_name of the two; RSSI is taken from the last
+    ADV report (SCAN_RSP does not update RSSI).
+    """
+    if window <= 0:
+        raise ValueError("window 必须 > 0")
+
+    adv_map: dict[str, bytes] = {}
+    rsp_map: dict[str, bytes] = {}
+    type_map: dict[str, int] = {}
+    rssi_map: dict[str, int] = {}
+
+    prev_on_hci_event = controller._on_hci_event  # type: ignore[attr-defined]
+    prev_on_acl_data = controller._on_acl_data    # type: ignore[attr-defined]
+    prev_on_sco_data = controller._on_sco_data    # type: ignore[attr-defined]
+
+    def _forward(event: HCIEvent) -> None:
+        if prev_on_hci_event is not None:
+            result = prev_on_hci_event(event)
+            if asyncio.iscoroutine(result):
+                asyncio.ensure_future(result)
+
+    def on_hci_event(event: HCIEvent) -> None:
+        if event.event_code != EventCode.LE_META:
+            _forward(event)
+            return
+        if isinstance(event, HCI_LE_Meta_Event):
+            subevent_code = event.subevent_code
+            subevent_params = event.subevent_parameters
+        elif getattr(event, "parameters", b""):
+            subevent_code = event.parameters[0]
+            subevent_params = event.parameters[1:]
+        else:
+            return
+        if subevent_code != LEMetaSubEvent.LE_ADVERTISING_REPORT:
+            _forward(event)
+            return
+        for report in parse_le_advertising_reports(subevent_params):
+            addr = ":".join(f"{b:02X}" for b in reversed(report.address))
+            type_map[addr] = report.address_type
+            if report.event_type == 0x04:
+                rsp_map[addr] = report.data
+            else:
+                adv_map[addr] = report.data
+                rssi_map[addr] = report.rssi
+        # no early stop: a full scan collects for the entire window
+
+    controller.set_upstream(on_hci_event=on_hci_event)
+    try:
+        scan_params = struct.pack("<BHHBB", 0x01, 0x0010, 0x0010, 0x00, 0x00)
+        await controller.send_command(
+            HCICommand(opcode=HCI_LE_SET_SCAN_PARAMS, parameters=scan_params)
+        )
+        await controller.send_command(
+            HCICommand(opcode=HCI_LE_SET_SCAN_ENABLE, parameters=bytes([0x01, 0x00]))
+        )
+        await asyncio.sleep(window)
+    finally:
+        try:
+            await controller.send_command(
+                HCICommand(opcode=HCI_LE_SET_SCAN_ENABLE, parameters=bytes([0x00, 0x00]))
+            )
+        except Exception:
+            pass
+        controller.set_upstream(
+            on_hci_event=prev_on_hci_event,
+            on_acl_data=prev_on_acl_data,
+            on_sco_data=prev_on_sco_data,
+        )
+
+    entries: list[ScanEntry] = []
+    for addr in sorted(set(adv_map) | set(rsp_map)):
+        name = parse_adv_name(adv_map.get(addr, b"")) or parse_adv_name(rsp_map.get(addr, b""))
+        entries.append(ScanEntry(
+            identity=ClonedIdentity(
+                address=addr,
+                address_type=type_map.get(addr, 0),
+                adv_data=adv_map.get(addr, b""),
+                scan_response=rsp_map.get(addr, b""),
+                name=name,
+            ),
+            rssi=rssi_map.get(addr),
+        ))
+    return entries

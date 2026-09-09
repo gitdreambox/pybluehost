@@ -39,10 +39,7 @@ from pybluehost.cli.app.gatt_server import _gatt_server_main
 from pybluehost.cli.app.hfp_test import _hfp_test_main
 from pybluehost.cli.app.hr_monitor import _hr_monitor_main
 from pybluehost.cli.app.hsp_test import _hsp_test_main
-from pybluehost.cli.app.mitm.cli import (
-    build_relays_from_args,
-    register_mitm_command,
-)
+from pybluehost.cli.app.mitm.cli import register_mitm_command
 from pybluehost.cli.app.sdp_browser import _sdp_browser_run
 from pybluehost.cli.app.spp_echo import _spp_echo_main
 from pybluehost.core.address import BDAddress
@@ -696,23 +693,22 @@ async def test_pts_tester_cli_app_starts_btp_tester_and_stops_cleanly(stack):
 
 def test_mitm_cli_app_builds_authorized_relay_specs() -> None:
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers(dest="cmd")
+    subparsers = parser.add_subparsers(dest="cmd", required=True)
     register_mitm_command(subparsers)
 
     args = parser.parse_args(
         [
             "mitm",
+            "relay",
             "--upstream",
             "virtual",
             "--downstream",
             "virtual",
-            "--transport-mode",
-            "both",
             "--target",
             "AA:BB:CC:DD:EE:FF",
         ]
     )
-    specs = build_relays_from_args(args)
-
     assert args.cmd == "mitm"
-    assert [spec.mode for spec in specs] == ["le", "bredr"]
+    assert args.upstream == "virtual" and args.downstream == "virtual"
+    assert args.target == "AA:BB:CC:DD:EE:FF"
+    assert args.mode == "both"  # default: dual link, run whatever the identity file contains
