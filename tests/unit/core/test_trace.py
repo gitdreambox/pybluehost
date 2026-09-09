@@ -386,7 +386,7 @@ class TestBtsnoopSink:
         data = path.read_bytes()
         ts_bytes = data[32:40]  # after 16-byte header + 16-byte record prefix
         ts_val = struct.unpack(">q", ts_bytes)[0]
-        expected = int(fixed_dt.timestamp() * 1_000_000) + 946684800_000_000
+        expected = int(fixed_dt.timestamp() * 1_000_000) + 62167219200_000_000
         assert ts_val == expected
 
     @pytest.mark.asyncio

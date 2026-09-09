@@ -9,7 +9,7 @@ from enum import IntEnum
 from typing import Callable
 
 from pybluehost.core.address import BDAddress
-from pybluehost.core.gap_common import ClassOfDevice, DeviceInfo
+from pybluehost.core.gap_common import AdvertisingData, ClassOfDevice, DeviceInfo
 from pybluehost.hci.constants import (
     EventCode,
     HCI_ACCEPT_CONNECTION_REQ,
@@ -25,6 +25,7 @@ from pybluehost.hci.constants import (
     HCI_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
     HCI_WRITE_CLASS_OF_DEVICE,
     HCI_WRITE_EXTENDED_INQUIRY_RESPONSE,
+    HCI_WRITE_INQUIRY_MODE,
     HCI_WRITE_LOCAL_NAME,
     HCI_WRITE_SCAN_ENABLE,
 )
@@ -113,6 +114,12 @@ class ClassicDiscovery:
         if event.event_code == EventCode.INQUIRY_RESULT:
             await self._on_inquiry_result_event(event.parameters)
             return
+        if event.event_code == EventCode.INQUIRY_RESULT_WITH_RSSI:
+            await self._on_inquiry_result_with_rssi_event(event.parameters)
+            return
+        if event.event_code == EventCode.EXTENDED_INQUIRY_RESULT:
+            await self._on_extended_inquiry_result_event(event.parameters)
+            return
         if event.event_code == EventCode.INQUIRY_COMPLETE:
             _log_inquiry_complete(num_devices=self._device_count)
             self._active = False
@@ -125,6 +132,19 @@ class ClassicDiscovery:
         # duration field is in units of 1.28s
         _log_inquiry_started(duration_ms=int(config.duration * 1280))
         self._device_count = 0
+        # Controllers power on in inquiry mode 0 (legacy), returning only legacy
+        # Inquiry_Result (no RSSI/name) → set mode 2 (EIR with RSSI) first. Controllers that
+        # don't support it only warn and fall back to legacy results. The mode only affects
+        # the inquiry response format, so no need to restore it.
+        try:
+            await self._hci.send_command(
+                _make_cmd(HCI_WRITE_INQUIRY_MODE, bytes([2]))
+            )
+        except Exception as e:
+            logger.warning(
+                "Write_Inquiry_Mode failed; falling back to legacy inquiry results: %s",
+                e,
+            )
         await self._hci.send_command(_make_cmd(HCI_INQUIRY, params))
         self._active = True
 
@@ -163,8 +183,70 @@ class ClassicDiscovery:
             offset += 3
             offset += 2  # Clock offset
             await self._on_inquiry_result(
-                DeviceInfo(address=BDAddress.from_hci(address), class_of_device=class_of_device)
+                # legacy Inquiry_Result has no RSSI (the name needs RNR, not done during scan)
+                DeviceInfo(
+                    address=BDAddress.from_hci(address),
+                    rssi=None,
+                    class_of_device=class_of_device,
+                )
             )
+
+    async def _on_inquiry_result_with_rssi_event(self, data: bytes) -> None:
+        """HCI_Inquiry_Result_with_RSSI (0x22). Each response is 15 bytes."""
+        if not data:
+            return
+        count = data[0]
+        offset = 1
+        for _ in range(count):
+            if offset + 15 > len(data):
+                return
+            address = data[offset : offset + 6]
+            offset += 6
+            # page_scan_rep_mode + page_scan_period_mode + page_scan_mode
+            offset += 3
+            class_of_device = int.from_bytes(data[offset : offset + 3], "little")
+            offset += 3
+            offset += 2  # Clock offset
+            rssi = data[offset]
+            if rssi >= 128:
+                rssi -= 256  # signed byte
+            offset += 1
+            await self._on_inquiry_result(
+                DeviceInfo(
+                    address=BDAddress.from_hci(address),
+                    rssi=rssi,
+                    class_of_device=class_of_device,
+                )
+            )
+
+    async def _on_extended_inquiry_result_event(self, data: bytes) -> None:
+        """HCI_Extended_Inquiry_Result (0x2F, num_responses is always 1)."""
+        if len(data) < 15:
+            return
+        offset = 1  # num_responses (always 1)
+        address = data[offset : offset + 6]
+        offset += 6
+        offset += 1  # page_scan_rep_mode
+        offset += 1  # reserved
+        class_of_device = int.from_bytes(data[offset : offset + 3], "little")
+        offset += 3
+        offset += 2  # clock_offset
+        rssi = data[offset]
+        if rssi >= 128:
+            rssi -= 256  # signed byte
+        offset += 1
+        # EIR shares the BLE AD structure format → reuse core.gap_common to parse the name
+        eir = data[offset : offset + 240]
+        ad = AdvertisingData.from_bytes(eir)
+        name = ad.get_complete_local_name() or ad.get_short_local_name()
+        await self._on_inquiry_result(
+            DeviceInfo(
+                address=BDAddress.from_hci(address),
+                rssi=rssi,
+                name=name,
+                class_of_device=class_of_device,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------

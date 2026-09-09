@@ -11,13 +11,22 @@ from pybluehost.core.errors import CommandTimeoutError
 from pybluehost.hci.constants import (
     HCI_ACL_PACKET,
     HCI_EVENT_PACKET,
+    HCI_LE_READ_BUFFER_SIZE,
     HCI_READ_BUFFER_SIZE,
     HCI_RESET,
     EventCode,
+    LEMetaSubEvent,
 )
-from pybluehost.hci.controller import ConnectionManager, HCIConnection, HCIController
+from pybluehost.hci.controller import (
+    LINK_TYPE_ACL,
+    LINK_TYPE_LE,
+    ConnectionManager,
+    HCIConnection,
+    HCIController,
+)
 from pybluehost.hci.packets import (
     HCI_Command_Complete_Event,
+    HCI_LE_Meta_Event,
     HCI_Reset,
     HCIACLData,
 )
@@ -171,6 +180,96 @@ def test_configure_acl_flow_from_read_buffer_size_complete():
 
     assert ctrl._acl_flow.buffer_size == 0x0136
     assert ctrl._acl_flow.available == 10
+
+
+def test_le_buffer_size_configures_separate_le_pool():
+    """LE_Read_Buffer_Size must configure a separate LE pool and must never
+    overwrite the BR/EDR pool.
+
+    Regression: the BR/EDR relay once had LE (num=6) overwrite the shared
+    acl_flow of BR/EDR (num=4), causing over-send to exhaust the BR/EDR
+    4-buffer -> Data_Buffer_Overflow (0x1A) -> stream stall.
+    """
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    # init order: BR/EDR Read_Buffer_Size (4x1021) first, then LE_Read_Buffer_Size (6x251).
+    ctrl._configure_acl_flow_from_command_complete(HCI_Command_Complete_Event(
+        num_hci_command_packets=1,
+        command_opcode=HCI_READ_BUFFER_SIZE,
+        return_parameters=b"\x00" + struct.pack("<HBHH", 1021, 0x40, 4, 0),
+    ))
+    ctrl._configure_acl_flow_from_command_complete(HCI_Command_Complete_Event(
+        num_hci_command_packets=1,
+        command_opcode=HCI_LE_READ_BUFFER_SIZE,
+        return_parameters=b"\x00" + struct.pack("<HB", 251, 6),
+    ))
+
+    # BR/EDR pool is still 4x1021; LE pool is separate at 6x251.
+    assert ctrl._acl_flow.available == 4
+    assert ctrl._acl_flow.buffer_size == 1021
+    assert ctrl._le_acl_flow.available == 6
+    assert ctrl._le_acl_flow.buffer_size == 251
+
+
+def test_acl_flow_for_routes_by_link_type():
+    """_acl_flow_for routes by the connection type of the handle; unknown handles default to the BR/EDR pool."""
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    ctrl._acl_flow.configure(num_buffers=4, buffer_size=1021)
+    ctrl._le_acl_flow.configure(num_buffers=6, buffer_size=251)
+
+    ctrl._conn_link_type[0x0001] = LINK_TYPE_ACL
+    assert ctrl._acl_flow_for(0x0001) is ctrl._acl_flow
+
+    ctrl._conn_link_type[0x0002] = LINK_TYPE_LE
+    assert ctrl._acl_flow_for(0x0002) is ctrl._le_acl_flow
+
+    # unregistered handle -> defaults to the BR/EDR pool
+    assert ctrl._acl_flow_for(0x0099) is ctrl._acl_flow
+
+
+def test_acl_flow_for_le_shared_pool_falls_back_to_bredr():
+    """LE reports 0 (shares the pool with BR/EDR) -> LE pool not configured -> LE handles fall back to the BR/EDR pool."""
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    ctrl._acl_flow.configure(num_buffers=4, buffer_size=1021)
+    # _le_acl_flow intentionally left unconfigured (shared-pool case)
+    ctrl._conn_link_type[0x0002] = LINK_TYPE_LE
+    assert ctrl._acl_flow_for(0x0002) is ctrl._acl_flow
+
+
+async def test_conn_link_type_tracked_on_bredr_connect_and_disconnect():
+    """BR/EDR Connection_Complete registers link_type; Disconnection_Complete removes it."""
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    # Connection_Complete: status=0, handle=0x0001, bd_addr(6), link_type=0x01(ACL), enc=0
+    conn = bytes([
+        HCI_EVENT_PACKET, EventCode.CONNECTION_COMPLETE, 0x0B,
+        0x00, 0x01, 0x00,
+        0x66, 0x55, 0x44, 0x33, 0x22, 0x11,
+        0x01, 0x00,
+    ])
+    await transport.inject(conn)
+    assert ctrl._conn_link_type[0x0001] == LINK_TYPE_ACL
+
+    disc = bytes([
+        HCI_EVENT_PACKET, EventCode.DISCONNECTION_COMPLETE, 0x04,
+        0x00, 0x01, 0x00, 0x16,
+    ])
+    await transport.inject(disc)
+    assert 0x0001 not in ctrl._conn_link_type
+
+
+async def test_conn_link_type_tracked_on_le_connect():
+    """LE_Connection_Complete (LE meta subevent 0x01) is registered as LE."""
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    # LE meta: subevent=0x01, params = status(1)+handle(2 LE)+role(1)+...
+    sub_params = bytes([0x00, 0x07, 0x00, 0x00]) + b"\x00" * 20
+    payload = bytes([LEMetaSubEvent.LE_CONNECTION_COMPLETE]) + sub_params
+    evt = bytes([HCI_EVENT_PACKET, EventCode.LE_META, len(payload)]) + payload
+    await transport.inject(evt)
+    assert ctrl._conn_link_type[0x0007] == LINK_TYPE_LE
 
 
 # ---------------------------------------------------------------------------

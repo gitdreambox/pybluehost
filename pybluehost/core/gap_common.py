@@ -78,7 +78,7 @@ class ClassOfDevice:
 class DeviceInfo:
     """Information about a discovered device."""
     address: BDAddress
-    rssi: int = 0
+    rssi: int | None = None  # None = not reported by the controller (legacy BR/EDR inquiry has no RSSI)
     name: str | None = None
     class_of_device: int = 0
     appearance: Appearance = Appearance.UNKNOWN

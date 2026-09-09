@@ -33,7 +33,9 @@ async def _classic_inquiry_main(stack: Stack, stop: asyncio.Event) -> None:
         if addr_s not in seen:
             name = getattr(info, "name", None) or "<unknown>"
             cod = getattr(info, "class_of_device", 0)
-            logger.info("%s  CoD=0x%06X  %s", addr_s, cod, name)
+            rssi = getattr(info, "rssi", None)
+            rssi_s = f"{rssi}" if rssi is not None else "-"
+            logger.info("%s  CoD=0x%06X  RSSI=%s  %s", addr_s, cod, rssi_s, name)
             seen.add(addr_s)
 
     stack.gap.classic_discovery.on_result(on_result)

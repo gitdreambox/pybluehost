@@ -178,8 +178,12 @@ class JsonSink:
             self._file.close()
 
 
-# btsnoop epoch: 2000-01-01 00:00:00 UTC in microseconds since Unix epoch
-_BTSNOOP_EPOCH_DELTA_US = 946684800_000_000
+# btsnoop epoch: 0 AD 00:00:00 (proleptic Gregorian) in microseconds since Unix epoch.
+# Standard btsnoop (Android btsnoop_hci.log / Wireshark / Frontline WPS) all use the 0 AD
+# epoch; the constant = seconds from 0000-01-01 to 1970-01-01 (62167219200) * 1e6.
+# Previously 2000-01-01 (946684800e6) was used by mistake, which after subtracting the epoch
+# went negative in WPS and made all timestamps display as -1.
+_BTSNOOP_EPOCH_DELTA_US = 62167219200_000_000
 
 
 class BtsnoopSink:

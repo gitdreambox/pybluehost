@@ -63,6 +63,13 @@ from pybluehost.hci.packets import (
 # Connection tracking
 # ---------------------------------------------------------------------------
 
+# link_type values for HCI Connection_Complete / *_Connection_Complete events
+LINK_TYPE_SCO = 0x00
+LINK_TYPE_ACL = 0x01   # BR/EDR ACL
+LINK_TYPE_ESCO = 0x02
+LINK_TYPE_LE = 0x03    # LE ACL
+
+
 @dataclass
 class HCIConnection:
     """Represents a single HCI connection."""
@@ -127,8 +134,19 @@ class HCIController:
         self._security_config = security_config
 
         self._cmd_flow = CommandFlowController(initial_credits=1)
-        self._acl_flow = ACLFlowController()
+        # BR/EDR and LE have independent ACL buffer pools (Intel measured
+        # BR/EDR=4x1021, LE=6x251; sizes/counts differ, so they are not shared).
+        # Number_Of_Completed_Packets (0x13) reports completions per handle,
+        # not per pool, so each pool has its own flow controller and handles are
+        # charged to the correct pool by connection type (see _acl_flow_for).
+        self._acl_flow = ACLFlowController()      # BR/EDR pool (Read_Buffer_Size)
+        self._le_acl_flow = ACLFlowController()   # LE pool (LE_Read_Buffer_Size)
         self.connections = ConnectionManager()
+        # handle -> link_type (0x01=BR/EDR ACL, 0x03=LE). Registered on
+        # Connection_Complete / LE_*_Connection_Complete, removed on
+        # Disconnection_Complete. Routes send_acl / Number_Of_Completed_Packets
+        # credits to the correct pool.
+        self._conn_link_type: dict[int, int] = {}
 
         # Supported_Commands bitmap parsed during initialize()
         self._supported_commands: "SupportedCommands | None" = None
@@ -375,9 +393,25 @@ class HCIController:
         except asyncio.TimeoutError:
             # Clean up the pending future
             self._cmd_flow._pending.pop(command.opcode, None)
+            # Return the command credit consumed by this send. Timeouts usually
+            # mean the controller is hung and will not return CC/CS. If we do
+            # not return the credit, repeated commands to an unresponsive
+            # controller exhaust credits and acquire() blocks forever, stalling
+            # even graceful teardown. If the event arrives late, _handle_event
+            # will also call release() once, over-counting by one — harmless,
+            # subsequent real commands will consume it.
+            self._cmd_flow.release(1)
             raise CommandTimeoutError(
                 f"HCI command 0x{command.opcode:04X} timed out after {self._command_timeout}s"
             )
+        except asyncio.CancelledError:
+            # When cancelled (e.g., Ctrl+C teardown) we must still pop the
+            # pending future and return the credit; otherwise leaked credits
+            # cause later acquire() calls to block forever, stalling graceful
+            # disconnect and scan shutdown.
+            self._cmd_flow._pending.pop(command.opcode, None)
+            self._cmd_flow.release(1)
+            raise
 
         if isinstance(event, HCI_Command_Complete_Event):
             self._configure_acl_flow_from_command_complete(event)
@@ -404,8 +438,14 @@ class HCIController:
             le_acl_len, le_acl_count = struct.unpack_from("<HB", params, 1)
             self._le_acl_packet_length = le_acl_len
             self._le_acl_total_packets = le_acl_count
+            # Key: the LE pool is configured separately into _le_acl_flow and must never
+            # overwrite _acl_flow (the BR/EDR pool). Otherwise BR/EDR connections would be
+            # throttled by the LE num (often larger, e.g. 6>4) → over-sending overflows the
+            # BR/EDR buffer → Data_Buffer_Overflow (0x1A). LE reporting 0 = shares the pool
+            # with BR/EDR; in that case don't configure _le_acl_flow, and _acl_flow_for falls
+            # back to the BR/EDR pool.
             if le_acl_len and le_acl_count:
-                self._acl_flow.configure(num_buffers=le_acl_count, buffer_size=le_acl_len)
+                self._le_acl_flow.configure(num_buffers=le_acl_count, buffer_size=le_acl_len)
 
     def _capture_capability_response(self, opcode: int, return_parameters: bytes) -> None:
         """Parse and cache capability-bearing Command_Complete payloads."""
@@ -486,7 +526,6 @@ class HCIController:
             HCI_Write_LE_Host_Supported_Command,
             HCI_Write_Simple_Pairing_Mode_Command,
             HCI_Write_Scan_Enable_Command,
-            HCI_Host_Buffer_Size_Command,
             HCI_LE_Set_Scan_Parameters_Command,
             HCI_LE_Set_Random_Address_Command,
         )
@@ -526,12 +565,14 @@ class HCIController:
             HCI_Write_LE_Host_Supported_Command(le_supported_host=0x01, simultaneous_le_host=0x00),
             HCI_Write_Simple_Pairing_Mode_Command(simple_pairing_mode=0x01),
             HCI_Write_Scan_Enable_Command(scan_enable=0x00),
-            HCI_Host_Buffer_Size_Command(
-                host_acl_data_packet_length=0x0200,
-                host_synchronous_data_packet_length=0xFF,
-                host_total_num_acl_data_packets=0x0014,
-                host_total_num_synchronous_data_packets=0x0000,
-            ),
+            # Deliberately not sending HCI_Host_Buffer_Size: controller→host flow control is
+            # toggled by Set_Controller_To_Host_Flow_Control (0x0C31), default off. This stack
+            # neither enables flow control nor ever replies Host_Number_Of_Completed_Packets
+            # (0x0C35); if it still declared a buffer, some firmware would do host-buffer
+            # accounting against it and stop/drop ACL once credits run out — under high-bitrate
+            # A2DP inbound media this shows up as the phone side starving. Keep the spec
+            # default (don't declare) so the controller delivers freely at native MTU, no
+            # accounting.
             HCI_LE_Set_Scan_Parameters_Command(
                 le_scan_type=0x01,
                 le_scan_interval=0x0010,
@@ -634,9 +675,22 @@ class HCIController:
     # ACL data sending
     # ------------------------------------------------------------------
 
+    def _acl_flow_for(self, handle: int) -> ACLFlowController:
+        """Return the ACL flow controller owning this handle by connection type (BR/EDR pool
+        or LE pool).
+
+        LE connection with the LE pool configured → LE pool; otherwise (LE sharing the pool /
+        unknown handle / BR/EDR) → BR/EDR pool. Unknown handles default to the BR/EDR pool:
+        classic connections are the common case, and the relay only starts sending ACL after
+        the connection is up, by which point link_type is already registered.
+        """
+        if self._conn_link_type.get(handle) == LINK_TYPE_LE and self._le_acl_flow.configured:
+            return self._le_acl_flow
+        return self._acl_flow
+
     async def send_acl_data(self, handle: int, pb_flag: int, data: bytes) -> None:
         """Send ACL data, respecting controller flow control."""
-        await self._acl_flow.acquire(handle)
+        await self._acl_flow_for(handle).acquire(handle)
         packet = HCIACLData(handle=handle, pb_flag=pb_flag, data=data)
         raw = packet.to_bytes()
         self._emit_trace(Direction.DOWN, raw)
@@ -789,12 +843,38 @@ class HCIController:
             return
 
         if isinstance(event, HCI_Number_Of_Completed_Packets_Event):
-            self._acl_flow.on_num_completed(event.completed)
+            # Credit the returned credits to the pool matching each handle's connection type
+            # (BR/EDR / LE).
+            for handle, count in event.completed.items():
+                self._acl_flow_for(handle).on_num_completed({handle: count})
             return
 
         # Encryption-specific listeners
         from pybluehost.hci.constants import EventCode, LEMetaSubEvent
         from pybluehost.hci.packets import HCI_LE_Meta_Event
+
+        # --- Connection lifecycle: register/remove handle->link_type (for ACL flow-control
+        # pool routing) ---
+        if event.event_code == EventCode.CONNECTION_COMPLETE and len(event.parameters) >= 10:
+            # status(1) + handle(2 LE) + bd_addr(6) + link_type(1) + enc(1)
+            if event.parameters[0] == 0:
+                h = int.from_bytes(event.parameters[1:3], "little")
+                self._conn_link_type[h] = event.parameters[9]
+        elif event.event_code == EventCode.DISCONNECTION_COMPLETE and len(event.parameters) >= 3:
+            h = int.from_bytes(event.parameters[1:3], "little")
+            self._conn_link_type.pop(h, None)
+        elif (
+            isinstance(event, HCI_LE_Meta_Event)
+            and event.subevent_code in (
+                LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+                LEMetaSubEvent.LE_ENHANCED_CONNECTION_COMPLETE,
+            )
+            and len(event.subevent_parameters) >= 3
+        ):
+            # subevent: status(1) + handle(2 LE) + ...
+            if event.subevent_parameters[0] == 0:
+                h = int.from_bytes(event.subevent_parameters[1:3], "little")
+                self._conn_link_type[h] = LINK_TYPE_LE
 
         if event.event_code == EventCode.ENCRYPTION_CHANGE and len(event.parameters) >= 4:
             status = event.parameters[0]
@@ -838,6 +918,20 @@ class HCIController:
 
         # SC (SSP) event listeners
         from pybluehost.core.address import BDAddress
+
+        # Diagnostic (temporary): whether SSP-family events arrive + parameters length (empty
+        # parameters would trip the len gate)
+        if event.event_code in (
+            EventCode.IO_CAPABILITY_REQUEST, EventCode.IO_CAPABILITY_RESPONSE,
+            EventCode.USER_CONFIRMATION_REQUEST, EventCode.SIMPLE_PAIRING_COMPLETE,
+            EventCode.LINK_KEY_NOTIFICATION, EventCode.LINK_KEY_REQUEST,
+        ):
+            import logging as _lg
+            _lg.getLogger(__name__).info(
+                "[SSP-dispatch] evt=0x%02x plen=%d params=%s",
+                event.event_code, len(event.parameters),
+                (event.parameters.hex() if event.parameters else "<empty>"),
+            )
 
         if event.event_code == EventCode.IO_CAPABILITY_REQUEST and len(event.parameters) >= 6:
             addr = BDAddress.from_hci(event.parameters[:6])

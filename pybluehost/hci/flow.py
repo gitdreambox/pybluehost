@@ -68,6 +68,12 @@ class ACLFlowController:
         self._buffer_size = buffer_size
 
     @property
+    def configured(self) -> bool:
+        """Whether configured (the corresponding Read_Buffer_Size has been received). acquire
+        raises if unconfigured."""
+        return self._sem is not None
+
+    @property
     def available(self) -> int:
         """Number of available buffers."""
         if self._sem is None:

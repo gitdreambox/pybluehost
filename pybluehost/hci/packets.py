@@ -1173,7 +1173,20 @@ def decode_hci_packet(data: bytes) -> HCIPacket:
         parameters = data[3 : 3 + param_len]
         klass = PacketRegistry.get_event_class(event_code)
         if klass is not None:
-            return klass.from_bytes(event_code, parameters)
+            ev = klass.from_bytes(event_code, parameters)
+            # Preserve the raw parameter body: some typed events (e.g. Connection_Complete /
+            # Disconnection_Complete) parse fields into typed attributes without storing the
+            # raw parameters, so generic handlers that read ev.parameters (the MITM relay's
+            # connect/accept/link-loss watches) get empty bytes and misjudge the connection as
+            # failed. Backfill here; classes that make parameters a read-only property
+            # (Command_Complete/Status, whose getter is non-empty) are naturally skipped
+            # because `not ev.parameters` is False.
+            if not ev.parameters:
+                try:
+                    ev.parameters = parameters
+                except AttributeError:
+                    pass  # read-only property, skip
+            return ev
         return HCIEvent(event_code=event_code, parameters=parameters)
 
     if packet_type == HCI_ACL_PACKET:

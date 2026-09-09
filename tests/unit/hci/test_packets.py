@@ -174,6 +174,38 @@ def test_connection_complete_event_decode():
     assert pkt.connection_handle == 0x0001
 
 
+def test_typed_events_retain_raw_parameters():
+    """Regression: typed events (Connection/Disconnection Complete) must retain the raw parameters.
+
+    The MITM relay's connect/accept/disconnect listeners read ev.parameters
+    generically; if the typed classes only fill the typed fields and drop the
+    raw parameters, generic handlers get empty bytes and misjudge the
+    connection as failed (real-device G3 hit this bug: the connection
+    actually succeeded, but the handler timed out because parameters was empty).
+    """
+    # Connection_Complete (0x03)
+    cc_params = bytes([0x00, 0x00, 0x01]) + bytes.fromhex("ee6a1eff5394") + bytes([0x01, 0x00])
+    cc = decode_hci_packet(bytes([0x04, 0x03, len(cc_params)]) + cc_params)
+    assert isinstance(cc, HCI_Connection_Complete_Event)
+    assert cc.parameters == cc_params  # raw parameters retained
+    assert cc.connection_handle == 0x0100
+    assert cc.status == 0x00
+
+    # Disconnection_Complete (0x05)
+    dc_params = bytes([0x00, 0x40, 0x00, 0x13])
+    dc = decode_hci_packet(bytes([0x04, 0x05, len(dc_params)]) + dc_params)
+    assert dc.parameters == dc_params
+    assert dc.connection_handle == 0x0040
+
+
+def test_command_complete_property_unaffected_by_backfill():
+    """Command_Complete's parameters is a read-only property; the backfill logic must not break it."""
+    # ncmd(1) + opcode(2, Read_BD_ADDR=0x1009) + status(1) + bdaddr(6)
+    params = bytes([0x01, 0x09, 0x10, 0x00]) + bytes.fromhex("ee6a1eff5394")
+    pkt = decode_hci_packet(bytes([0x04, 0x0E, len(params)]) + params)
+    assert pkt.return_parameters == bytes([0x00]) + bytes.fromhex("ee6a1eff5394")
+
+
 def test_disconnection_complete_event_decode():
     raw = bytes([0x04, 0x05, 0x04, 0x00, 0x40, 0x00, 0x13])
     pkt = decode_hci_packet(raw)
@@ -262,7 +294,7 @@ def test_sco_data_decode():
     assert pkt.data == b"\xAB\xCD"
 
 
-# --- HCI ISO Data (补充1) ---
+# --- HCI ISO Data (supplement 1) ---
 
 def test_iso_data_encode():
     pkt = HCIISOData(
