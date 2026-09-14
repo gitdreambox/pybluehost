@@ -1,0 +1,99 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "inputs": [
+         {
+            "id": "device",
+            "type": "pickString",
+            "description": "select your IUT device",
+            "options": [
+                "usb:0A12:0001#1", //CSR8510 addr:001A7DDA7111
+                "usb:8087:0026#1", //intel AX201 addr:D4548BBA70A1
+                "usb:8087:0036#1", //intel BE200 addr:D4548BBA70A1
+                "usb:33FA:0012#1", //
+            ],
+            "default": "usb:0A12:0001#1"
+        },
+    ],
+    "tasks": [
+        {
+            "label": "list-transport",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "pybluehost",
+                "--list-transports",
+            ],
+        },
+        {
+            "label": "diagnose-usb",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "pybluehost",
+                "tools",
+                "usb",
+                "diagnose",
+            ],
+        },
+        {
+            "label": "pts-iut",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "pybluehost",
+                "app",
+                "pts-iut",
+                "-t",
+                "${input:device}",
+                "--btsnoop",
+                "btsnoop_hci_pts.cfa",
+                // "--virtual-sniffer",
+                // "ellisys",
+            ],
+            "group": "build",
+        },
+        {
+            "label": "mitm-scan",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "pybluehost",
+                "app",
+                "mitm",
+                "scan",
+                "--upstream",
+                "usb:8087:0036#1",
+                "--mode",
+                "bredr",
+            ],
+            "group": "build"
+        },
+        {
+            "label": "mitm-relay",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "pybluehost",
+                "app",
+                "mitm",
+                "relay",
+                "--upstream",
+                "usb:8087:0036#1",
+                "--downstream",
+                "usb:8087:0036#2",
+                "--mode",
+                "bredr",
+                "--downstream-name",
+                "JBL Live MITM 4"
+            ],
+            "group": "build"
+        }
+    ]
+}
