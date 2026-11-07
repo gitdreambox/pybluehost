@@ -1,0 +1,34 @@
+#!/bin/sh
+# Reject non-merge commits made directly on master.
+#
+# Project rule (AGENTS.md -> 分支与 worktree 纪律): master only accepts
+# merges. All bugfixes and features are developed on a worktree branch and
+# merged back with `git merge --ff-only <branch>`.
+#
+# This hook stops the accidental `git commit` on master. It does NOT stop a
+# merge commit (MERGE_HEAD present) nor work on any other branch.
+#
+# Enable once per clone:
+#     git config core.hooksPath scripts/hooks
+
+branch=$(git symbolic-ref --short -q HEAD 2>/dev/null) || exit 0   # detached HEAD: allow
+[ "$branch" = "master" ] || exit 0
+
+# A merge commit carries MERGE_HEAD; master accepts those.
+git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1 && exit 0
+
+cat >&2 <<'EOF'
+pre-commit: refusing to commit directly on 'master'.
+
+  master only accepts merges. Do the work on a worktree branch:
+
+      git worktree add .claude/worktrees/<name> -b <type>/<name>
+      cd .claude/worktrees/<name>
+      # ... edit, commit ...
+      cd ../..
+      git merge --ff-only <type>/<name>
+
+  <type> is one of: feat / fix / refactor / test / docs / chore
+  See AGENTS.md -> 分支与 worktree 纪律.
+EOF
+exit 1

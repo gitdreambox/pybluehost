@@ -28,6 +28,8 @@ git log --oneline -10
 | ⬜ | Plan 待执行，文档已就绪 |
 | 📝 | Plan 文档待编写 |
 
+> ⚠️ **动手改代码之前先看这条**：`master` 不接受任何直接 commit，只接受合并。所有 bugfix / feature 都开 worktree 分支来做，改完 `git merge --ff-only` 回 master。本地 pre-commit 守卫会拒绝 master 上的普通提交。详见「[分支与 worktree 纪律（强制）](#分支与-worktree-纪律强制)」。
+
 ---
 
 ## 项目概览
@@ -369,20 +371,45 @@ Plan 的边界不是"层"，而是**代码冲突域**。判断两个 Plan 能否
 
 完成或中断时，**必须**将状态更新到 STATUS.md 并 commit，让下一个人能无缝接手。
 
+### 分支与 worktree 纪律（强制）
+
+> **master 不接受任何直接 commit，只接受合并。** 所有 bugfix / feature / 文档改动一律在独立的 worktree 分支上完成——没有例外，也不要有「这次改动小，就在 master 上顺手提交一次」的念头。
+
+- **禁止**：在 `master` 上 `git commit`。
+- **要求**：每个 bugfix / feature 先开 worktree + 分支，在分支上提交（分支上可以随便提多少次）。
+- **合并**：回主工作区 `git merge --ff-only <branch>`。master 永远是线性的，里面的每一条都来自一次合并。
+- **为什么**：① master 是「已验证」的唯一真相，没跑过测试的改动不该直接落上去；② 并行改动互不干扰（文件集合不冲突就能同时开工）；③ 出事能整条分支回退——撤销一个合并 commit 比从散落的提交里挑拣干净；④ review 有明确边界，`git diff master..<branch>` 就是全部待审内容。
+
+```bash
+# 1. 开分支（.claude/worktrees/ 已被 .gitignore 忽略，不会污染 git status）
+git worktree add .claude/worktrees/<name> -b <type>/<name>
+cd .claude/worktrees/<name>
+
+# 2. 在 worktree 里开发，按需提交（合并前再决定要不要 squash）
+
+# 3. 回主工作区合并
+cd /path/to/main/repo
+git merge --ff-only <type>/<name>
+
+# 4. 清理
+git worktree remove .claude/worktrees/<name>
+```
+
+`<type>` 沿用 commit 前缀那套：`feat` / `fix` / `refactor` / `test` / `docs` / `chore`。
+
+**本地有 pre-commit 守卫**（`scripts/hooks/pre-commit`，已入库）：在 master 上做非合并 commit 会被直接拒绝。每个 clone 一次性启用：
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+守卫只拦「master 上的普通 commit」，`git merge` 进来的合并提交不受影响。`git commit --no-verify` 能绕过，**但那是违规，不要用**。
+
 ### 并行开发规则
 
 - **同一 Plan 不允许两人同时执行**（Plan 内有顺序依赖）
 - **不同 Plan 可以并行**，但必须满足层次依赖（上层依赖下层完成）
-- 每个 Plan 建议在独立 worktree 中执行，完成后合并到 master
-
-```bash
-# 为新 Plan 创建 worktree
-git worktree add .claude/worktrees/<plan-name> -b claude/<plan-name>
-
-# 完成后合并
-cd /path/to/main/repo
-git merge --ff-only claude/<plan-name>
-```
+- 每个 Plan 都在自己的 worktree 分支里执行（见上节），完成后合并到 master
 
 ---
 
@@ -491,6 +518,8 @@ docs(progress): complete Plan N Task M Step K
 refactor(<layer>): <重构描述>
 test(<layer>): add tests for <module>
 ```
+
+提交一律发生在 worktree 分支上，`master` 只接收合并——见「分支与 worktree 纪律（强制）」。
 
 ### 代码规范
 
