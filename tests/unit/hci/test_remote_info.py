@@ -140,6 +140,48 @@ def test_parse_remote_extended_features_rejects_a_different_echoed_page():
         parse_remote_extended_features_complete(event, _HANDLE, page_number=1)
 
 
+def test_remote_supported_features_bitmap_sits_where_the_local_complete_event_puts_it():
+    """The local and remote LMP feature bitmaps share one layout: the raw
+    8-octet page-0 bitmap, octet 0 first. Local Command Complete is
+    status(1)+features(8) -> controller.py slices return_parameters[1:9];
+    the remote completion event inserts handle(2) -> remote_info.py slices
+    params[3:11]. Both slices must land on the same 8 bytes.
+    """
+    features = bytes.fromhex("ff59000800000000")
+    local_command_complete = b"\x00" + features  # status + features
+    remote_event = _event(
+        EventCode.READ_REMOTE_SUPPORTED_FEATURES_COMPLETE,
+        b"\x00\x42\x00" + features,  # status + handle + features
+    )
+
+    parsed = parse_remote_supported_features_complete(remote_event, _HANDLE)
+
+    assert parsed.lmp_features == local_command_complete[1:9]
+
+
+def test_remote_extended_features_page_bitmap_sits_where_the_local_page_puts_it():
+    """Local extended-features Command Complete is
+    status(1)+page(1)+max_page(1)+features(8) -> controller.py slices
+    payload[2:10] (payload = return_parameters[1:]); the remote completion
+    event inserts handle(2) -> remote_info.py slices params[5:13]. Page N
+    carries LMP features page N in both directions.
+    """
+    features = bytes.fromhex("0900000000000000")
+    local_command_complete = b"\x00\x01\x02" + features  # status + page + max_page
+    remote_event = _event(
+        EventCode.READ_REMOTE_EXTENDED_FEATURES_COMPLETE,
+        b"\x00\x42\x00\x01\x02" + features,
+    )
+
+    parsed = parse_remote_extended_features_complete(
+        remote_event, _HANDLE, page_number=1
+    )
+
+    assert parsed.page_number == local_command_complete[1]
+    assert parsed.max_page_number == local_command_complete[2]
+    assert parsed.extended_lmp_features == local_command_complete[3:11]
+
+
 def test_parse_remote_version_information_complete_decodes_company_id():
     payload = struct.pack("<BHH", 0x0C, 0x000F, 0x1234)
     event = _event(EventCode.READ_REMOTE_VERSION_COMPLETE, b"\x00\x42\x00" + payload)
