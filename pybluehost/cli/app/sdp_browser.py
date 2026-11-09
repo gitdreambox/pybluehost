@@ -9,7 +9,14 @@ from pybluehost.classic.sdp import DataElement, DataElementType, SDPClient
 from pybluehost.cli._target import TARGET_HELP, parse_target_arg
 from pybluehost.cli._lifecycle import add_common_arguments, run_app_command, trace_kwargs_from_args
 from pybluehost.core.address import BDAddress
-from pybluehost.hci.features_decode import hci_version_name
+from pybluehost.hci.features_decode import (
+    BREDR_FEATURE_BIT_NAMES,
+    BREDR_FEATURE_BIT_NAMES_P1,
+    BREDR_FEATURE_BIT_NAMES_P2,
+    hci_version_name,
+    supported_feature_names,
+    unnamed_feature_bit_count,
+)
 from pybluehost.hci.format_fields import format_company_id
 from pybluehost.hci.remote_info import RemoteDeviceInformation
 from pybluehost.l2cap.constants import PSM_SDP
@@ -167,6 +174,13 @@ _QUERY_LABELS = {
     "version_information": "version",
 }
 
+# Page N of HCI_Read_Remote_Extended_Features carries the LMP features page N.
+_EXTENDED_FEATURE_TABLES = {
+    0: BREDR_FEATURE_BIT_NAMES,
+    1: BREDR_FEATURE_BIT_NAMES_P1,
+    2: BREDR_FEATURE_BIT_NAMES_P2,
+}
+
 
 async def _log_remote_device_information(stack: Stack, handle: int, addr: BDAddress) -> None:
     """Query and log remote HCI identity; never block SDP browsing."""
@@ -177,18 +191,36 @@ async def _log_remote_device_information(stack: Stack, handle: int, addr: BDAddr
         logger.warning("Remote HCI information unavailable: %s", exc)
 
 
+def _log_feature_bitmap(
+    label: str, bitmap: bytes, table: dict[tuple[int, int], str] | None,
+) -> None:
+    """Log a feature bitmap and the spec names of the bits that are set."""
+    logger.info("%s: %s", label, bitmap.hex())
+    if table is None:
+        return
+    names = supported_feature_names(bitmap, table)
+    unnamed = unnamed_feature_bit_count(bitmap, table)
+    detail = ", ".join(names) if names else "none"
+    if unnamed:
+        detail += f" (+{unnamed} unnamed bit{'s' if unnamed != 1 else ''})"
+    logger.info("%s supported: %s", label, detail)
+
+
 def _log_remote_device_snapshot(snapshot: RemoteDeviceInformation) -> None:
     if snapshot.remote_name is not None:
         logger.info("Remote name: %s", snapshot.remote_name.name)
     if snapshot.supported_features is not None:
-        logger.info(
-            "Remote LMP features: %s", snapshot.supported_features.lmp_features.hex()
+        _log_feature_bitmap(
+            "Remote LMP features",
+            snapshot.supported_features.lmp_features,
+            BREDR_FEATURE_BIT_NAMES,
         )
     for features in snapshot.extended_features:
-        logger.info(
-            "Remote extended features page %d/%d: %s",
-            features.page_number, features.max_page_number,
-            features.extended_lmp_features.hex(),
+        _log_feature_bitmap(
+            f"Remote extended features page "
+            f"{features.page_number}/{features.max_page_number}",
+            features.extended_lmp_features,
+            _EXTENDED_FEATURE_TABLES.get(features.page_number),
         )
     version = snapshot.version_information
     if version is not None:

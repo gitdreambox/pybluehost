@@ -455,6 +455,60 @@ async def test_sdp_browser_survives_a_snapshot_formatting_failure(monkeypatch, c
     assert "SIG data missing" in captured.err
 
 
+def test_sdp_browser_decodes_remote_feature_bits(capsys):
+    from pybluehost.hci.remote_info import (
+        RemoteDeviceInformation,
+        RemoteExtendedFeatures,
+        RemoteSupportedFeatures,
+    )
+
+    _log_remote_device_snapshot(
+        RemoteDeviceInformation(
+            handle=0x0042,
+            supported_features=RemoteSupportedFeatures(
+                status=0, lmp_features=bytes.fromhex("ff59000800000000"),
+            ),
+            extended_features=[
+                RemoteExtendedFeatures(
+                    status=0, page_number=1, max_page_number=2,
+                    extended_lmp_features=b"\x09" + bytes(7),
+                ),
+            ],
+        )
+    )
+    out = capsys.readouterr().out
+    assert "Remote LMP features: ff59000800000000" in out
+    assert (
+        "Remote LMP features supported: 3-slot packets, 5-slot packets, "
+        "Encryption, Slot offset, Timing accuracy, Role switch, Hold mode, "
+        "Sniff mode, Previously used (was Park state), SCO link, HV2 packets, "
+        "u-law log synchronous data, Enhanced inquiry scan" in out
+    )
+    assert "Remote extended features page 1/2: 0900000000000000" in out
+    assert (
+        "Remote extended features page 1/2 supported: Secure Simple Pairing "
+        "(Host Support), Secure Connections (Host Support)" in out
+    )
+
+
+def test_sdp_browser_notes_feature_bits_the_table_cannot_name(capsys):
+    from pybluehost.hci.remote_info import (
+        RemoteDeviceInformation,
+        RemoteSupportedFeatures,
+    )
+
+    _log_remote_device_snapshot(
+        RemoteDeviceInformation(
+            handle=0x0042,
+            supported_features=RemoteSupportedFeatures(
+                status=0, lmp_features=b"\x00\x00\x00\x01" + bytes(4),
+            ),
+        )
+    )
+    out = capsys.readouterr().out
+    assert "Remote LMP features supported: none (+1 unnamed bit)" in out
+
+
 def test_sdp_browser_reports_partial_remote_information(capsys):
     from pybluehost.hci.remote_info import RemoteDeviceInformation
 

@@ -11,6 +11,8 @@ References:
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 # ---------------------------------------------------------------------------
 # LE Features bitmap: (octet, bit) -> name
 # Core Spec 5.4 Vol 6 Part B §4.6 Table 4.6.1
@@ -181,6 +183,39 @@ BREDR_FEATURE_BIT_NAMES_P2: dict[tuple[int, int], str] = {
     (1, 2): "Slot Availability Mask",
     (1, 3): "Train Nudging",
 }
+
+
+def supported_feature_names(
+    bitmap: bytes, table: Mapping[tuple[int, int], str],
+) -> list[str]:
+    """Names of the features whose bit is set in ``bitmap``, in table order.
+
+    ``bitmap`` is the feature bitmap as it came off the wire: octet 0 first,
+    least significant bit first within an octet. Octets the peer did not report
+    are treated as zero.
+    """
+    return [
+        name
+        for (octet, bit), name in table.items()
+        if octet < len(bitmap) and bitmap[octet] & (1 << bit)
+    ]
+
+
+def unnamed_feature_bit_count(
+    bitmap: bytes, table: Mapping[tuple[int, int], str],
+) -> int:
+    """Set bits in ``bitmap`` that ``table`` has no name for.
+
+    Those are reserved / "previously used" positions. Reporting the count lets
+    a caller say "no named feature here" without implying nothing is set.
+    """
+    named = set(table)
+    return sum(
+        1
+        for octet, value in enumerate(bitmap)
+        for bit in range(8)
+        if value & (1 << bit) and (octet, bit) not in named
+    )
 
 
 # ---------------------------------------------------------------------------
