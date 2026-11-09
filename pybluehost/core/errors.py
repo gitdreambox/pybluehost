@@ -21,6 +21,29 @@ class L2CAPError(PyBlueHostError):
     """L2CAP layer error."""
 
 
+class LECoCConnectError(L2CAPError):
+    """LE Credit-Based Connection actively refused by the peer.
+
+    Carries the L2CAP LE-connection result code (``le_signaling.LE_CONN_RESULT_*``)
+    or ``RESULT_COMMAND_REJECT`` when the peer answered with a Command Reject
+    (legacy peer that does not understand credit-based signaling, PTS
+    L2CAP/LE/CFC/BV-01-C). This is an expected, graceful protocol outcome — not
+    a transport/stack failure — so the BTP layer reports it as "0 channels
+    connected" rather than a BTP error.
+    """
+
+    #: Sentinel result for a Command Reject (no LE_CONN_RESULT_* code applies).
+    RESULT_COMMAND_REJECT = -1
+    #: Sentinel when no response arrived inside the RTX window and the
+    #: transaction was abandoned (no on-air refusal exists to report). The BTP
+    #: layer clamps unknown sentinels to a generic refusal code.
+    RESULT_NO_RESPONSE = -2
+
+    def __init__(self, message: str, result: int = 0) -> None:
+        super().__init__(message)
+        self.result = result
+
+
 class GATTError(PyBlueHostError):
     """GATT layer error with optional ATT error code."""
 

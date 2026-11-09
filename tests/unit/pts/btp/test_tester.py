@@ -45,10 +45,10 @@ async def test_tester_responds_to_read_supported_services(running_tester):
         await writer.drain()
         response = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
         assert response.service == op.SERVICE_CORE
-        assert response.opcode == op.OP_STATUS_RESPONSE
-        assert response.data[0] == op.BTP_STATUS_SUCCESS
-        # Core registered → bit 0 set in the bitfield byte after status.
-        assert response.data[1] & 0x01
+        # auto-pts framing: success echoes the request opcode; payload is data-only.
+        assert response.opcode == op.OP_CORE_READ_SUPPORTED_SERVICES
+        # Core registered → bit 0 set in the supported-services bitfield.
+        assert response.data[0] & 0x01
     finally:
         writer.close()
         await writer.wait_closed()
@@ -91,7 +91,8 @@ async def test_tester_handles_two_back_to_back_commands(running_tester):
         await writer.drain()
         for _ in range(2):
             resp = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
-            assert resp.data[0] == op.BTP_STATUS_SUCCESS
+            # Success echoes the request opcode (not the 0x00 status frame).
+            assert resp.opcode == op.OP_CORE_READ_SUPPORTED_COMMANDS
     finally:
         writer.close()
         await writer.wait_closed()

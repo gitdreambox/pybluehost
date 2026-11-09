@@ -49,6 +49,8 @@ async def test_phase3_initiator_sends_keys_then_collects_and_bonds(tmp_path, mon
     )
     ctx.local_io_caps = IOCapability.NO_INPUT_NO_OUTPUT
     ctx.bondable = True
+    ctx.local_auth_req = 0x09
+    ctx.peer_auth_req = 0x09
     ctx.local_address = BDAddress(b"\x0A\x0B\x0C\x0D\x0E\x0F")
     ctx._bond_storage = storage
     ctx.local_init_key_dist = 0x07
@@ -196,6 +198,8 @@ async def test_phase3_defers_peer_keys_until_encryption_change(tmp_path, monkeyp
     )
     ctx.local_io_caps = IOCapability.NO_INPUT_NO_OUTPUT
     ctx.bondable = True
+    ctx.local_auth_req = 0x09
+    ctx.peer_auth_req = 0x09
     ctx.local_address = BDAddress(b"\x0A\x0B\x0C\x0D\x0E\x0F")
     ctx._bond_storage = storage
     ctx.local_init_key_dist = 0x07

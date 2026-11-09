@@ -57,14 +57,17 @@ from pybluehost.transport.usb.realtek import RealtekLocalVersion, RealtekUSBTran
 # KNOWN_CHIPS must be defined AFTER subclass imports so chip.transport_class
 # fields can reference real classes.
 KNOWN_CHIPS: list[ChipInfo] = [
-    # Intel
-    ChipInfo("intel", "AX200",  0x8087, 0x0029, "ibt-20-*",    IntelUSBTransport),
-    ChipInfo("intel", "AX201",  0x8087, 0x0026, "ibt-20-*",    IntelUSBTransport),
-    ChipInfo("intel", "AX210",  0x8087, 0x0032, "ibt-0040-*",  IntelUSBTransport),
-    ChipInfo("intel", "AX211",  0x8087, 0x0033, "ibt-0040-*",  IntelUSBTransport),
-    ChipInfo("intel", "AC9560", 0x8087, 0x0025, "ibt-18-*",    IntelUSBTransport),
-    ChipInfo("intel", "AC8265", 0x8087, 0x0A2B, "ibt-12-*",    IntelUSBTransport),
-    ChipInfo("intel", "BE200",  0x8087, 0x0036, "ibt-0040-*",  IntelUSBTransport),  # WiFi 7 / BT 5.4
+    # Intel. The patterns must end in .sfi: a device-config file sits beside
+    # each firmware image (ibt-0040-0041.ddc is 9 bytes) and _find_firmware
+    # takes sorted(glob(pattern))[0], so an extension-less pattern picks the
+    # .ddc and the loader aborts with "firmware too small".
+    ChipInfo("intel", "AX200",  0x8087, 0x0029, "ibt-20-*.sfi",    IntelUSBTransport),
+    ChipInfo("intel", "AX201",  0x8087, 0x0026, "ibt-20-*.sfi",    IntelUSBTransport),
+    ChipInfo("intel", "AX210",  0x8087, 0x0032, "ibt-0040-*.sfi",  IntelUSBTransport),
+    ChipInfo("intel", "AX211",  0x8087, 0x0033, "ibt-0040-*.sfi",  IntelUSBTransport),
+    ChipInfo("intel", "AC9560", 0x8087, 0x0025, "ibt-18-*.sfi",    IntelUSBTransport),
+    ChipInfo("intel", "AC8265", 0x8087, 0x0A2B, "ibt-12-*.sfi",    IntelUSBTransport),
+    ChipInfo("intel", "BE200",  0x8087, 0x0036, "ibt-0040-*.sfi",  IntelUSBTransport),  # WiFi 7 / BT 5.4
     # Realtek
     ChipInfo("realtek", "RTL8761B", 0x0BDA, 0x8771, "rtl8761bu_fw.bin", RealtekUSBTransport),
     ChipInfo("realtek", "RTL8852AE", 0x0BDA, 0x2852, "rtl8852au_fw.bin", RealtekUSBTransport),

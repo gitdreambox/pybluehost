@@ -20,6 +20,7 @@ from pybluehost.hci.constants import (
     HCI_INQUIRY_CANCEL,
     HCI_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY,
     HCI_IO_CAPABILITY_REQUEST_REPLY,
+    HCI_LE_EXTENDED_CREATE_CONNECTION,
     HCI_LE_GENERATE_DHKEY,
     HCI_LE_READ_BUFFER_SIZE,
     HCI_LE_READ_LOCAL_P256_PUBLIC_KEY,
@@ -90,6 +91,7 @@ _OPCODE_BIT_POSITIONS: dict[int, tuple[int, int]] = {
     HCI_LE_READ_LOCAL_SUPPORTED_FEATURES:         (25, 2),
     HCI_LE_SET_RANDOM_ADDRESS:                    (25, 4),
     HCI_LE_SET_SCAN_PARAMS:                       (26, 2),
+    HCI_LE_EXTENDED_CREATE_CONNECTION:            (38, 4),
     # SSP commands at octet 32-33
     HCI_WRITE_SECURE_CONNECTIONS_HOST_SUPPORT:    (32, 3),
     # SSP reply commands — Spec 5.4 Vol 4 Part E §6.27 Table 6.27 puts these

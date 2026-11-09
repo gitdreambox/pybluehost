@@ -50,6 +50,15 @@ def test_le_sc_opcode_positions_match_octet_34():
     assert _OPCODE_BIT_POSITIONS[HCI_LE_GENERATE_DHKEY] == (34, 2)
 
 
+def test_le_extended_create_connection_sits_at_octet_38_bit_4():
+    """The initiator's capability gate is useless if the opcode is not in the
+    map: SupportedCommands.has() returns False for unmapped opcodes. Verified
+    against a real BE200 (octet 38 reads 0xFF, bit 4 set)."""
+    from pybluehost.hci.constants import HCI_LE_EXTENDED_CREATE_CONNECTION
+
+    assert _OPCODE_BIT_POSITIONS[HCI_LE_EXTENDED_CREATE_CONNECTION] == (38, 4)
+
+
 def test_ssp_opcode_positions_match_spec():
     """SSP reply commands live at octets 18-20 per Spec 5.4 Table 6.27.
     Real-hardware survey 2026-05 verified BT 4.0 adapters (CSR8510) have

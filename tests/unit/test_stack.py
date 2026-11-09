@@ -160,6 +160,9 @@ async def test_stack_routes_hci_le_advertising_report_to_ble_scanner():
     raw_event += event.subevent_parameters
 
     await stack.hci.on_transport_data(raw_event)
+    # The scanner holds a report briefly so a scan response can join it into a
+    # single EIR (BLEScanner._on_legacy_advertising_report).
+    await asyncio.sleep(stack.gap.ble_scanner._MERGE_WINDOW_S + 0.1)
 
     assert len(results) == 1
     assert str(results[0].address) == "1A:8D:8D:1B:F5:6B"
@@ -431,6 +434,129 @@ async def test_stack_reports_le_connection_peer_address():
     await stack.close()
 
 
+async def test_stack_reports_disconnection_peer_address():
+    """The "disconnected" event must carry the peer address so listeners can
+    identify which peer went away. auto-pts's wait_for_disconnection() matches by
+    address — pts-tester drops DEVICE_DISCONNECTED (and PTS then waits ~30 s per
+    case) when the disconnect event has no peer_address."""
+    stack = await Stack.virtual()
+    events = []
+    stack.on_connection_event(lambda event: events.append(event))
+
+    # Connect (LE Connection Complete) then disconnect the same handle.
+    await stack._on_hci_event(
+        HCI_LE_Meta_Event(
+            subevent_code=LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+            subevent_parameters=(
+                b"\x00"
+                + struct.pack("<H", 0x0045)
+                + b"\x01"  # peripheral role
+                + b"\x00"  # public peer address
+                + bytes.fromhex("20e8a56b6f38")
+                + bytes(8)
+            ),
+        )
+    )
+    await stack._on_hci_event(
+        HCI_Disconnection_Complete_Event(
+            status=ErrorCode.SUCCESS,
+            connection_handle=0x0045,
+            reason=ErrorCode.REMOTE_USER_TERMINATED,
+        )
+    )
+
+    disc = events[-1]
+    assert disc.state == "disconnected"
+    assert disc.handle == 0x0045
+    assert disc.peer_address is not None
+    assert str(disc.peer_address) == "38:6F:6B:A5:E8:20"
+    # The handle is removed from the live map once torn down.
+    assert 0x0045 not in stack._le_peer_addrs
+    await stack.close()
+
+
+async def _virtual_stack_with_notify_char():
+    """A virtual stack whose GATT server hosts one NOTIFY characteristic
+    (value handle 0x0003, auto-added CCCD 0x0004)."""
+    stack = await Stack.virtual()
+    stack._gatt_server.add_service(ServiceDefinition(
+        uuid=UUID16(0xAA40),
+        characteristics=[
+            CharacteristicDefinition(
+                uuid=UUID16(0xAA50),
+                properties=CharProperties.READ | CharProperties.NOTIFY,
+                permissions=Permissions.READABLE, value=b"\x00"),
+        ]))
+    return stack
+
+
+async def _connect_le_peer(stack) -> None:
+    await stack._on_hci_event(
+        HCI_LE_Meta_Event(
+            subevent_code=LEMetaSubEvent.LE_CONNECTION_COMPLETE,
+            subevent_parameters=(
+                b"\x00"
+                + struct.pack("<H", 0x0045)
+                + b"\x01"  # peripheral role
+                + b"\x00"  # public peer address
+                + bytes.fromhex("20e8a56b6f38")
+                + bytes(8)
+            ),
+        )
+    )
+
+
+async def _disconnect_le_peer(stack) -> None:
+    await stack._on_hci_event(
+        HCI_Disconnection_Complete_Event(
+            status=ErrorCode.SUCCESS,
+            connection_handle=0x0045,
+            reason=ErrorCode.REMOTE_USER_TERMINATED,
+        )
+    )
+
+
+async def test_unbonded_disconnect_resets_the_gatt_cccd():
+    """GATT.TS GAN/BV-01 step 5A: a non-bonded client's CCCD reads 0x0000 after
+    disconnect+reconnect, so the stack must tell the GATT server the LE client
+    that just left was not bonded."""
+    stack = await _virtual_stack_with_notify_char()
+    await _connect_le_peer(stack)
+    await stack._gatt_server.handle_request(
+        conn_handle=0x0045,
+        pdu=ATT_Write_Request(attribute_handle=0x0004, attribute_value=b"\x01\x00"))
+    assert stack._gatt_server.db.read(0x0004) == b"\x01\x00"
+
+    await _disconnect_le_peer(stack)
+    await asyncio.sleep(0)  # the bond lookup (and reset) runs in a task
+
+    assert stack._gatt_server.db.read(0x0004) == b"\x00\x00"
+    await stack.close()
+
+
+async def test_bonded_disconnect_keeps_the_gatt_cccd():
+    """GATT.TS GAN/BV-03 step 5B: a bonded client's CCCD persists across the
+    disconnect (0x0001 on reconnect)."""
+    from pybluehost.ble.smp import BondInfo, InMemoryBondStorage
+    from pybluehost.core.address import BDAddress
+
+    stack = await _virtual_stack_with_notify_char()
+    storage = InMemoryBondStorage()
+    await storage.save_bond(BondInfo(
+        peer_address=BDAddress.from_string("38:6F:6B:A5:E8:20"),
+        ltk=b"\x11" * 16))
+    stack.config.bond_storage = storage
+    await _connect_le_peer(stack)
+    await stack._gatt_server.handle_request(
+        conn_handle=0x0045,
+        pdu=ATT_Write_Request(attribute_handle=0x0004, attribute_value=b"\x01\x00"))
+
+    await _disconnect_le_peer(stack)
+
+    assert stack._gatt_server.db.read(0x0004) == b"\x01\x00"
+    await stack.close()
+
+
 async def test_stack_routes_classic_ssp_events(monkeypatch):
     from pybluehost.hci.constants import EventCode
     from pybluehost.hci.packets import HCIEvent
@@ -541,3 +667,71 @@ async def test_replay_mode_rejects_enable_classic_encryption():
 
     with pytest.raises(ReplayModeError):
         await stack.enable_classic_encryption(handle=0x0040)
+
+
+async def test_le_link_local_address_uses_the_advertised_rpa():
+    from pybluehost.ble.gap import AdvertisingConfig
+    from pybluehost.core.address import AddressType
+
+    stack = await Stack.virtual()
+    advertiser = stack.gap.ble_advertiser
+    advertiser._random_address = bytes.fromhex("1a5bdb10da70")
+    advertiser._last_start = (AdvertisingConfig(own_address_type=0x01), None, None)
+
+    # LE Connection Complete: status, handle, role=Peripheral, then the peer.
+    params = (
+        bytes([0x00])
+        + struct.pack("<H", 0x0800)
+        + bytes([0x01, 0x00])
+        + bytes.fromhex("eb8dd5539efc")
+        + bytes(8)
+    )
+    addr = stack._le_link_local_address(params)
+
+    assert addr is not None
+    assert str(addr) == "70:DA:10:DB:5B:1A"
+    assert addr.type == AddressType.RANDOM
+    assert addr.to_hci() == bytes.fromhex("1a5bdb10da70")
+    await stack.close()
+
+
+async def test_le_link_local_address_is_none_when_we_advertise_public():
+    from pybluehost.ble.gap import AdvertisingConfig
+
+    stack = await Stack.virtual()
+    advertiser = stack.gap.ble_advertiser
+    advertiser._random_address = bytes.fromhex("1a5bdb10da70")
+    advertiser._last_start = (AdvertisingConfig(own_address_type=0x00), None, None)
+
+    params = bytes([0x00]) + struct.pack("<H", 0x0800) + bytes([0x01, 0x00]) + bytes(14)
+
+    assert stack._le_link_local_address(params) is None
+    await stack.close()
+
+
+async def test_le_link_local_address_uses_the_initiator_random_address():
+    from pybluehost.core.address import AddressType
+
+    stack = await Stack.virtual()
+    stack.gap.ble_connections.initiator_own_address_type = 0x01
+    stack.gap.ble_privacy._current_address = bytes.fromhex("1a5bdb10da70")
+
+    # LE Connection Complete: role=Central (we initiated).
+    params = bytes([0x00]) + struct.pack("<H", 0x0800) + bytes([0x00, 0x00]) + bytes(14)
+    addr = stack._le_link_local_address(params)
+
+    assert addr is not None
+    assert str(addr) == "70:DA:10:DB:5B:1A"
+    assert addr.type == AddressType.RANDOM
+    await stack.close()
+
+
+async def test_le_link_local_address_ignores_a_public_initiator_address():
+    stack = await Stack.virtual()
+    stack.gap.ble_connections.initiator_own_address_type = 0x00
+    stack.gap.ble_privacy._current_address = bytes.fromhex("1a5bdb10da70")
+
+    params = bytes([0x00]) + struct.pack("<H", 0x0800) + bytes([0x00, 0x00]) + bytes(14)
+
+    assert stack._le_link_local_address(params) is None
+    await stack.close()

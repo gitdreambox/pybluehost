@@ -15,24 +15,50 @@ logger = logging.getLogger(__name__)
 
 
 class BtpTester:
-    """One-client TCP BTP tester. Construct with a populated registry, start(), wait."""
+    """One-client BTP tester bridging autoptsclient to IUT services.
+
+    Two transport modes sharing one frame codec + dispatch path:
+
+    - **Server mode** (default, ``connect_to=None``): listen on host:port and
+      accept a single client. Used by the Phase-2 harness when PyBlueHost is
+      driven directly.
+    - **Client mode** (``connect_to=(host, port)``): connect OUT to an auto-pts
+      ``BTPSocketSrv`` that is already listening. auto-pts is always the BTP
+      server; the IUT (this process) is the client.
+    """
 
     def __init__(
-        self, *, registry: BtpServiceRegistry, host: str = "127.0.0.1", port: int = 8765,
+        self, *, registry: BtpServiceRegistry, host: str = "127.0.0.1",
+        port: int = 8765, connect_to: tuple[str, int] | None = None,
     ) -> None:
         self._registry = registry
         self._host = host
         self._port = port
+        self._connect_to = connect_to
         self._server: asyncio.Server | None = None
         self._client_writer: asyncio.StreamWriter | None = None
+        self._client_task: asyncio.Task | None = None
 
     async def start(self) -> None:
+        if self._connect_to is not None:
+            host, port = self._connect_to
+            reader, writer = await asyncio.open_connection(host, port)
+            logger.info("BtpTester: connected out to auto-pts at %s:%d", host, port)
+            self._client_task = asyncio.create_task(self._run_client(reader, writer))
+            return
         self._server = await asyncio.start_server(
             self._handle_client, host=self._host, port=self._port,
         )
         logger.info("BtpTester listening on %s:%d", self._host, self._port)
 
     async def stop(self) -> None:
+        if self._client_task is not None:
+            self._client_task.cancel()
+            try:
+                await self._client_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._client_task = None
         if self._server is not None:
             self._server.close()
             try:
@@ -49,6 +75,11 @@ class BtpTester:
             self._client_writer = None
 
     async def _handle_client(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
+    ) -> None:
+        await self._run_client(reader, writer)
+
+    async def _run_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
     ) -> None:
         peer = writer.get_extra_info("peername")
@@ -99,12 +130,19 @@ class BtpTester:
             opcode=request.opcode, controller_index=request.controller_index,
             data=request.data,
         )
-        # Status response = opcode 0x00 in the same service.
-        # Payload = [status_byte, ...response_data].
+        # auto-pts framing (BTPWorker.send_wait_rsp): a SUCCESS response echoes the
+        # request opcode and carries ONLY the response payload. A FAILURE uses
+        # opcode 0x00 (BTP_STATUS) with a single status byte. Returning 0x00 on
+        # success would be treated as an error by autoptsclient.
+        if status == op.BTP_STATUS_SUCCESS:
+            return BtpFrame(
+                service=request.service, opcode=request.opcode,
+                controller_index=request.controller_index, data=response_data,
+            )
         return BtpFrame(
             service=request.service, opcode=op.OP_STATUS_RESPONSE,
             controller_index=request.controller_index,
-            data=bytes([status]) + response_data,
+            data=bytes([status]),
         )
 
     async def emit_event(self, event: BtpFrame) -> None:

@@ -819,7 +819,7 @@ uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-fail-under=85
 | **v1.0** | 完整 Bluetooth Host 协议栈（Core/Transport/HCI/L2CAP/BLE/Classic/Profile + CLI + Trace） | ✅ 31 plans + Hardware E2E Readiness |
 | **v1.1** | Virtual Sniffer —— live HCI 注入 Ellisys/WPS 分析仪 UI | ✅（含 CSR8510 + 真分析仪实测） |
 | **v1.2 Phase 1** | PTS IUT —— `PTSModeConfig` 5 个 opt-in flag + IutActions 动作层 + `app pts-iut` REPL + PICS 半自动生成器 | ✅（15 Task；手动驱动 PTS） |
-| **v1.2 Phase 2** | auto-pts BTP —— BTP 基础协议 + Core/GAP/GATT/L2CAP service + `app pts-tester` + auto_pts_project IUT 模块 + PTS 结果矩阵 + CI smoke | ✅ 框架（真机 pass-rate 留 operator 完成） |
+| **v1.2 Phase 2** | auto-pts BTP —— BTP 基础协议 + Core/GAP/GATT/L2CAP service + `app pts-tester` + auto_pts_project IUT 模块 + PTS 结果矩阵 + CI smoke | ✅ 框架 + 真机已批量验证；通过率见[结果汇总](docs/pts/results/SUMMARY.md) |
 | **v2.0** | Classic Audio —— SBC/CVSD/mSBC codec + AVDTP/A2DP + AVCTP/AVRCP + HFP（SLC + SCO file loopback） + HSP + CLI/sounddevice/runbook + 集成 demo（demo-phone / demo-headphone） | ✅ 6 个 Plan（A.1-A.6）+ 集成 demo |
 | **v2.1 B.1** | USB SCO Alt-Setting 切换（Intel Alt 1/6）+ Realtek vendor cmd `0xFC8B` + iso IN/OUT EP I/O | ✅ mock 单测全覆盖（真机待 Intel/Realtek adapter） |
 | **v2.1 B.2** | 实时 PCM↔OS 音频 —— `MicToScoSender` + `ScoToSpeakerReceiver` + `hfp/hsp-test --mic-device/--speaker-device` + `tools audio list-devices` | ✅ mock 单测全覆盖（真机待 PortAudio 设备） |
@@ -860,7 +860,7 @@ uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-fail-under=85
 - **v1.0 BLE/Classic e2e** —— ✅ CSR8510 / Intel AX201 / Intel BE200 全套通过；Barrot BR8654A02 部分通过（厂商 RF 初始化兼容问题）
 - **v1.1 Virtual Sniffer** —— ✅ CSR8510 + 真 Ellisys / WPS 分析仪验证通过
 - **v1.2 Phase 1 PTS REPL** —— ✅ 操作员可在 PTS dongle + Windows 上手动驱动
-- **v1.2 Phase 2 BTP + autoptsclient** —— ⏳ 框架完成；真机 pass-rate 待 operator（PTS dongle + autoptsserver）
+- **v1.2 Phase 2 BTP + autoptsclient** —— ✅ 框架与真机验证；2026-11-04 当前座架 456/483 PASS（94.4%），27 例受当前控制器、PTS 工具或缺 LT2 阻塞；逐例见[结果汇总](docs/pts/results/SUMMARY.md)
 - **v2.0 A2DP/AVRCP/HFP** —— ⏳ 虚拟控制器全过；真机 A2DP 音质/AVRCP 控制/HFP 实时通话待 adapter+耳机/手机 测试
 - **v2.1 B.1/B.2** —— ⏳ mock 单测全过；真机 SCO Alt-Setting 切换 + sounddevice 实时音频待 adapter+耳机
 

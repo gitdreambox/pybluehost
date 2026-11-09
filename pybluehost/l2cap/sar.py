@@ -28,8 +28,24 @@ class Reassembler:
     def __init__(self) -> None:
         self._states: dict[int, _ReassemblyState] = {}
 
-    def feed(self, handle: int, pb_flag: int, data: bytes) -> tuple[int, bytes] | None:
-        """Feed an ACL fragment.
+    def reset(self, handle: int) -> None:
+        """Drop any in-progress reassembly for ``handle``.
+
+        Used when a framing violation is detected on the first fragment of a
+        K-frame: the peer will never send the remaining fragments, so the
+        buffered partial PDU must be discarded rather than held forever.
+        """
+        self._states.pop(handle, None)
+
+    def feed(self, handle: int, pb_flag: int, data: bytes) -> list[tuple[int, bytes]]:
+        """Feed an ACL fragment and return every L2CAP PDU it completes.
+
+        A single ACL packet may carry several complete L2CAP PDUs back to back —
+        the controller is free to coalesce, and PTS does. Returning only the
+        first one silently drops the rest: for L2CAP/COS/CED/BI-29-C the Lower
+        Tester packs its two response PDUs into one packet, so the second (the
+        refusal carrying the identifier we were waiting on) was discarded and
+        the pending LE CoC connect sat until its 5 s timeout → BTP ERROR.
 
         Args:
             handle: ACL connection handle.
@@ -37,47 +53,46 @@ class Reassembler:
             data: Fragment payload bytes.
 
         Returns:
-            ``(cid, payload)`` when a full L2CAP PDU is assembled,
-            or ``None`` if more fragments are needed.
+            The ``(cid, payload)`` PDUs completed by this fragment — empty if
+            more fragments are needed.
         """
+        out: list[tuple[int, bytes]] = []
+
         if pb_flag == ACL_PB_FIRST_AUTO_FLUSH:
-            # Parse L2CAP basic header from the first fragment
-            if len(data) < _L2CAP_HDR_SIZE:
-                # Malformed — not enough data for a header; discard
+            # A new FIRST fragment resets any in-progress reassembly.
+            self._states.pop(handle, None)
+            rest = data
+            while len(rest) >= _L2CAP_HDR_SIZE:
+                length, cid = struct.unpack_from("<HH", rest, 0)
+                body = rest[_L2CAP_HDR_SIZE:]
+                if len(body) < length:
+                    # Trailing partial PDU — hold it for the continuations.
+                    self._states[handle] = _ReassemblyState(
+                        cid=cid, expected_len=length, buf=bytearray(body),
+                    )
+                    return out
+                out.append((cid, body[:length]))
+                rest = body[length:]
+            if rest:
+                # A tail shorter than an L2CAP header is unrecoverable.
                 self._states.pop(handle, None)
-                return None
+            return out
 
-            length, cid = struct.unpack_from("<HH", data, 0)
-            payload = data[_L2CAP_HDR_SIZE:]
-
-            if len(payload) >= length:
-                # Complete PDU in a single fragment
-                self._states.pop(handle, None)
-                return (cid, payload[:length])
-
-            # Incomplete — start accumulating
-            state = _ReassemblyState(cid=cid, expected_len=length, buf=bytearray(payload))
-            self._states[handle] = state
-            return None
-
-        elif pb_flag == ACL_PB_CONTINUING:
+        if pb_flag == ACL_PB_CONTINUING:
             state = self._states.get(handle)
             if state is None:
-                # No reassembly in progress — discard orphan continuation
-                return None
-
+                # No reassembly in progress — discard orphan continuation.
+                return out
             state.buf.extend(data)
-
             if len(state.buf) >= state.expected_len:
                 cid = state.cid
                 payload = bytes(state.buf[: state.expected_len])
                 del self._states[handle]
-                return (cid, payload)
-
-            return None
+                out.append((cid, payload))
+            return out
 
         # Unknown PB flag — ignore
-        return None
+        return out
 
 
 class Segmenter:

@@ -6,9 +6,17 @@
 
 ## 快速定位
 
+### 🔄 P.10 真机剩余用例分诊（2026-11-04）
+
+- **认领人**：Claude Code session eccf8c28
+- **当前进度**：27 个 blocked 的 BlueZ/WSL 对照已构建环境，USB/IP 代理启动失败，尚未运行 BlueZ 用例；见 [对照实验记录](../pts/results/2026-11-04-bluez-comparison.md)。共享已撤销，但 AX201 与 BE200 IUT 的 Windows Code 31 尚未恢复，PTS dongle 状态 OK。逐例结果仍以 [PTS 矩阵汇总](../pts/results/SUMMARY.md) 为准。
+- **已验证修复**：SMP per-case MITM/SC-only 配置、自中止 reason 上报、HCI Encryption Key Refresh Complete、LE signaling 整帧校验、CoC CONNECT 的 1 秒响应窗口、RPA 轮换时序、IdKey 稳定身份地址分发。回归测试与根因见 AGENTS.md 对应条目。
+- **已完成**：ACEP/PRIV 与 L2CAP 剩余用例已串行复验；全套 virtual 回归 3017 passed、45 skipped。27 例 blocked 的解锁路径见 [分诊记录](../pts/results/2026-11-04-triage.md)。
+- **纪律**：PTS 硬件批次不得与自动选择 USB 的 pytest 并行；pytest 明确 `--transport=virtual`。只按当次 FINAL_VERDICT 更新指定条目，保留人工 blocked 结论。
+
 **当前状态**：v1.0 完结（31 Plans，Hardware E2E Readiness ✅）；**v2.0 Classic Audio ✅ 全部交付 + v2.1 Plan B.1（USB SCO quirk 适配）✅ + v2.1 Plan B.2（实时 PCM↔OS 音频）✅ + v1.1 Virtual Sniffer ✅（含真机实测）+ v1.2 Phase 1 ✅ + v1.2 Phase 2（auto-pts BTP）✅ 框架全交付（P.5-P.10，真机 pass-rate 留 operator）**
 **下一步候选**：
-1. **v1.2 PTS IUT Phase 2（auto-pts BTP 自动化）**——design spec（[`specs/2026-05-29-prd-v1.2-pts-iut-design.md`](specs/2026-05-29-prd-v1.2-pts-iut-design.md)）+ 6 个 Plan（P.5 BTP foundation / P.6 GAP / P.7 GATT / P.8 L2CAP+SMP / P.9 autopts project / P.10 PTS runs+CI）**均已就绪，待动工**。让 auto-pts 程序化驱动 IUT 跑完整 LE test case 集（HCI/L2CAP/GAP/GATT/SMP；Classic SDP/RFCOMM 永久留 Phase 1 REPL 手动）。Phase 1（PTS mode flags + IutActions + REPL + PICS 生成器 + runbook，15 Task）✅ 已实现并合并 master——见 [phase1 plan](plans/2026-05-31-v1.2-pts-iut-phase1.md)。**测试偏差**：action-layer（Task 6-10）与 CLI（12/14）的 per-task 单测文件未单独创建，改由 `tests/e2e/test_cli_app_lifecycle.py::test_pts_iut_cli_app_action_layer_drives_gap` 端到端覆盖。
+1. **v1.2 PTS IUT Phase 2（auto-pts BTP 自动化）**——design spec（[`specs/2026-05-29-prd-v1.2-pts-iut-design.md`](specs/2026-05-29-prd-v1.2-pts-iut-design.md)）+ 6 个 Plan（P.5 BTP foundation / P.6 GAP / P.7 GATT / P.8 L2CAP+SMP / P.9 autopts project / P.10 PTS runs+CI）**框架已完成（T1 矩阵工具+T6 CI+T7 文档），T2-T5 真机跑留 operator**。让 auto-pts 程序化驱动 IUT 跑完整 LE test case 集（HCI/L2CAP/GAP/GATT/SMP；Classic SDP/RFCOMM 永久留 Phase 1 REPL 手动）。Phase 1（PTS mode flags + IutActions + REPL + PICS 生成器 + runbook，15 Task）✅ 已实现并合并 master——见 [phase1 plan](plans/2026-05-31-v1.2-pts-iut-phase1.md)。**测试偏差**：action-layer（Task 6-10）与 CLI（12/14）的 per-task 单测文件未单独创建，改由 `tests/e2e/test_cli_app_lifecycle.py::test_pts_iut_cli_app_action_layer_drives_gap` 端到端覆盖。
 2. **v1.1 Virtual Sniffer ✅ 完成**——live HCI 注入 Ellisys/WPS 真机实测通过，详见 [plan 文档](plans/2026-05-31-v1.1-virtual-sniffer.md)。仅留分析仪 UI 视觉确认由操作者完成。
 3. **v2.0 Classic Audio**——PRD + design spec 已就绪（[`docs/PRD-v2.0.md`](../PRD-v2.0.md) + [`docs/superpowers/specs/2026-05-27-prd-v2.0-classic-audio-design.md`](specs/2026-05-27-prd-v2.0-classic-audio-design.md)）。6 个 Plan、14-17 周、SBC+CVSD+mSBC（无 AAC）。**Plan A.1（codec 层）✅**（11 个 Task + libsbc backend；53 codec 单测；与 BlueZ libsbc 字节级一致；真音频 PSNR 80-87 dB）+ **Plan A.2（AVDTP + A2DP）✅**（11 个 Task + 53 单测 + 1 e2e；AVDTP signaling 完整、A2DPSource/Sink 注册到 PSM 0x0019、双 L2CAP 信道路由按 ACL handle 区分 signaling/media；端到端 source→sink PCM round-trip **PSNR 81.2 dB**）+ **Plan A.3（AVRCP + AVCTP）✅**（11 个 Task；46 单测 + 1 e2e；PASS_THROUGH 全套 + REGISTER_NOTIFICATION + INTERIM 响应；UUIDs 0x110E/0x110F/0x110C）+ **Plan A.4（HFP + SCO file loopback）✅**（11 个 Task；~48 单测 + 1 e2e；SLC 三阶段建立 + SCO link setup + CVSD/mSBC WAV 文件 loopback；HCI SCO Data Packet 类型 0x03；UUIDs 0x111E/0x111F）+ **Plan A.5（HSP + CVSD SCO loopback）✅**（6 个 Task；21 单测 + 1 e2e；复用 A.4 基础设施；UUIDs 0x1131/0x1112；RFCOMM HS=5/AG=12；CVSD-only，no SLC handshake）+ **Plan A.6（CLI + sounddevice + runbook）✅**（6 个 Task；28 单测；6 个新 `app` CLI 命令（a2dp-source/sink、avrcp-control/target、hfp-test/hsp-test）+ sounddevice 懒加载（`[audio]` extras）+ `docs/CLASSIC_AUDIO_E2E.md` 真机 runbook + USB SCO Alt-Setting deferred 到 v2.1）。**v2.0 ✅ 全部交付**。
 4. 自托管硬件 CI runner / 真机首批 adapter survey / 断线重连闭环（v1.0 运营改进，可并行）
@@ -117,6 +125,15 @@ Plan 1 ──► Plan 2 ──► Plan 3a ──► Plan 4a ──► Plan 4b �
 ---
 
 ## 详细进度
+
+### ✅ EATT 多 Bearer（GATT server 侧）
+- **认领人**：Claude session（Opus 5）
+- **认领时间**：2026-09-17（完成 2026-09-18）
+- **Worktree**：`.claude/worktrees/eatt-multi-bearer`（分支 `claude/eatt-multi-bearer`，已合并 master@bfbe21e）
+- **Plan**：[2026-09-17-eatt-multi-bearer](plans/2026-09-17-eatt-multi-bearer.md)（10 Task 全 ✅，TDD）
+- **Spec**：[2026-09-17-eatt-multi-bearer-design](specs/2026-09-17-eatt-multi-bearer-design.md)
+- 真机收割（2026-09-18）：目标 5 例全 PASS——GAR/BV-11、GAR/BV-12、GAW/BV-12、GPM/BV-05、GAC/BI-01；额外 GAW/BV-13/14（Write Long over EATT）+ L2CAP/TIM/BV-03 + 回归守卫 GAR/BV-01 全 PASS；矩阵 420→428/479（89.4%）
+- 收割中连带修复（master@39aadb9）：ATT mux 放行 0x0E/0x20（Read Multiple Var Length 此前被静默丢弃）、bond-resume 加密补发 SEC_LEVEL_CHANGED(0x89)；GAR/BV-11/12 前提（PTS 假设已有 bond）由既有 opt-in `PYBLUEHOST_PTS_BOND_STORE` 满足（流程已写入 AGENTS.md Q/A）
 
 ### ✅ Plan 1 — Core Infrastructure
 - 完成时间：2026-04-14

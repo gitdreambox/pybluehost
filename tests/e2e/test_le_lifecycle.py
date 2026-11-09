@@ -98,11 +98,11 @@ def test_resolve_handles_returns_per_uuid_value_handles():
     from pybluehost.ble.gatt import DiscoveredCharacteristic
     chars = [
         DiscoveredCharacteristic(declaration_handle=0x10, value_handle=0x11,
-                                 properties=0x02, uuid=TEST_READ_CHAR_UUID.to_bytes()),
+                                 properties=0x02, uuid=TEST_READ_CHAR_UUID.to_bytes_le()),
         DiscoveredCharacteristic(declaration_handle=0x12, value_handle=0x13,
-                                 properties=0x08, uuid=TEST_WRITE_CHAR_UUID.to_bytes()),
+                                 properties=0x08, uuid=TEST_WRITE_CHAR_UUID.to_bytes_le()),
         DiscoveredCharacteristic(declaration_handle=0x14, value_handle=0x15,
-                                 properties=0x10, uuid=TEST_NOTIFY_CHAR_UUID.to_bytes()),
+                                 properties=0x10, uuid=TEST_NOTIFY_CHAR_UUID.to_bytes_le()),
     ]
     handles = resolve_handles(chars, {
         "read": TEST_READ_CHAR_UUID,
@@ -444,7 +444,7 @@ async def test_e2e_scan_connect_pair_read(
         # Discover services
         services = await client.discover_all_services()
         svc = next(
-            (s for s in services if s[2] == TEST_SERVICE_UUID.to_bytes()),
+            (s for s in services if s[2] == TEST_SERVICE_UUID.to_bytes_le()),
             None,
         )
         assert svc is not None, f"TEST_SERVICE_UUID not found among {services}"
@@ -533,7 +533,7 @@ async def test_e2e_gatt_write_and_notify(
 
         # === Discover service + characteristics + CCCD ===
         services = await client.discover_all_services()
-        svc = next(s for s in services if s[2] == TEST_SERVICE_UUID.to_bytes())
+        svc = next(s for s in services if s[2] == TEST_SERVICE_UUID.to_bytes_le())
         s_handle, e_handle, _ = svc
         chars = await client.discover_characteristics(s_handle, e_handle)
         handles = resolve_handles(chars, {
@@ -839,7 +839,7 @@ async def test_e2e_bonded_reconnect_auto_encrypt(
 
         # GATT read on the encrypted link
         services = await client.discover_all_services()
-        svc = next(s for s in services if s[2] == TEST_SERVICE_UUID.to_bytes())
+        svc = next(s for s in services if s[2] == TEST_SERVICE_UUID.to_bytes_le())
         chars = await client.discover_characteristics(svc[0], svc[1])
         handles = resolve_handles(chars, {"read": TEST_READ_CHAR_UUID})
         value = await client.read_characteristic(handles["read"])

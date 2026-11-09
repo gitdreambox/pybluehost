@@ -26,6 +26,60 @@ logger = logging.getLogger(__name__)
 connection_logger = logging.getLogger("pybluehost.hci.connection")
 
 
+def command_status(event: HCIEvent) -> int | None:
+    """The status byte of a command reply, or None when the event is not one.
+
+    Where the status lives depends on the reply: a Command Complete carries it
+    as its first return parameter, a Command Status in a field of its own
+    (Vol 4 Part E §7.7.4, §7.7.5). Reading only ``return_parameters`` therefore
+    reports 0x00 for every Command Status reply, rejection or not — and a
+    caller that guards on that value never warns about anything. Commands that
+    answer with Command Status are exactly the ones whose real outcome arrives
+    later as an event, so the wrong read is both silent and plausible.
+    """
+    if isinstance(event, HCI_Command_Complete_Event):
+        return event.return_parameters[0] if event.return_parameters else None
+    if isinstance(event, HCI_Command_Status_Event):
+        return event.status
+    return None
+
+
+def _describe_event(event: HCIEvent) -> str:
+    """Render a received event as a one-line summary for the event trace.
+
+    The command trace alone cannot tell "the controller refused it" from "the
+    controller accepted it and then never said another word" — a command that
+    answers Command Status prints one line either way, and its outcome is
+    whatever event arrives afterwards. Naming every event (and the LE Meta
+    subevent code in particular) is what makes the difference visible.
+    """
+    subevent = getattr(event, "subevent_code", None)
+    params = getattr(event, "subevent_parameters", None)
+    if subevent is not None and params is not None:
+        return (
+            f"LE Meta subevent 0x{subevent:02X} "
+            f"len={len(params)} params={bytes(params[:16]).hex()}"
+        )
+    return type(event).__name__
+
+
+def _describe_command_outcome(event: HCIEvent) -> str:
+    """Render an HCI command's reply as a one-line summary for the command trace.
+
+    A Command Complete carries the status in its first return parameter
+    (Vol 4 Part E §7.7.4); a Command Status carries its own field. Anything else
+    is reported by class name, so an unexpected reply is still visible rather
+    than silently absent from the trace.
+    """
+    if isinstance(event, HCI_Command_Complete_Event):
+        if event.return_parameters:
+            return f"CommandComplete status=0x{event.return_parameters[0]:02X}"
+        return "CommandComplete (no return parameters)"
+    if isinstance(event, HCI_Command_Status_Event):
+        return f"CommandStatus status=0x{event.status:02X}"
+    return type(event).__name__
+
+
 def _schedule_listener_result(result: object) -> None:
     """Run async upper-layer event listeners without blocking HCI RX dispatch."""
     if not asyncio.iscoroutine(result):
@@ -45,6 +99,7 @@ def _schedule_listener_result(result: object) -> None:
 
 from pybluehost.core.errors import CommandTimeoutError, TransportError
 from pybluehost.core.trace import Direction, TraceEvent, TraceSystem
+from pybluehost.hci.constants import ACL_PB_CONTINUING
 from pybluehost.hci.flow import ACLFlowController, CommandFlowController
 from pybluehost.hci.packets import (
     HCIACLData,
@@ -365,6 +420,7 @@ class HCIController:
                 if asyncio.iscoroutine(result):
                     await result
         elif isinstance(packet, HCIEvent):
+            logger.debug("HCI evt 0x%02X %s", packet.event_code, _describe_event(packet))
             await self._handle_event(packet)
 
     async def on_transport_error(self, error: TransportError) -> None:
@@ -385,6 +441,13 @@ class HCIController:
         raw = command.to_bytes()
         fut = self._cmd_flow.register(command.opcode)
 
+        # Every command and its reply. Without this, "the controller refused it"
+        # and "we never sent it" look identical from above — which is how a
+        # 0x0C on the extended scan family stayed invisible for a whole session.
+        logger.debug(
+            "HCI cmd 0x%04X params=%s", command.opcode, command.parameters.hex()
+        )
+
         self._emit_trace(Direction.DOWN, raw)
         await self._transport.send(raw)  # type: ignore[union-attr]
 
@@ -393,6 +456,7 @@ class HCIController:
         except asyncio.TimeoutError:
             # Clean up the pending future
             self._cmd_flow._pending.pop(command.opcode, None)
+            logger.debug("HCI cmd 0x%04X -> TIMEOUT", command.opcode)
             # Return the command credit consumed by this send. Timeouts usually
             # mean the controller is hung and will not return CC/CS. If we do
             # not return the credit, repeated commands to an unresponsive
@@ -413,9 +477,33 @@ class HCIController:
             self._cmd_flow.release(1)
             raise
 
+        logger.debug(
+            "HCI cmd 0x%04X -> %s", command.opcode, _describe_command_outcome(event)
+        )
         if isinstance(event, HCI_Command_Complete_Event):
             self._configure_acl_flow_from_command_complete(event)
         return event
+
+    async def set_host_feature(self, bit_number: int, enabled: bool = True) -> int:
+        """Set or clear a Host-owned bit of the LE FeatureSet; return the status.
+
+        The controller answers Command Disallowed (0x0C) if a connection is up,
+        and Unsupported Feature or Parameter Value (0x11) if the bit is not
+        Host-owned or needs a feature the controller lacks (Vol 4 Part E
+        §7.8.115) — so this is deliberately not an error path; the caller
+        decides how loudly a refusal matters.
+        """
+        from pybluehost.hci.constants import HCI_LE_SET_HOST_FEATURE
+        from pybluehost.hci.packets import HCICommand
+
+        event = await self.send_command(
+            HCICommand(
+                opcode=HCI_LE_SET_HOST_FEATURE,
+                parameters=bytes([bit_number, 0x01 if enabled else 0x00]),
+            )
+        )
+        params = getattr(event, "return_parameters", None) or b"\x00"
+        return params[0]
 
     def _configure_acl_flow_from_command_complete(
         self, event: HCI_Command_Complete_Event
@@ -526,13 +614,15 @@ class HCIController:
             HCI_Write_LE_Host_Supported_Command,
             HCI_Write_Simple_Pairing_Mode_Command,
             HCI_Write_Scan_Enable_Command,
-            HCI_LE_Set_Scan_Parameters_Command,
             HCI_LE_Set_Random_Address_Command,
         )
-        from pybluehost.hci.constants import HCI_READ_BD_ADDR
+        from pybluehost.hci.constants import (
+            DEFAULT_LE_EVENT_MASK,
+            HCI_READ_BD_ADDR,
+            LE_FEATURE_BIT_CONNECTION_SUBRATING_HOST_SUPPORT,
+        )
 
         EVENT_MASK_ALL = b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\x3F"
-        LE_EVENT_MASK = b"\x1F\x00\x00\x00\x00\x00\x00\x00"
         RANDOM_ADDRESS = bytes(6)
 
         # Step 1: HCI_Reset — mandatory, never gated.
@@ -553,7 +643,71 @@ class HCIController:
             raise RuntimeError("controller does not support Read_BD_ADDR (mandatory)")
         await self.send_command(HCI_Read_BD_ADDR_Command())
 
+        # Probe the extended initiator (§7.8.66) when the bitmap lacks its bit.
+        # Some firmware (Intel BE200, 2026-10 rig) accepts the command but does
+        # not advertise the Supported_Commands octet 38 bit — trusting the
+        # bitmap routes every connection through the legacy initiator, and on
+        # that firmware a legacy-initiated connection leaves state behind that
+        # makes every extended scan command answer Command Disallowed (0x0C)
+        # once the link closes. That silently starved the RPA-observation
+        # cases: they pair, disconnect, and only then scan. An unsupported
+        # command answers Command *Complete* (0x01 Unknown); a supported one
+        # starts executing and answers Command *Status* — so we cancel the
+        # dummy creation (all-zero peer never connects) and merge the probed
+        # answer into the bitmap for the connect gate.
+        from pybluehost.hci.capabilities import _OPCODE_BIT_POSITIONS
+        from pybluehost.hci.constants import (
+            HCI_LE_CREATE_CONNECTION_CANCEL,
+            HCI_LE_EXTENDED_CREATE_CONNECTION,
+        )
+
+        if not self._supported_commands.has(HCI_LE_EXTENDED_CREATE_CONNECTION):
+            probe_params = bytes(
+                [0x00, 0x00, 0x00]          # filter policy, own addr type, peer addr type
+                + list(bytes(6))            # peer: all-zero, never advertises
+                + [0x01]                    # Initiating_PHYs: LE 1M
+                + [0x60, 0x00, 0x60, 0x00]  # scan interval / window (60ms)
+                + [0x18, 0x00, 0x28, 0x00]  # conn interval min / max
+                + [0x00, 0x00]              # latency
+                + [0xF4, 0x01]              # supervision timeout
+                + [0x00, 0x00, 0x00, 0x00]  # min / max CE length
+            )
+            rsp = await self.send_command(
+                HCICommand(
+                    opcode=HCI_LE_EXTENDED_CREATE_CONNECTION,
+                    parameters=probe_params,
+                )
+            )
+            if isinstance(rsp, HCI_Command_Status_Event):
+                octet, bit = _OPCODE_BIT_POSITIONS[HCI_LE_EXTENDED_CREATE_CONNECTION]
+                merged = bytearray(self._supported_commands.bitmap)
+                merged[octet] |= 1 << bit
+                self._supported_commands = SupportedCommands(bytes(merged))
+                logger.info(
+                    "HCI initialize: extended initiator accepted despite clear "
+                    "Supported_Commands bit (octet %d bit %d merged)",
+                    octet, bit,
+                )
+                # Cancel the dummy creation before anything else touches the
+                # controller — a create in progress blocks the LE address
+                # resolution and scan families.
+                await self.send_command(
+                    HCICommand(opcode=HCI_LE_CREATE_CONNECTION_CANCEL, parameters=b"")
+                )
+
         # Optional commands — skip if bit unset.
+        #
+        # Nothing here may be a legacy-family LE advertising/scanning command
+        # (Vol 4 Part E §3.1.1 / Table 3.2). A *successful* one excludes the
+        # whole extended family — advertising *and* scanning — and the exclusion
+        # is symmetric: after a legacy LE_Set_Scan_Parameters every later
+        # extended command answers Command Disallowed (0x0C), and after an
+        # extended command the legacy one answers 0x0C too. Only HCI_Reset
+        # clears it — which is why Step 1 above makes every process start clean,
+        # and why the poison only bites within a run that does both. A legacy
+        # LE_Set_Scan_Parameters used to sit in this list; it was never read
+        # back, and it silently broke PADV and the extended advertiser. Scan
+        # parameters belong to whoever actually starts a scan.
         optional_commands = [
             HCI_Read_Local_Version_Command(),
             HCI_Read_Local_Supported_Features_Command(),
@@ -561,7 +715,9 @@ class HCIController:
             HCI_LE_Read_Buffer_Size_Command(),
             HCI_LE_Read_Local_Supported_Features_Command(),
             HCI_Set_Event_Mask_Command(event_mask=EVENT_MASK_ALL),
-            HCI_LE_Set_Event_Mask_Command(le_event_mask=LE_EVENT_MASK),
+            HCI_LE_Set_Event_Mask_Command(
+                le_event_mask=DEFAULT_LE_EVENT_MASK.to_bytes(8, "little")
+            ),
             HCI_Write_LE_Host_Supported_Command(le_supported_host=0x01, simultaneous_le_host=0x00),
             HCI_Write_Simple_Pairing_Mode_Command(simple_pairing_mode=0x01),
             HCI_Write_Scan_Enable_Command(scan_enable=0x00),
@@ -573,13 +729,6 @@ class HCIController:
             # A2DP inbound media this shows up as the phone side starving. Keep the spec
             # default (don't declare) so the controller delivers freely at native MTU, no
             # accounting.
-            HCI_LE_Set_Scan_Parameters_Command(
-                le_scan_type=0x01,
-                le_scan_interval=0x0010,
-                le_scan_window=0x0010,
-                own_address_type=0x00,
-                scanning_filter_policy=0x00,
-            ),
             HCI_LE_Set_Random_Address_Command(random_address=RANDOM_ADDRESS),
         ]
 
@@ -596,6 +745,27 @@ class HCIController:
             rsp = await self.send_command(cmd)
             if isinstance(rsp, HCI_Command_Complete_Event):
                 self._capture_capability_response(opcode, rsp.return_parameters)
+
+        # Declare the LE FeatureSet bits this Host owns (Vol 4 Part E §7.8.115).
+        # The controller cannot set these itself, and they are exchanged on air
+        # during the Feature Exchange — so a peer judges our Host support from
+        # whatever we declare here. Until Connection Subrating (Host Support) is
+        # set, a peer refuses to run the Connection Subrating procedure at all
+        # (Vol 6 Part B §5.1.19; §7.8.124 for the Central-side error), which
+        # shows up as LE_Subrate_Request succeeding on its own parameters and
+        # then no LE Subrate Change event ever arriving.
+        #
+        # Must run before any connection exists — Command Disallowed (0x0C)
+        # otherwise — hence its place in the init sequence.
+        status = await self.set_host_feature(
+            LE_FEATURE_BIT_CONNECTION_SUBRATING_HOST_SUPPORT
+        )
+        if status != 0x00:
+            logger.debug(
+                "HCI initialize: LE_Set_Host_Feature(bit=%d) -> status=0x%02X",
+                LE_FEATURE_BIT_CONNECTION_SUBRATING_HOST_SUPPORT,
+                status,
+            )
 
         # BR/EDR LMP Features pages 1+2 (Spec 5.4 Vol 2 Part C §3.3):
         # page 1 = host features, page 2 = controller extended features. Both
@@ -689,12 +859,55 @@ class HCIController:
         return self._acl_flow
 
     async def send_acl_data(self, handle: int, pb_flag: int, data: bytes) -> None:
-        """Send ACL data, respecting controller flow control."""
-        await self._acl_flow_for(handle).acquire(handle)
-        packet = HCIACLData(handle=handle, pb_flag=pb_flag, data=data)
-        raw = packet.to_bytes()
-        self._emit_trace(Direction.DOWN, raw)
-        await self._transport.send(raw)  # type: ignore[union-attr]
+        """Send ACL data, respecting controller flow control and buffer size.
+
+        A logical L2CAP PDU can be longer than the ACL data payload the
+        controller advertises through Read_Buffer_Size (LE dongles typically
+        report 251 bytes). The PDU then has to go out as several HCI ACL
+        packets: the first keeps the caller's PB flag, the rest carry the
+        non-automatically-flushable continuation flag, and each fragment
+        consumes one of the controller's buffers. Sending the whole PDU in one
+        oversized packet is silently dropped by the controller — GATT/SR/GAC/BV-01-C
+        saw a 512-byte ATT Read Response never arrive, and PTS failed with
+        "Cannot find characteristic value with size equal to MTU-1" after its
+        30 s timeout.
+
+        Continuations must use PB 0b01, not 0b11. The automatically flushable
+        continuation flag makes the Intel BE200 (both dongles) transmit the
+        first fragment and then silently discard every following one: an
+        on-air capture shows exactly 251 of 516 bytes, the controller still
+        reports the packets as completed, and the peer's ATT read times out.
+        A two-dongle probe (scripts/_acl_frag_probe.py, 2026-10-31) showed
+        0b10+0b11 dropping fragments with or without inter-fragment pacing,
+        while 0b10+0b01 and 0b00+0b01 deliver all 516 bytes.
+        """
+        flow = self._acl_flow_for(handle)
+        limit = flow.buffer_size
+        # pb_flag 0b01/0b11 already means "continuing fragment" — the caller is
+        # doing its own segmentation, so never re-fragment that.
+        if limit <= 0 or len(data) <= limit or (pb_flag & 0x01):
+            chunks = [data]
+        else:
+            chunks = [data[i:i + limit] for i in range(0, len(data), limit)]
+        logger.debug(
+            "ACL TX handle=0x%04X pb=0x%02X len=%d limit=%d fragments=%d",
+            handle, pb_flag, len(data), limit, len(chunks),
+        )
+        for index, chunk in enumerate(chunks):
+            await flow.acquire(handle)
+            packet = HCIACLData(
+                handle=handle,
+                pb_flag=pb_flag if index == 0 else ACL_PB_CONTINUING,
+                data=chunk,
+            )
+            raw = packet.to_bytes()
+            logger.debug(
+                "ACL TX frag %d/%d handle=0x%04X pb=0x%02X len=%d available=%d",
+                index + 1, len(chunks), handle, packet.pb_flag, len(chunk),
+                flow.available,
+            )
+            self._emit_trace(Direction.DOWN, raw)
+            await self._transport.send(raw)  # type: ignore[union-attr]
 
     async def send_sco_data(self, handle: int, data: bytes, packet_status: int = 0) -> None:
         """Send an HCI SCO Data packet — Bluetooth Core §5.4.3.
@@ -707,6 +920,27 @@ class HCIController:
 
         packet = HCISCOData(handle=handle, packet_status=packet_status, data=data)
         raw = bytes([HCI_SCO_PACKET]) + packet.to_bytes()
+        self._emit_trace(Direction.DOWN, raw)
+        await self._transport.send(raw)  # type: ignore[union-attr]
+
+    async def send_iso_data(
+        self, handle: int, data: bytes, *, pb_flag: int = 0, ts_flag: int = 0,
+    ) -> None:
+        """Send an HCI ISO Data packet — Bluetooth Core §5.4.4/§5.4.5.
+
+        Prepends the H4 ISO indicator byte (0x05); ``HCIISOData.to_bytes()``
+        returns only the 4-byte header + payload. ``pb_flag`` describes the
+        SDU fragmentation (§5.4.5): 0b00 start of a fragmented SDU, 0b01
+        continuation, 0b10 **complete SDU in one packet** (BT_ISO_SINGLE —
+        what the BIS broadcaster sends, GAP/BIS/BBM/BV-01), 0b11 = not a
+        complete SDU boundary. ``ts_flag`` (a leading 4-byte timestamp) may
+        only be set with pb_flag 0b00/0b10.
+        """
+        from pybluehost.hci.constants import HCI_ISO_PACKET
+        from pybluehost.hci.packets import HCIISOData
+
+        packet = HCIISOData(handle=handle, pb_flag=pb_flag, ts_flag=ts_flag, data=data)
+        raw = bytes([HCI_ISO_PACKET]) + packet.to_bytes()
         self._emit_trace(Direction.DOWN, raw)
         await self._transport.send(raw)  # type: ignore[union-attr]
 
@@ -876,10 +1110,21 @@ class HCIController:
                 h = int.from_bytes(event.subevent_parameters[1:3], "little")
                 self._conn_link_type[h] = LINK_TYPE_LE
 
-        if event.event_code == EventCode.ENCRYPTION_CHANGE and len(event.parameters) >= 4:
+        if (
+            event.event_code == EventCode.ENCRYPTION_CHANGE and len(event.parameters) >= 4
+        ) or (
+            event.event_code == EventCode.ENCRYPTION_KEY_REFRESH_COMPLETE
+            and len(event.parameters) >= 3
+        ):
             status = event.parameters[0]
             handle = int.from_bytes(event.parameters[1:3], "little")
-            enabled = event.parameters[3]
+            # Encryption Key Refresh Complete has no Encryption_Enabled field:
+            # success means the existing encrypted link now uses the new key.
+            enabled = (
+                event.parameters[3]
+                if event.event_code == EventCode.ENCRYPTION_CHANGE
+                else int(status == 0)
+            )
             for listener in list(self._encryption_change_listeners):
                 result = listener(handle, status, enabled)
                 _schedule_listener_result(result)

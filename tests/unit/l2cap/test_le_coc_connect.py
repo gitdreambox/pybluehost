@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from pybluehost.core.errors import LECoCConnectError
 from pybluehost.core.types import LinkType
 from pybluehost.l2cap.ble import LECoCChannel
 from pybluehost.l2cap.constants import CID_LE_SIGNALING
@@ -95,9 +96,33 @@ async def test_connect_le_coc_failed_result_raises(manager_with_le_conn):
                           resp=LECreditBasedConnectionResponse(
                               dcid=0, mtu=0, mps=0, initial_credits=0, result=0x0002,
                           ))
-    with pytest.raises(RuntimeError, match="0x0002"):
+    with pytest.raises(LECoCConnectError, match="0x0002") as exc_info:
         await connect_task
+    assert exc_info.value.result == 0x0002
     # No channel registered after failure.
+    assert m._le_channels == {}
+
+
+@pytest.mark.asyncio
+async def test_connect_le_coc_command_reject_raises_refusal(manager_with_le_conn):
+    """Legacy peer answers our credit-based request with a Command Reject (0x01) —
+    must resolve the pending connect as a refusal, not hang until timeout
+    (PTS L2CAP/LE/CFC/BV-01-C Legacy Peer)."""
+    from pybluehost.l2cap.le_signaling import LE_SIG_COMMAND_REJECT
+    m, sig_ch = manager_with_le_conn
+    connect_task = asyncio.create_task(m.connect_le_coc_channel(
+        handle=0x000C, psm=0x0080, timeout=2.0,
+    ))
+    await asyncio.sleep(0); await asyncio.sleep(0)
+    sent_pdu = sig_ch.send.await_args.args[0]
+    _, ident, _ = decode_le_signaling(sent_pdu)
+    # Peer sends Command Reject with our request's ident (reason: not understood).
+    rej = encode_le_signaling(LE_SIG_COMMAND_REJECT, ident, b"\x00\x00")
+    await m._on_le_signaling(handle=0x000C, data=rej)
+    with pytest.raises(LECoCConnectError) as exc_info:
+        await connect_task
+    assert exc_info.value.result == LECoCConnectError.RESULT_COMMAND_REJECT
+    assert m._pending_le_connect == {}
     assert m._le_channels == {}
 
 
@@ -111,7 +136,11 @@ async def test_connect_le_coc_unknown_handle_raises():
 
 @pytest.mark.asyncio
 async def test_connect_le_coc_timeout_cleans_up_pending(manager_with_le_conn):
+    """RTX-window expiry abandons the transaction as a refusal
+    (RESULT_NO_RESPONSE — never retransmitted, §5.2 identifier rule) and
+    cleans up the pending future."""
     m, _ = manager_with_le_conn
-    with pytest.raises(asyncio.TimeoutError):
+    with pytest.raises(LECoCConnectError) as excinfo:
         await m.connect_le_coc_channel(handle=0x000C, psm=0x0080, timeout=0.05)
+    assert excinfo.value.result == LECoCConnectError.RESULT_NO_RESPONSE
     assert m._pending_le_connect == {}

@@ -681,7 +681,7 @@ async def test_pts_tester_cli_app_starts_btp_tester_and_stops_cleanly(stack):
     from pybluehost.cli.app.pts_tester import _pts_tester_main
 
     stop = asyncio.Event()
-    task = asyncio.create_task(_pts_tester_main(stack, stop, listen="127.0.0.1:0"))
+    task = asyncio.create_task(_pts_tester_main(stack, stop, listen="127.0.0.1:0", connect=None))
     try:
         # Give it a moment to bind and enter the wait loop
         await asyncio.sleep(0.05)

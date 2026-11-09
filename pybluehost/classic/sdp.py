@@ -172,12 +172,20 @@ def decode_data_element(data: bytes, offset: int = 0) -> tuple[DataElement, int]
 
         if de_type == DataElementType.UINT:
             fmt_map = {1: ">B", 2: ">H", 4: ">I", 8: ">Q"}
-            value = struct.unpack(fmt_map[size], payload)[0]
+            if size in fmt_map:
+                value = struct.unpack(fmt_map[size], payload)[0]
+            else:
+                # 128-bit (and any other) width: big-endian unsigned integer.
+                value = int.from_bytes(payload, "big", signed=False)
             return DataElement(type=de_type, value=value, _size_hint=size), consumed
 
         if de_type == DataElementType.SINT:
             fmt_map = {1: ">b", 2: ">h", 4: ">i", 8: ">q"}
-            value = struct.unpack(fmt_map[size], payload)[0]
+            if size in fmt_map:
+                value = struct.unpack(fmt_map[size], payload)[0]
+            else:
+                # 128-bit (and any other) width: big-endian signed integer.
+                value = int.from_bytes(payload, "big", signed=True)
             return DataElement(type=de_type, value=value, _size_hint=size), consumed
 
         if de_type == DataElementType.UUID:
@@ -253,6 +261,61 @@ def make_rfcomm_service_record(
     return record
 
 
+def make_service_discovery_server_record() -> ServiceRecord:
+    """Build the mandatory ServiceDiscoveryServer service record (Core Vol 3
+    Part B §2.5 / Service Discovery Server Service Record).
+
+    Every SDP server must expose this record at handle 0x00000000 with
+    ServiceClassIDList = ServiceDiscoveryServerServiceClassID (0x0100). PTS
+    SDP/SR cases locate it via TSPX_sdp_service_search_pattern (0x0100) and
+    then issue Service Attribute Requests against it.
+    """
+    record = ServiceRecord()
+    # 0x0000: ServiceRecordHandle
+    record.attributes[0x0000] = DataElement.uint32(0x00000000)
+    # 0x0001: ServiceClassIDList = [ ServiceDiscoveryServerServiceClassID ]
+    record.attributes[0x0001] = DataElement.sequence([
+        DataElement.uuid16(0x0100),
+    ])
+    # 0x0002: ServiceRecordState
+    record.attributes[0x0002] = DataElement.uint32(0x00000000)
+    # 0x0003: ServiceID
+    record.attributes[0x0003] = DataElement.uuid16(0x0100)
+    # 0x0004: ProtocolDescriptorList = L2CAP (PSM_SDP)
+    record.attributes[0x0004] = DataElement.sequence([
+        DataElement.sequence([
+            DataElement.uuid16(0x0100),  # L2CAP
+            DataElement.uint16(0x0001),  # PSM_SDP
+        ]),
+    ])
+    # 0x0005: BrowseGroupList = [ PublicBrowseRoot ]
+    record.attributes[0x0005] = DataElement.sequence([
+        DataElement.uuid16(0x1002),
+    ])
+    # 0x0006: LanguageBaseAttributeIDList = [ en, 0x006A, 0x0100 ]
+    record.attributes[0x0006] = DataElement.sequence([
+        DataElement.uint16(0x656E),  # 'en'
+        DataElement.uint16(0x006A),  # UTF-8
+        DataElement.uint16(0x0100),  # primary language base
+    ])
+    # 0x0007: ServiceInfoTimeToLive (seconds)
+    record.attributes[0x0007] = DataElement.uint32(0x00000000)
+    # 0x0008: ServiceAvailability (0xFF = fully available)
+    record.attributes[0x0008] = DataElement.uint8(0xFF)
+    # 0x0009: BluetoothProfileDescriptorList = [ (ServiceDiscoveryServer, 0x0100) ]
+    record.attributes[0x0009] = DataElement.sequence([
+        DataElement.sequence([
+            DataElement.uuid16(0x0100),
+            DataElement.uint16(0x0100),
+        ]),
+    ])
+    # 0x000D: ServiceDatabaseState
+    record.attributes[0x000D] = DataElement.uint32(0x00000000)
+    # 0x0100: ServiceName
+    record.attributes[0x0100] = DataElement.text("Service Discovery Server")
+    return record
+
+
 # ---------------------------------------------------------------------------
 # SDP PDU IDs
 # ---------------------------------------------------------------------------
@@ -277,6 +340,12 @@ class SDPServer:
     def __init__(self) -> None:
         self._records: dict[int, ServiceRecord] = {}
         self._next_handle = 0x00010000
+        # The ServiceDiscoveryServer record is mandatory and lives at the
+        # reserved handle 0x00000000 (Core Vol 3 Part B); it does not consume
+        # the dynamically-allocated handle space that starts at 0x00010000.
+        discovery = make_service_discovery_server_record()
+        discovery.handle = 0x00000000
+        self._records[0x00000000] = discovery
 
     def register(self, record: ServiceRecord) -> int:
         """Register a service record. Returns assigned handle."""
@@ -292,40 +361,96 @@ class SDPServer:
 
     def handle_pdu(self, data: bytes) -> bytes:
         """Process an incoming SDP request PDU and return a response PDU."""
+        if len(data) < 5:
+            return self._error_response(0, 0x0004)  # Invalid PDU Size
         pdu_id = data[0]
         txn_id = struct.unpack_from(">H", data, 1)[0]
         param_len = struct.unpack_from(">H", data, 3)[0]
+        if len(data) != 5 + param_len:
+            return self._error_response(txn_id, 0x0004)  # Invalid PDU Size
         params = data[5:5 + param_len]
 
+        if pdu_id == _SDPPDU.SERVICE_SEARCH_REQUEST:
+            return self._handle_search(txn_id, params)
+
+        if pdu_id == _SDPPDU.SERVICE_ATTRIBUTE_REQUEST:
+            return self._handle_attribute(txn_id, params)
         if pdu_id == _SDPPDU.SERVICE_SEARCH_ATTRIBUTE_REQUEST:
             return self._handle_search_attribute(txn_id, params)
 
         # Unknown PDU → ErrorResponse
         return self._error_response(txn_id, 0x0003)  # Invalid Request Syntax
 
+    def _handle_search(self, txn_id: int, params: bytes) -> bytes:
+        """Handle ServiceSearchRequest."""
+        try:
+            search_pattern, consumed = decode_data_element(params, 0)
+            max_record_count = struct.unpack_from(">H", params, consumed)[0]
+            search_uuids = self._extract_search_uuids(search_pattern)
+        except (IndexError, struct.error, ValueError):
+            return self._error_response(txn_id, 0x0003)  # Invalid Request Syntax
+
+        matching_handles = [
+            record.handle
+            for record in self._records.values()
+            if self._record_matches(record, search_uuids)
+        ]
+        current_handles = matching_handles[:max_record_count]
+        handle_bytes = b"".join(struct.pack(">I", handle) for handle in current_handles)
+        resp_params = (
+            struct.pack(">HH", len(matching_handles), len(current_handles))
+            + handle_bytes
+            + b"\x00"
+        )
+        return (
+            bytes([_SDPPDU.SERVICE_SEARCH_RESPONSE])
+            + struct.pack(">HH", txn_id, len(resp_params))
+            + resp_params
+        )
+
+    def _handle_attribute(self, txn_id: int, params: bytes) -> bytes:
+        """Handle ServiceAttributeRequest."""
+        try:
+            handle = struct.unpack_from(">I", params, 0)[0]
+            max_byte_count = struct.unpack_from(">H", params, 4)[0]
+            attr_id_list, _consumed = decode_data_element(params, 6)
+            attr_ranges = self._parse_attr_id_list(attr_id_list)
+        except (IndexError, struct.error, ValueError):
+            return self._error_response(txn_id, 0x0003)  # Invalid Request Syntax
+
+        record = self._records.get(handle)
+        if record is None:
+            return self._error_response(txn_id, 0x0002)  # Invalid Service Record Handle
+
+        response_bytes = self._encode_attribute_list(record, attr_ranges)
+        if len(response_bytes) > max_byte_count:
+            response_bytes = response_bytes[:max_byte_count]
+
+        resp_params = struct.pack(">H", len(response_bytes)) + response_bytes + b"\x00"
+        return (
+            bytes([_SDPPDU.SERVICE_ATTRIBUTE_RESPONSE])
+            + struct.pack(">HH", txn_id, len(resp_params))
+            + resp_params
+        )
+
     def _handle_search_attribute(self, txn_id: int, params: bytes) -> bytes:
         """Handle ServiceSearchAttributeRequest."""
-        offset = 0
-        # Parse ServiceSearchPattern (sequence of UUIDs)
-        search_pattern, consumed = decode_data_element(params, offset)
-        offset += consumed
-        # MaximumAttributeByteCount
-        max_byte_count = struct.unpack_from(">H", params, offset)[0]
-        offset += 2
-        # AttributeIDList
-        attr_id_list, consumed = decode_data_element(params, offset)
-        offset += consumed
-        # ContinuationState (ignored for simplicity)
-
-        # Extract search UUIDs
-        search_uuids = set()
-        if search_pattern.type == DataElementType.SEQUENCE:
-            for elem in search_pattern.value:
-                if elem.type == DataElementType.UUID:
-                    search_uuids.add(elem.value)
-
-        # Extract requested attribute ID ranges
-        attr_ranges = self._parse_attr_id_list(attr_id_list)
+        try:
+            offset = 0
+            # Parse ServiceSearchPattern (sequence of UUIDs)
+            search_pattern, consumed = decode_data_element(params, offset)
+            offset += consumed
+            # MaximumAttributeByteCount
+            max_byte_count = struct.unpack_from(">H", params, offset)[0]
+            offset += 2
+            # AttributeIDList
+            attr_id_list, consumed = decode_data_element(params, offset)
+            offset += consumed
+            # ContinuationState (ignored for simplicity)
+            attr_ranges = self._parse_attr_id_list(attr_id_list)
+            search_uuids = self._extract_search_uuids(search_pattern)
+        except (IndexError, struct.error, ValueError):
+            return self._error_response(txn_id, 0x0003)  # Invalid Request Syntax
 
         # Search matching records
         matching = []
@@ -336,11 +461,7 @@ class SDPServer:
         # Build response: list of attribute lists
         attr_lists = []
         for record in matching:
-            attrs = []
-            for attr_id, de in sorted(record.attributes.items()):
-                if self._attr_in_ranges(attr_id, attr_ranges):
-                    attrs.append(DataElement.uint16(attr_id))
-                    attrs.append(de)
+            attrs = self._build_attribute_entries(record, attr_ranges)
             if attrs:
                 attr_lists.append(DataElement.sequence(attrs))
 
@@ -359,6 +480,39 @@ class SDPServer:
             bytes([_SDPPDU.SERVICE_SEARCH_ATTRIBUTE_RESPONSE])
             + struct.pack(">HH", txn_id, len(resp_params))
             + resp_params
+        )
+
+    def _extract_search_uuids(self, search_pattern: DataElement) -> set[int]:
+        if search_pattern.type != DataElementType.SEQUENCE:
+            raise ValueError("ServiceSearchPattern must be a sequence")
+        search_uuids = set()
+        for elem in search_pattern.value:
+            if elem.type != DataElementType.UUID:
+                raise ValueError("ServiceSearchPattern elements must be UUIDs")
+            search_uuids.add(elem.value)
+        if not search_uuids:
+            raise ValueError("ServiceSearchPattern cannot be empty")
+        return search_uuids
+
+    def _build_attribute_entries(
+        self,
+        record: ServiceRecord,
+        attr_ranges: list[tuple[int, int]],
+    ) -> list[DataElement]:
+        attrs = []
+        for attr_id, de in sorted(record.attributes.items()):
+            if self._attr_in_ranges(attr_id, attr_ranges):
+                attrs.append(DataElement.uint16(attr_id))
+                attrs.append(de)
+        return attrs
+
+    def _encode_attribute_list(
+        self,
+        record: ServiceRecord,
+        attr_ranges: list[tuple[int, int]],
+    ) -> bytes:
+        return encode_data_element(
+            DataElement.sequence(self._build_attribute_entries(record, attr_ranges))
         )
 
     def _record_matches(self, record: ServiceRecord, uuids: set) -> bool:
@@ -381,18 +535,21 @@ class SDPServer:
         """Parse AttributeIDList into ranges of (start, end) inclusive."""
         ranges = []
         if de.type != DataElementType.SEQUENCE:
-            return [(0, 0xFFFF)]
+            raise ValueError("AttributeIDList must be a sequence")
         for elem in de.value:
-            if elem.type == DataElementType.UINT:
-                if elem._size_hint == 4:
-                    # Range: high 16 bits = start, low 16 bits = end
-                    start = (elem.value >> 16) & 0xFFFF
-                    end = elem.value & 0xFFFF
-                    ranges.append((start, end))
-                else:
-                    # Single attribute ID
-                    ranges.append((elem.value, elem.value))
-        return ranges if ranges else [(0, 0xFFFF)]
+            if elem.type != DataElementType.UINT:
+                raise ValueError("AttributeIDList elements must be unsigned integers")
+            if elem._size_hint == 4:
+                # Range: high 16 bits = start, low 16 bits = end
+                start = (elem.value >> 16) & 0xFFFF
+                end = elem.value & 0xFFFF
+                ranges.append((start, end))
+            else:
+                # Single attribute ID
+                ranges.append((elem.value, elem.value))
+        if not ranges:
+            raise ValueError("AttributeIDList cannot be empty")
+        return ranges
 
     def _attr_in_ranges(self, attr_id: int, ranges: list[tuple[int, int]]) -> bool:
         return any(start <= attr_id <= end for start, end in ranges)
@@ -412,6 +569,11 @@ class SDPServer:
 
 class SDPClient:
     """SDP client for querying remote SDP servers."""
+
+    #: Safety bound on continuation-state round-trips. A real SDP server returns
+    #: sizable fragments, so this only exists to keep a buggy/malicious server
+    #: from trapping us in an infinite continuation loop.
+    _MAX_CONTINUATION_ROUNDS = 1024
 
     def __init__(
         self,
@@ -482,47 +644,169 @@ class SDPClient:
         raise RuntimeError("unreachable")
 
     async def search(self, target: object, uuid: int) -> list[int]:
-        """Send ServiceSearchRequest; return list of service record handles."""
-        # Requires L2CAP connection to target on PSM 0x0001
-        raise NotImplementedError("Requires L2CAP connection")
+        """Send ServiceSearchRequest; return list of service record handles.
+
+        Follows the continuation-state protocol like search_attributes — a
+        server may fragment the handle list across responses.
+        """
+        del target
+        search_pattern = encode_data_element(
+            DataElement.sequence([DataElement.uuid16(uuid)])
+        )
+        handles: list[int] = []
+        continuation = b"\x00"
+        for _round in range(self._MAX_CONTINUATION_ROUNDS):
+            params = search_pattern + struct.pack(">H", 16) + continuation
+            try:
+                response = await self._request(
+                    _SDPPDU.SERVICE_SEARCH_REQUEST, params,
+                )
+            except TimeoutError:
+                _log_service_search_timeout(uuid=uuid)
+                raise
+            if response[0] != _SDPPDU.SERVICE_SEARCH_RESPONSE:
+                _log_service_search_complete(uuid=uuid, num_records=len(handles))
+                return handles
+            param_len = struct.unpack_from(">H", response, 3)[0]
+            resp_params = response[5:5 + param_len]
+            # Total(2) + Current(2) + at least one handle + continuation(1).
+            if len(resp_params) < 5:
+                _log_service_search_complete(uuid=uuid, num_records=len(handles))
+                return handles
+            current = struct.unpack_from(">H", resp_params, 2)[0]
+            offset = 4
+            for _ in range(current):
+                if offset + 4 > len(resp_params):
+                    break
+                handles.append(struct.unpack_from(">I", resp_params, offset)[0])
+                offset += 4
+            if offset >= len(resp_params) or resp_params[offset] == 0:
+                break
+            state_len = resp_params[offset]
+            continuation = resp_params[offset:offset + 1 + state_len]
+        _log_service_search_complete(uuid=uuid, num_records=len(handles))
+        return handles
 
     async def get_attributes(
         self, target: object, handle: int, attr_ids: list[int],
     ) -> dict[int, DataElement]:
-        """Send ServiceAttributeRequest for a specific handle."""
-        raise NotImplementedError("Requires L2CAP connection")
+        """Send ServiceAttributeRequest for a specific record handle."""
+        del target
+        attr_id_list = encode_data_element(
+            self._build_attr_id_list(attr_ids or [(0x0000, 0xFFFF)])
+        )
+        max_count = max(0x0007, min(self._max_attribute_byte_count, 0xFFFF))
+        attr_bytes = b""
+        continuation = b"\x00"
+        for _round in range(self._MAX_CONTINUATION_ROUNDS):
+            params = (
+                struct.pack(">I", handle) + struct.pack(">H", max_count)
+                + attr_id_list + continuation
+            )
+            try:
+                response = await self._request(
+                    _SDPPDU.SERVICE_ATTRIBUTE_REQUEST, params,
+                )
+            except TimeoutError:
+                raise
+            if response[0] != _SDPPDU.SERVICE_ATTRIBUTE_RESPONSE:
+                return {}
+            param_len = struct.unpack_from(">H", response, 3)[0]
+            resp_params = response[5:5 + param_len]
+            if len(resp_params) < 3:
+                return {}
+            fragment_len = struct.unpack_from(">H", resp_params, 0)[0]
+            attr_bytes += resp_params[2:2 + fragment_len]
+            cont_start = 2 + fragment_len
+            if cont_start >= len(resp_params) or resp_params[cont_start] == 0:
+                break
+            state_len = resp_params[cont_start]
+            continuation = resp_params[cont_start:cont_start + 1 + state_len]
+        try:
+            lists = decode_data_element(attr_bytes, 0)[0]
+        except (IndexError, ValueError):
+            return {}
+        out: dict[int, DataElement] = {}
+        for seq in getattr(lists, "value", []) or []:
+            if isinstance(seq.value, dict):
+                out.update(seq.value)
+        return out
 
     async def search_attributes(
         self, target: object, uuid: int,
         attr_ids: list[int | tuple[int, int]] | None = None,
     ) -> list[dict[int, DataElement]]:
-        """Send ServiceSearchAttributeRequest (combined search + attributes)."""
+        """Send ServiceSearchAttributeRequest (combined search + attributes).
+
+        Follows the SDP continuation-state protocol: when the server fragments
+        the response (ContinuationState != 0x00), echoes its state back in
+        follow-up requests and concatenates the AttributeLists fragments before
+        decoding. Without this a large remote record (common for multi-profile
+        audio devices) yields a truncated AttributeLists that either crashes
+        decode with IndexError or silently returns partial attributes.
+        """
         del target
         search_pattern = encode_data_element(
             DataElement.sequence([DataElement.uuid16(uuid)])
         )
         attr_id_list = encode_data_element(self._build_attr_id_list(attr_ids))
         max_count = max(0x0007, min(self._max_attribute_byte_count, 0xFFFF))
-        params = search_pattern + struct.pack(">H", max_count) + attr_id_list + b"\x00"
-        try:
-            response = await self._request(_SDPPDU.SERVICE_SEARCH_ATTRIBUTE_REQUEST, params)
-        except TimeoutError:
-            _log_service_search_timeout(uuid=uuid)
-            raise
-        if response[0] != _SDPPDU.SERVICE_SEARCH_ATTRIBUTE_RESPONSE:
-            _log_service_search_complete(uuid=uuid, num_records=0)
-            return []
-        param_len = struct.unpack_from(">H", response, 3)[0]
-        params = response[5:5 + param_len]
-        if len(params) < 3:
-            _log_service_search_complete(uuid=uuid, num_records=0)
-            return []
-        attr_byte_count = struct.unpack_from(">H", params)[0]
-        attr_bytes = params[2:2 + attr_byte_count]
+
+        attr_bytes = b""
+        continuation = b"\x00"
+        for _round in range(self._MAX_CONTINUATION_ROUNDS):
+            params = (
+                search_pattern + struct.pack(">H", max_count)
+                + attr_id_list + continuation
+            )
+            try:
+                response = await self._request(
+                    _SDPPDU.SERVICE_SEARCH_ATTRIBUTE_REQUEST, params,
+                )
+            except TimeoutError:
+                _log_service_search_timeout(uuid=uuid)
+                raise
+            if response[0] != _SDPPDU.SERVICE_SEARCH_ATTRIBUTE_RESPONSE:
+                _log_service_search_complete(uuid=uuid, num_records=0)
+                return []
+            param_len = struct.unpack_from(">H", response, 3)[0]
+            resp_params = response[5:5 + param_len]
+            # Minimum payload: AttributeListsByteCount(2) + ContinuationState(1).
+            if len(resp_params) < 3:
+                _log_service_search_complete(uuid=uuid, num_records=0)
+                return []
+            fragment_len = struct.unpack_from(">H", resp_params, 0)[0]
+            attr_bytes += resp_params[2:2 + fragment_len]
+            # ContinuationState field trails the fragment: 1 length byte + N bytes.
+            cont_start = 2 + fragment_len
+            if cont_start >= len(resp_params):
+                break  # malformed response; decode whatever we collected
+            cont_n = resp_params[cont_start]
+            cont_end = cont_start + 1 + cont_n
+            if cont_end > len(resp_params):
+                break  # malformed continuation state; stop following
+            continuation = resp_params[cont_start:cont_end]
+            if cont_n == 0:
+                break
+        else:
+            logger.warning(
+                "SDP continuation loop exceeded %d rounds for uuid 0x%04X; "
+                "decoding partial attribute data",
+                self._MAX_CONTINUATION_ROUNDS, uuid,
+            )
+
         if not attr_bytes:
             _log_service_search_complete(uuid=uuid, num_records=0)
             return []
-        attr_lists_de, _consumed = decode_data_element(attr_bytes)
+
+        try:
+            attr_lists_de, _consumed = decode_data_element(attr_bytes)
+        except (IndexError, ValueError) as exc:
+            # Malformed/truncated AttributeLists — never crash the caller.
+            logger.warning("SDP attribute decode failed for uuid 0x%04X: %s", uuid, exc)
+            _log_service_search_complete(uuid=uuid, num_records=0)
+            return []
+
         records: list[dict[int, DataElement]] = []
         if attr_lists_de.type != DataElementType.SEQUENCE:
             _log_service_search_complete(uuid=uuid, num_records=0)

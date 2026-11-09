@@ -16,20 +16,33 @@ class _FakeTester:
         self.events.append(frame)
 
 
+class _FakeAttBearer:
+    def __init__(self):
+        self._notify_cb = None
+        self._indicate_cb = None
+
+    def set_notification_handler(self, cb):
+        self._notify_cb = cb
+
+    def set_indication_handler(self, cb):
+        self._indicate_cb = cb
+
+
 class _FakeGattClient:
     def __init__(self):
         self.write_log: list[tuple[int, bytes]] = []
-        self._notify_cb = None
+        self._bearer = _FakeAttBearer()
 
     async def write_characteristic(self, handle, value):
         self.write_log.append((handle, value))
 
-    def on_notification(self, cb):
-        self._notify_cb = cb
-
     def simulate_incoming(self, char_handle, value):
-        if self._notify_cb is not None:
-            self._notify_cb(char_handle, value)
+        if self._bearer._notify_cb is not None:
+            self._bearer._notify_cb(char_handle, value)
+
+    def simulate_indication(self, char_handle, value):
+        if self._bearer._indicate_cb is not None:
+            self._bearer._indicate_cb(char_handle, value)
 
 
 class _ConnInfo:
@@ -114,9 +127,91 @@ async def test_incoming_notification_emits_btp_event():
     ev = tester.events[0]
     assert ev.service == op.SERVICE_GATT
     assert ev.opcode == op.OP_GATT_EVENT_NOTIFICATION
-    # Payload: addr_type(1) + addr(6) + handle(u16 LE) + value_len(u16 LE) + value
+    # Payload: addr_type(1) + addr(6) + notification_type(1) + handle(u16 LE)
+    #          + value_len(u16 LE) + value   (matches auto-pts gattc_dec_notification_ev_data)
     assert ev.data[0] == op.GAP_ADDR_TYPE_RANDOM
     assert ev.data[1:7] == addr
-    assert int.from_bytes(ev.data[7:9], "little") == 0x0007
-    assert int.from_bytes(ev.data[9:11], "little") == 1
-    assert ev.data[11:] == b"\x42"
+    assert ev.data[7] == 1  # notification
+    assert int.from_bytes(ev.data[8:10], "little") == 0x0007
+    assert int.from_bytes(ev.data[10:12], "little") == 1
+    assert ev.data[12:] == b"\x42"
+
+
+@pytest.mark.asyncio
+async def test_incoming_indication_emits_btp_event_with_type_2():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client, tester = _make_svc_with_conn(addr)
+    svc.attach_to_gatt_client(client, peer=addr, addr_type=op.GAP_ADDR_TYPE_RANDOM)
+
+    client.simulate_indication(0x0009, b"\x99")
+    await asyncio.sleep(0)
+    assert len(tester.events) == 1
+    ev = tester.events[0]
+    assert ev.opcode == op.OP_GATT_EVENT_NOTIFICATION
+    assert ev.data[7] == 2  # indication
+    assert int.from_bytes(ev.data[8:10], "little") == 0x0009
+    assert ev.data[12:] == b"\x99"
+
+
+@pytest.mark.asyncio
+async def test_attach_to_gatt_client_is_idempotent():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client, tester = _make_svc_with_conn(addr)
+    svc.attach_to_gatt_client(client, peer=addr, addr_type=op.GAP_ADDR_TYPE_RANDOM)
+    first_cb = client._bearer._notify_cb
+    svc.attach_to_gatt_client(client, peer=addr, addr_type=op.GAP_ADDR_TYPE_RANDOM)
+    assert client._bearer._notify_cb is first_cb  # not re-registered
+
+    client.simulate_incoming(0x0007, b"\x42")
+    await asyncio.sleep(0)
+    assert len(tester.events) == 1  # single forward, not duplicated
+
+
+@pytest.mark.asyncio
+async def test_notification_dropped_while_encrypt_pending():
+    """SEC/SEM: unencrypted + re-encryption in flight -> DROP (CFM only, never
+    report to Upper Tester). GAP.TS step 9A.4/9B.4: the pre-encryption IND is not
+    forwarded; PTS sends a *second* IND after encryption which is. Holding and
+    flushing the first would leak it into the WID-236 'must not report' check."""
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client, tester = _make_svc_with_conn(addr)
+    svc.attach_to_gatt_client(
+        client, peer=addr, addr_type=op.GAP_ADDR_TYPE_RANDOM,
+        conn_handle=0x000C,
+        is_encrypted=lambda h: False,
+        encrypt_pending=lambda h: True,
+    )
+    client.simulate_incoming(0x0007, b"\x42")
+    await asyncio.sleep(0)
+    assert len(tester.events) == 0  # dropped, not forwarded (and no flush path)
+
+
+@pytest.mark.asyncio
+async def test_notification_forwarded_immediately_when_no_encryption_expected():
+    """Plain GAN: unencrypted but no re-encryption coming -> forward now."""
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client, tester = _make_svc_with_conn(addr)
+    svc.attach_to_gatt_client(
+        client, peer=addr, addr_type=op.GAP_ADDR_TYPE_RANDOM,
+        conn_handle=0x000C,
+        is_encrypted=lambda h: False,
+        encrypt_pending=lambda h: False,
+    )
+    client.simulate_incoming(0x0007, b"\x42")
+    await asyncio.sleep(0)
+    assert len(tester.events) == 1
+
+
+@pytest.mark.asyncio
+async def test_notification_forwarded_immediately_when_encrypted():
+    addr = bytes.fromhex("AABBCCDDEEFF")
+    svc, client, tester = _make_svc_with_conn(addr)
+    svc.attach_to_gatt_client(
+        client, peer=addr, addr_type=op.GAP_ADDR_TYPE_RANDOM,
+        conn_handle=0x000C,
+        is_encrypted=lambda h: True,
+        encrypt_pending=lambda h: False,
+    )
+    client.simulate_incoming(0x0007, b"\x42")
+    await asyncio.sleep(0)
+    assert len(tester.events) == 1

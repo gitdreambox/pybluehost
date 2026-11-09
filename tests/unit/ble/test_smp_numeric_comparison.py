@@ -279,6 +279,7 @@ async def test_initiator_random_just_works_path_still_sends_ea(monkeypatch):
     monkeypatch.setattr(state_mod, "_sc_f4", lambda *a, **k: b"\x00" * 16)
     monkeypatch.setattr(state_mod, "_sc_f5", lambda *a, **k: (b"\x11" * 16, b"\x22" * 16))
     monkeypatch.setattr(state_mod, "_sc_f6", lambda *a, **k: b"\xee" * 16)
+    monkeypatch.setattr(state_mod, "_sc_f6_r", lambda _ctx: b"\x00" * 16)
 
     class _FakeSM:
         def __init__(self):
@@ -346,6 +347,9 @@ async def test_nc_user_confirmed_initiator_sends_ea(monkeypatch):
             self._state = SMPState.NUMERIC_COMPARE_PENDING
 
     monkeypatch.setattr(state_mod, "_sc_f6", lambda *a, **k: b"\xee" * 16)
+    monkeypatch.setattr(state_mod, "_sc_f6_r", lambda _ctx: b"\x00" * 16)
+    monkeypatch.setattr(state_mod, "_sc_f6_r_for_ea", lambda _ctx: b"\x00" * 16)
+    monkeypatch.setattr(state_mod, "_sc_f6_r_for_eb", lambda _ctx: b"\x00" * 16)
 
     sm = _FakeSM()
     from pybluehost.core.address import BDAddress
@@ -386,6 +390,8 @@ async def test_persist_bond_authenticated_true_for_nc(monkeypatch):
     fut = asyncio.get_event_loop().create_future()
     ctx = SimpleNamespace(
         peer_address=BDAddress(bytes(6)),
+        local_auth_req=0x0D,
+        peer_auth_req=0x0D,
         received_identity_address=(0, bytes(6)),
         ltk_sc=b"\x11" * 16,
         received_irk=None,
@@ -418,6 +424,8 @@ async def test_persist_bond_authenticated_false_for_sc_just_works(monkeypatch):
     fut = asyncio.get_event_loop().create_future()
     ctx = SimpleNamespace(
         peer_address=BDAddress(bytes(6)),
+        local_auth_req=0x0D,
+        peer_auth_req=0x0D,
         received_identity_address=(0, bytes(6)),
         ltk_sc=b"\x11" * 16,
         received_irk=None,
@@ -430,3 +438,53 @@ async def test_persist_bond_authenticated_false_for_sc_just_works(monkeypatch):
     await state_mod._persist_bond(ctx)
     assert saved[0].authenticated is False
     assert saved[0].sc is True
+
+
+class _DisplayCapturingDelegate:
+    def __init__(self):
+        self.displayed: list = []
+        self.confirmed: tuple | None = None
+
+    async def display_passkey(self, peer_addr, passkey):
+        self.displayed.append((peer_addr, passkey))
+
+    async def confirm_numeric(self, peer_addr, value):
+        self.confirmed = (peer_addr, value)
+        return True
+
+
+@pytest.mark.asyncio
+async def test_sc_numeric_comparison_displays_the_value_to_the_upper_tester():
+    """Numeric Comparison is a *display* on our side: the 6-digit value has to
+    reach the Upper Tester, and auto-pts reads it out of the same
+    PASSKEY_DISPLAY event legacy passkey entry uses.
+
+    GAP/SEC/SEM/BV-57/63/64/67 all set io_cap=KeyboardDisplay via WID 241, so
+    both sides are KeyboardDisplay and SC selects Numeric Comparison. Emitting
+    only the local confirm callback left PTS's WID waiting for a value that
+    never arrived, and the case produced no verdict at all.
+    """
+    pkax = bytes(range(32))
+    pkbx = bytes(range(32, 64))
+    na = bytes(range(64, 80))
+    nb = bytes(range(80, 96))
+    expected_value = _sc_g2(pkax, pkbx, na, nb) % 1_000_000
+
+    delegate = _DisplayCapturingDelegate()
+    peer = BDAddress(bytes(reversed(bytes.fromhex("AABBCCDDEEFF"))))
+    ctx = SimpleNamespace(
+        role=PairingRole.INITIATOR,
+        local_public_key=pkax + bytes(32),
+        peer_public_key=pkbx + bytes(32),
+        local_random=na,
+        peer_random=nb,
+        peer_address=peer,
+        state_machine=_RecordingSM(),
+        _delegate=delegate,
+    )
+    await _sc_compute_and_await_nc(ctx)
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert delegate.displayed == [(peer, expected_value)]
+    assert delegate.confirmed == (peer, expected_value)

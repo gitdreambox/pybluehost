@@ -1,4 +1,6 @@
 """LE L2CAP signaling PDU codec — 0x06/0x07/0x14/0x15/0x16."""
+import struct
+
 import pytest
 
 from pybluehost.l2cap.le_signaling import (
@@ -54,6 +56,27 @@ def test_le_credit_based_connection_response_failure_result():
     raw = resp.encode()
     parsed = LECreditBasedConnectionResponse.decode(raw)
     assert parsed.result == 0x0002
+
+
+def test_le_credit_based_connection_response_decodes_dcid_less_refusal():
+    """Core Vol 3 Part A §4.23: DCID "shall only be present if Result = 0x0000",
+    so a refusal's body is 8 bytes. L2CAP/COS/CED/BI-29-C drives exactly that
+    (the Lower Tester answers our request with a non-zero Result); a decoder that
+    demanded 10 bytes raised inside the signaling dispatcher, the pending
+    connect future never resolved, and the case ended in a 5 s timeout +
+    BTP ERROR instead of the refusal it asserts."""
+    raw = struct.pack("<HHHH", 120, 247, 5, 0x0004)
+    parsed = LECreditBasedConnectionResponse.decode(raw)
+    assert parsed.result == 0x0004
+    assert parsed.mtu == 120
+    assert parsed.mps == 247
+    assert parsed.initial_credits == 5
+    assert parsed.dcid == 0
+
+
+def test_le_credit_based_connection_response_rejects_truncated_body():
+    with pytest.raises(ValueError, match="malformed"):
+        LECreditBasedConnectionResponse.decode(b"\x01\x02\x03\x04")
 
 
 def test_le_flow_control_credit_round_trip():

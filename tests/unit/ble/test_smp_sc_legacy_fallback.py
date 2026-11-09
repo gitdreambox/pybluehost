@@ -263,6 +263,11 @@ async def test_sc_responder_confirm_uses_core_order_and_sends_wire_order(monkeyp
         "pybluehost.ble._smp_sc_crypto.compute_dhkey",
         lambda *_args: b"\x02" * 32,
     )
+    # The fabricated peer pubkey is off-curve; accept it so the confirm logic runs.
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.peer_public_key_valid",
+        lambda pub: True,
+    )
 
     def fake_f4(u: bytes, v: bytes, x: bytes, z: int) -> bytes:
         captured.append((u, v, x, z))

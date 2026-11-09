@@ -517,6 +517,8 @@ async def test_persist_bond_authenticated_true_for_legacy_passkey(monkeypatch):
     fut = asyncio.get_event_loop().create_future()
     ctx = SimpleNamespace(
         peer_address=BDAddress(bytes(6)),
+        local_auth_req=0x0D,
+        peer_auth_req=0x0D,
         received_identity_address=(0, bytes(6)),
         role=PairingRole.INITIATOR,
         received_ltk=b"\x33" * 16,

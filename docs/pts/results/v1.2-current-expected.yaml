@@ -1,0 +1,16 @@
+# Expected active PTS cases for the current V1.2 CSR8510 manual campaign.
+#
+# This is not the full Bluetooth SIG profile catalog. It captures the cases
+# currently enabled in the generated workspaces that have been exercised in
+# this repository so the latest XML evidence can be checked mechanically.
+profiles:
+  L2CAP:
+    - L2CAP/COS/CID/BI-01-C
+  SDP:
+    - SDP/SR/SA/BI-01-C
+    - SDP/SR/SA/BI-02-C
+    - SDP/SR/SA/BI-03-C
+    - SDP/SR/SS/BI-01-C
+    - SDP/SR/SS/BI-02-C
+    - SDP/SR/SSA/BI-01-C
+    - SDP/SR/SSA/BI-02-C

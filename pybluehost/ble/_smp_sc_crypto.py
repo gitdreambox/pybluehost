@@ -26,6 +26,27 @@ def generate_p256_keypair() -> tuple[bytes, bytes]:
     return priv_be[::-1], pub_x_be[::-1] + pub_y_be[::-1]
 
 
+def peer_public_key_valid(peer_public: bytes) -> bool:
+    """Return True if ``peer_public`` is a valid P-256 point (on the curve).
+
+    BT Core Vol 3 Part H §2.3.5.6.1 / SM/*/KDU/BI-04: the IUT must reject an
+    invalid peer public key (off-curve, (0,0), y=0, …) rather than compute a
+    DHKey from it. ``cryptography`` raises ``ValueError`` for such points.
+
+    Args:
+        peer_public: 64-byte little-endian public point (X || Y).
+    """
+    if len(peer_public) != 64:
+        return False
+    peer_x = int.from_bytes(bytes(reversed(peer_public[:32])), "big")
+    peer_y = int.from_bytes(bytes(reversed(peer_public[32:])), "big")
+    try:
+        ec.EllipticCurvePublicNumbers(peer_x, peer_y, ec.SECP256R1()).public_key()
+    except ValueError:
+        return False
+    return True
+
+
 def compute_dhkey(local_private: bytes, peer_public: bytes) -> bytes:
     """Compute DHKey = ECDH(local_private, peer_public).
 

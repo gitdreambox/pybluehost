@@ -142,12 +142,62 @@ async def test_start_server_registers_services_with_stack():
     await svc.dispatch(opcode=op.OP_GATT_ADD_SERVICE, controller_index=0, data=body)
     status, _ = await svc.dispatch(opcode=op.OP_GATT_START_SERVER, controller_index=0, data=b"")
     assert status == op.BTP_STATUS_SUCCESS
-    assert len(actions._stack.gatt_server.added) == 1
-    added_svc = actions._stack.gatt_server.added[0]
+    # vendor service first, then the auto-hosted standard GAP (0x1800) + GATT
+    # (0x1801) services appended after it (vendor handle layout unchanged).
+    added = actions._stack.gatt_server.added
+    assert len(added) == 3
+    added_svc = added[0]
     # ServiceDefinition.uuid is a UUID16 object for 2-byte BTP UUID.
     from pybluehost.core.uuid import UUID16
     assert isinstance(added_svc.uuid, UUID16)
     assert added_svc.uuid.value == 0x180F
+    assert added[1].uuid.value == 0x1800  # GAP
+    assert added[2].uuid.value == 0x1801  # GATT
+
+
+@pytest.mark.asyncio
+async def test_start_server_hosts_standard_gap_gatt_services():
+    """PTS GAP/GAT + GATT/SR/GAS need the IUT to natively host GAP (0x1800) with
+    Device Name / Appearance / PPCP and GATT (0x1801) with Service Changed —
+    auto-pts does not add these via BTP. They must be discoverable in the db."""
+    from pybluehost.ble.gatt import CharProperties
+
+    class _FakeGattServer:
+        def __init__(self):
+            self.added = []
+
+        def add_service(self, svc_def):
+            self.added.append(svc_def)
+            return svc_def
+
+    class _FakeStack:
+        def __init__(self):
+            self.gatt_server = _FakeGattServer()
+
+    class _StackActions:
+        def __init__(self):
+            self._stack = _FakeStack()
+
+    svc = GattService(actions=_StackActions(), tester=MagicMock())
+    status, _ = await svc.dispatch(opcode=op.OP_GATT_START_SERVER, controller_index=0, data=b"")
+    assert status == op.BTP_STATUS_SUCCESS
+    added = svc._actions._stack.gatt_server.added
+    by_uuid = {s.uuid.value: s for s in added}
+    gap = by_uuid[0x1800]
+    gatt = by_uuid[0x1801]
+    gap_chars = {c.uuid.value: c for c in gap.characteristics}
+    assert 0x2A00 in gap_chars  # Device Name
+    assert 0x2A01 in gap_chars  # Appearance
+    assert 0x2A04 in gap_chars  # PPCP
+    # Central Address Resolution (GAP/GAT/BV-18) — readable, value 0x00/0x01.
+    assert 0x2AA6 in gap_chars
+    assert gap_chars[0x2AA6].value in (b"\x00", b"\x01")
+    # Device Name must be readable AND writable (GAP/GAT/BV-05).
+    assert gap_chars[0x2A00].properties & CharProperties.READ
+    assert gap_chars[0x2A00].properties & CharProperties.WRITE
+    gatt_chars = {c.uuid.value: c for c in gatt.characteristics}
+    # Service Changed must be indicate-capable (GATT/SR/GAS/BV-01).
+    assert gatt_chars[0x2A05].properties & CharProperties.INDICATE
 
 
 @pytest.mark.asyncio
@@ -157,6 +207,40 @@ async def test_start_server_no_stack_fails():
     await svc.dispatch(opcode=op.OP_GATT_ADD_SERVICE, controller_index=0, data=body)
     status, _ = await svc.dispatch(opcode=op.OP_GATT_START_SERVER, controller_index=0, data=b"")
     assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_change_database_emits_service_changed_indication():
+    """CHANGE_DATABASE (0x1e) drives a Service Changed indication to connections
+    with the Service Changed CCCD enabled (GATT/SR/GAS/BV-01)."""
+    from pybluehost.ble.gatt import GATTServer, ServiceDefinition, CharacteristicDefinition, CharProperties, Permissions
+    from pybluehost.core.uuid import UUID16
+
+    server = GATTServer()
+    server.add_service(ServiceDefinition(uuid=UUID16(0x1801), characteristics=[
+        CharacteristicDefinition(uuid=UUID16(0x2A05), properties=CharProperties.INDICATE,
+                                  permissions=Permissions.READABLE, value=b"\x00\x00\x00\x00")
+    ]))
+    sent = []
+    server.on_indication_sent(lambda h, v, c: sent.append((h, v, c)))
+    # Service Changed value handle = 0x0003, its CCCD = 0x0004.
+    server.enable_indications(0x0001, 0x0003)
+
+    class _Stack:
+        def __init__(self):
+            self.gatt_server = server
+
+    class _Actions:
+        def __init__(self):
+            self._stack = _Stack()
+
+    svc = GattService(actions=_Actions(), tester=MagicMock())
+    # change_database(0, 0, 0x02): IUT picks the range (whole db).
+    body = (0).to_bytes(2, "little") + (0).to_bytes(2, "little") + bytes([0x02])
+    status, _ = await svc.dispatch(opcode=op.OP_GATT_CHANGE_DATABASE, controller_index=0, data=body)
+    assert status == op.BTP_STATUS_SUCCESS
+    # Whole-db range indicated to the subscribed connection.
+    assert sent == [(0x0003, (1).to_bytes(2, "little") + server.db.last_handle.to_bytes(2, "little"), 0x0001)]
 
 
 @pytest.mark.asyncio

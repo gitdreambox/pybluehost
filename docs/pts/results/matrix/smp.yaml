@@ -1,9 +1,372 @@
 group: SMP
-last_updated: '2026-06-23'
+last_updated: '2026-11-04'
 runs: 0
 cases:
   SM/CEN/JW/BV-01-C:
-    verdict: untested
-    last_run: null
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/EKS/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/JW/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/KDU/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/KDU/BV-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/OOB/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/OOB/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/OOB/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/OOB/BV-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/OOB/BV-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/PIS/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/PIS/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/PKE/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/PKE/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/PKE/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/PKE/BV-01-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: Reverified PASS on BE200 rig; retry attempt 1.
+    bug_refs: []
+  SM/CEN/PKE/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCJW/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCJW/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCJW/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCOB/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCOB/BI-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCOB/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCOB/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCPK/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCPK/BI-02-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCPK/BI-03-C:
+    verdict: blocked
+    last_run: '2026-10-31'
+    notes: 'PTS LT structural defect: after IUT Pairing Request (SC=1, MITM=1) and
+      our 65-byte SC Public Key, PTS answers MMI_106 then logs "Unexpected op code
+      c recevied." and sends Pairing Failed 0x08, never sending its own public key.
+      Control SM/CEN/SCPK/BI-02-C PASSes in the same session with byte-identical PICS/PIXIT
+      (programmatic diff) and identical IUT bytes up to the PK; no reference IUT (bluez/mynewt/zephyr)
+      registers this case'
+    bug_refs: []
+  SM/CEN/SCPK/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCPK/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/SCPK/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/EKS/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/EKS/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/JW/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/JW/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/JW/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/KDU/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/KDU/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/KDU/BI-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/KDU/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/KDU/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/KDU/BV-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/KDU/BV-08-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: Reverified PASS on BE200 rig; retry attempt 1.
+    bug_refs: []
+  SM/PER/OOB/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/OOB/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/OOB/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/OOB/BV-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/OOB/BV-11-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/PIS/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/PKE/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/PKE/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/PKE/BV-05-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS on BE200 rig after per-case MITM responder fix; retry attempt 1.
+    bug_refs: []
+  SM/PER/PKE/BV-06-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: Reverified PASS on BE200 rig; retry attempt 1.
+    bug_refs: []
+  SM/PER/PROT/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCJW/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCJW/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCJW/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCOB/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCOB/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCOB/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCOB/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCPK/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCPK/BI-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCPK/BI-05-C:
+    verdict: blocked
+    last_run: '2026-10-31'
+    notes: 'PTS LT structural defect: after our Pairing Response with SC=1, PTS sends
+      a legacy 20-byte Pairing Confirm (0x03) with no SC public-key exchange, stalls
+      ~60s, then sends Pairing Failed 0x08. Reference IUTs (bluez/mynewt/zephyr) do
+      not register this case; sibling SM/PER/SCPK/BV-02-C PASSes with byte-identical
+      PICS/PIXIT'
+    bug_refs: []
+  SM/PER/SCPK/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/PER/SCPK/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/JW/BI-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/JW/BI-06-C:
+    verdict: pass
+    last_run: '2026-11-03'
+    notes: 'PASS 2026-11-03 (attempt 1): root cause was reason propagation - the IUT
+      aborted the reflection attack correctly (reason=0x04) but _spawn_pair reported
+      a hardcoded 0x05 to auto-pts, so WID 175 (confirm IUT reports Confirm Value
+      Failed) answered No. _on_failed now attaches the SMP reason to the pairing exception
+      and the BTP layer forwards it.'
+    bug_refs: []
+  SM/CEN/KDU/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/JW/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/PKE/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SM/CEN/PROT/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
     notes: ''
     bug_refs: []

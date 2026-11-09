@@ -46,9 +46,10 @@ async def test_btp_gatt_add_service_via_bridge(unused_tcp_port):
                 await writer.drain()
                 resp = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
                 assert resp.service == op.SERVICE_GATT
-                assert resp.opcode == op.OP_STATUS_RESPONSE
-                assert resp.data[0] == op.BTP_STATUS_SUCCESS
-                handle = int.from_bytes(resp.data[1:3], "little")
+                # Success echoes the request opcode with a data-only payload;
+                # the 0x00 + status form is reserved for failures (_dispatch).
+                assert resp.opcode == op.OP_GATT_ADD_SERVICE
+                handle = int.from_bytes(resp.data[0:2], "little")
                 assert handle == 0x0001
             finally:
                 writer.close()
@@ -83,7 +84,7 @@ async def test_btp_gatt_set_value_emits_attr_changed_event(unused_tcp_port):
                 )))
                 await writer.drain()
                 svc_resp = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
-                svc_h = int.from_bytes(svc_resp.data[1:3], "little")
+                svc_h = int.from_bytes(svc_resp.data[0:2], "little")
 
                 # Add Characteristic
                 char_body = (
@@ -98,7 +99,7 @@ async def test_btp_gatt_set_value_emits_attr_changed_event(unused_tcp_port):
                 )))
                 await writer.drain()
                 char_resp = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
-                char_h = int.from_bytes(char_resp.data[1:3], "little")
+                char_h = int.from_bytes(char_resp.data[0:2], "little")
 
                 # Set Value → triggers 0x81 event
                 set_body = char_h.to_bytes(2, "little") + (1).to_bytes(2, "little") + b"\x55"
@@ -108,15 +109,15 @@ async def test_btp_gatt_set_value_emits_attr_changed_event(unused_tcp_port):
                 )))
                 await writer.drain()
 
-                # Drain two frames: the SUCCESS response + the 0x81 event.
+                # Drain two frames: the SET_VALUE response + the 0x81 event.
                 # Order is not guaranteed (event fires via create_task) so collect both.
                 frames = [
                     await asyncio.wait_for(_read_frame(reader), timeout=1.0),
                     await asyncio.wait_for(_read_frame(reader), timeout=1.0),
                 ]
-                ack = next(f for f in frames if f.opcode == op.OP_STATUS_RESPONSE)
+                ack = next(f for f in frames if f.opcode == op.OP_GATT_SET_VALUE)
                 event = next(f for f in frames if f.opcode == op.OP_GATT_EVENT_ATTR_VALUE_CHANGED)
-                assert ack.data[0] == op.BTP_STATUS_SUCCESS
+                assert ack.data == b""    # success payload is empty for SET_VALUE
                 assert int.from_bytes(event.data[0:2], "little") == char_h
                 assert int.from_bytes(event.data[2:4], "little") == 1
                 assert event.data[4:5] == b"\x55"

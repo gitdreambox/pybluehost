@@ -212,7 +212,9 @@ def resolve_handles(
     """
     result: dict[str, int] = {}
     for label, uuid in labels.items():
-        target = uuid.to_bytes()
+        # Discovery returns the ATT wire bytes (little-endian for 128-bit
+        # UUIDs), so the comparison target has to be the wire form too.
+        target = uuid.to_bytes_le()
         found = next((c for c in chars if c.uuid == target), None)
         if found is None:
             raise KeyError(f"characteristic {label!r} (uuid={uuid}) not discovered")

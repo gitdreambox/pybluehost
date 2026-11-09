@@ -1,9 +1,528 @@
 group: L2CAP
-last_updated: '2026-06-23'
+last_updated: '2026-11-04'
 runs: 0
 cases:
   L2CAP/LE/CFC/BV-01-C:
-    verdict: untested
-    last_run: null
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/CED/BI-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/CED/BI-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/CED/BI-11-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/CED/BI-13-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS attempt 1 on BE200 rig. Whole-C-frame validation now rejects the trailing
+      octet with COMMAND_REJECT instead of accepting the malformed CoC request.
+    bug_refs: []
+  L2CAP/COS/CED/BI-16-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS attempt 1 on BE200 rig. A truncated second command rejects the whole
+      C-frame; the valid first command is not acted on.
+    bug_refs: []
+  L2CAP/COS/CED/BI-17-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS attempt 1 on BE200 rig. Truncated Disconnection Request as the second
+      command rejects the whole C-frame. Regression cases REJ/BI-02, LE/CFC/BV-02
+      and ECFC/BV-11 also PASS.
+    bug_refs: []
+  L2CAP/COS/CED/BI-29-C:
+    verdict: blocked
+    last_run: '2026-10-29'
+    notes: "LT-structural, IUT exonerated: PTS LT LE DCID allocator holds exactly\
+      \ 64 values (0x0040-0x007F, wraps 0x7F->0x40) and stops responding + aborts\
+      \ the ACL the moment the cycle completes (last response dcid=0x0053, round ~65\
+      \ of 255). Proven across 4 hardware runs: 1.2s/round window (abort at 65 rounds/80s),\
+      \ 0.22s/round window (abort at 66 rounds/21s \u2014 pacing-independent), and\
+      \ with SCID 0x0080 skipped so round 65 used 0x0081 (identical terminal dcid=0x0053\
+      \ \u2014 SCID/PSM-collision hypothesis disproved). IUT side exhaustively verified:\
+      \ per-round fresh identifiers, no retransmission, wrong-id SUCCESS ignored,\
+      \ refusals reported, 65+ rounds clean. Case needs 255 rounds on one ACL; LT\
+      \ cannot issue past 64 DCIDs."
+    bug_refs: []
+  L2CAP/COS/CFC/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/CFC/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/CFC/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/CFC/BV-04-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/CFC/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/ECFC/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/ECFC/BV-02-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/ECFC/BV-03-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/COS/ECFC/BV-04-C:
+    verdict: blocked
+    last_run: '2026-10-29'
+    notes: 'LT-script structural (IUT-side exhausted 2026-10-29): LT aborts ACL ~325ms
+      after accepting our ECFC response (0x81->0x82, no K-frames, no 0x16), 18+ deterministic
+      aborts across response shapes mtu=512 / inmtu PIXIT+120 / echo-64; same-day
+      siblings COS/ECFC/BV-01/02/03-C + legacy COS/CFC/BV-04-C all PASS on this rig,
+      so LT data-phase + credit accounting are healthy; defect is in the LT-initiated
+      single-channel ECFC data-phase script. IUT response MTU/PIXIT experiments reverted
+      (dead code).'
+    bug_refs: []
+  L2CAP/ECFC/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BI-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BI-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BI-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BI-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-08-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-10-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-11-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-12-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-13-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-14-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-15-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-16-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-17-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-18-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-19-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-20-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-21-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-22-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-23-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-24-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-25-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-26-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-27-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-28-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-29-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-30-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-31-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-32-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-33-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-34-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-35-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-38-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS on retry attempt 2 after attempt-1 FAIL; BE200 rig.
+    bug_refs: []
+  L2CAP/ECFC/BV-41-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-80-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS on clean sequential retry attempt 1 with current BE200 rig. Previous
+      inconclusive verdict was not reproduced; no BV-80-specific protocol workaround
+      added.
+    bug_refs: []
+  L2CAP/LE/CFC/BI-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-02-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-08-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-11-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-12-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-13-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-14-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-15-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-16-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-18-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-19-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-20-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-21-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-22-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-23-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-24-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-25-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-26-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-27-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-28-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-29-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS attempt 1 after restoring the BTP CONNECT response budget to the 1
+      s RTX window; the previous 100 ms window discarded valid responses already received
+      by the controller.
+    bug_refs: []
+  L2CAP/LE/CFC/BV-30-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-31-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CFC/BV-32-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS on clean sequential retry attempt 1 with current BE200 rig and 1 s
+      BTP CONNECT response budget; no case-specific workaround.
+    bug_refs: []
+  L2CAP/LE/CID/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CPU/BI-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CPU/BI-02-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CPU/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/CPU/BV-02-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/LE/REJ/BI-02-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/TIM/BV-03-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  L2CAP/ECFC/BV-39-C:
+    verdict: pass
+    last_run: '2026-08-31'
     notes: ''
     bug_refs: []

@@ -6,6 +6,8 @@ from pybluehost.ble.gap import (
     BLEConnectionManager,
     BLEScanner,
     ExtendedAdvertiser,
+    IsoBroadcastManager,
+    PeriodicAdvertising,
     PrivacyManager,
     WhiteList,
 )
@@ -37,6 +39,8 @@ class GAP:
         classic_ssp: SSPManager | None = None,
         whitelist: WhiteList | None = None,
         ble_extended_advertiser: ExtendedAdvertiser | None = None,
+        periodic_advertising: "PeriodicAdvertising | None" = None,
+        iso_broadcast: "IsoBroadcastManager | None" = None,
         smp: object | None = None,
     ) -> None:
         self._ble_advertiser = ble_advertiser
@@ -49,6 +53,8 @@ class GAP:
         self._classic_ssp = classic_ssp
         self._whitelist = whitelist
         self._ble_extended_advertiser = ble_extended_advertiser
+        self._periodic_advertising = periodic_advertising
+        self._iso_broadcast = iso_broadcast
         self._smp = smp
         self._pairing_delegate: object | None = None
 
@@ -73,6 +79,15 @@ class GAP:
     @property
     def whitelist(self) -> WhiteList | None:
         return self._whitelist
+
+    @property
+    def periodic_advertising(self) -> "PeriodicAdvertising | None":
+        return self._periodic_advertising
+
+    @property
+    def iso_broadcast(self) -> "IsoBroadcastManager | None":
+        """Broadcast Isochronous Group manager (LE_Create_BIG + ISO SDUs)."""
+        return self._iso_broadcast
 
     @property
     def ble_extended_advertiser(self) -> ExtendedAdvertiser | None:

@@ -132,7 +132,7 @@ async def test_initiator_completes_phase2_and_starts_encryption(monkeypatch):
     assert ctx.state_machine.state == SMPState.STK_ENCRYPTING
 
 
-def test_initiator_c1_params_use_hci_address_order_and_types():
+def test_initiator_c1_params_use_display_address_order_and_types():
     ctx = SMPPairingContext.create(
         connection_handle=0x0044,
         peer_address=BDAddress.from_string("D4:54:8B:BA:70:A1"),
@@ -165,5 +165,7 @@ def test_initiator_c1_params_use_hci_address_order_and_types():
     assert pres == bytes.fromhex("0204002d100f0f")
     assert iat == AddressType.RANDOM
     assert rat == AddressType.PUBLIC
-    assert ia == bytes.fromhex("96e23c9a036e")
-    assert ra == bytes.fromhex("a170ba8b54d4")
+    # Legacy c1 takes addresses in big-endian (display) order — see
+    # test_c1_matches_android_legacy_confirm_capture in test_smp.py.
+    assert ia == bytes.fromhex("6e039a3ce296")
+    assert ra == bytes.fromhex("d4548bba70a1")

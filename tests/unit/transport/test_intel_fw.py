@@ -203,6 +203,31 @@ def test_intel_find_firmware_uses_firmware_manager(tmp_path):
     assert transport._find_firmware() == fw_file
 
 
+def test_intel_find_firmware_ignores_the_device_config_file(tmp_path):
+    """A .ddc sits beside every .sfi and `sorted(glob(pattern))[0]` picks it
+    when the pattern carries no extension: ibt-0040-0041.ddc is 9 bytes, so the
+    loader aborted with "firmware too small (9 bytes, need at least 644)" and
+    the dongle never opened. Uses the real chip table entry, so dropping the
+    extension there fails this test."""
+    from pybluehost.transport.usb import KNOWN_CHIPS
+
+    fw_dir = tmp_path / "intel"
+    fw_dir.mkdir()
+    (fw_dir / "ibt-0040-0041.ddc").write_bytes(bytes(9))
+    fw_file = fw_dir / "ibt-0040-0041.sfi"
+    fw_file.write_bytes(bytes(644))
+
+    chip = next(c for c in KNOWN_CHIPS if c.name == "BE200")
+    transport = IntelUSBTransport(
+        device=MagicMock(),
+        chip_info=chip,
+        firmware_policy=FirmwarePolicy.ERROR,
+        extra_fw_dirs=[fw_dir],
+    )
+
+    assert transport._find_firmware() == fw_file
+
+
 def test_intel_find_firmware_prefers_exact_legacy_version_name(tmp_path):
     fw_dir = tmp_path / "intel"
     fw_dir.mkdir()

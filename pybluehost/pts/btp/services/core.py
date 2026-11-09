@@ -33,11 +33,9 @@ class CoreService(BtpService):
         n_bytes = (max(cmds) // 8) + 1
         out = bytearray(n_bytes)
         for code in cmds:
-            # Bit n is set for opcode (n+1) per auto-pts convention.
-            bit_index = code - 1
-            byte_idx = bit_index // 8
-            bit_off = bit_index % 8
-            out[byte_idx] |= 1 << bit_off
+            # Bit n is set for opcode n (auto-pts Stack.is_cmd_supported checks
+            # `(supported_cmds & (1 << cmd))`).
+            out[code // 8] |= 1 << (code % 8)
         return op.BTP_STATUS_SUCCESS, bytes(out)
 
     async def _handle_op_02(self, controller_index: int, data: bytes):

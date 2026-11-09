@@ -52,9 +52,11 @@ async def test_btp_full_session_with_core_only(unused_tcp_port):
                 writer, service=op.SERVICE_CORE,
                 opcode=op.OP_CORE_READ_SUPPORTED_SERVICES,
             )
+            # Success echoes the request opcode; the 0x00 + status form is
+            # reserved for failures (tester._dispatch).
             resp = await asyncio.wait_for(_read_one_frame(reader), timeout=1.0)
-            assert resp.data[0] == op.BTP_STATUS_SUCCESS
-            assert resp.data[1] & 0x01    # Core registered → bit 0 set
+            assert resp.opcode == op.OP_CORE_READ_SUPPORTED_SERVICES
+            assert resp.data[0] & 0x01    # Core registered → bit 0 set
 
             # 3) Read Supported Commands.
             await _send_command(
@@ -62,7 +64,8 @@ async def test_btp_full_session_with_core_only(unused_tcp_port):
                 opcode=op.OP_CORE_READ_SUPPORTED_COMMANDS,
             )
             resp = await asyncio.wait_for(_read_one_frame(reader), timeout=1.0)
-            assert resp.data[0] == op.BTP_STATUS_SUCCESS
+            assert resp.opcode == op.OP_CORE_READ_SUPPORTED_COMMANDS
+            assert resp.data   # opcode bitmap for the Core service
 
             # 4) Register an unsupported service (GAP isn't registered) → FAILED.
             await _send_command(
@@ -71,6 +74,7 @@ async def test_btp_full_session_with_core_only(unused_tcp_port):
                 data=bytes([op.SERVICE_GAP]),
             )
             resp = await asyncio.wait_for(_read_one_frame(reader), timeout=1.0)
+            assert resp.opcode == op.OP_STATUS_RESPONSE
             assert resp.data[0] == op.BTP_STATUS_FAILED
 
             # 5) LOG_MESSAGE (upstream-aligned; replaces obsolete RESET_BOARD step).
@@ -80,7 +84,8 @@ async def test_btp_full_session_with_core_only(unused_tcp_port):
                 data=b"e2e test log line",
             )
             resp = await asyncio.wait_for(_read_one_frame(reader), timeout=1.0)
-            assert resp.data[0] == op.BTP_STATUS_SUCCESS
+            assert resp.opcode == op.OP_CORE_LOG_MESSAGE
+            assert resp.data == b""
 
             # 6) READ_BTP_MTU.
             await _send_command(
@@ -88,8 +93,8 @@ async def test_btp_full_session_with_core_only(unused_tcp_port):
                 opcode=op.OP_CORE_READ_BTP_MTU,
             )
             resp = await asyncio.wait_for(_read_one_frame(reader), timeout=1.0)
-            assert resp.data[0] == op.BTP_STATUS_SUCCESS
-            assert int.from_bytes(resp.data[1:3], "little") == BTP_MTU
+            assert resp.opcode == op.OP_CORE_READ_BTP_MTU
+            assert int.from_bytes(resp.data[0:2], "little") == BTP_MTU
         finally:
             writer.close()
             await writer.wait_closed()

@@ -118,7 +118,11 @@ async def test_le_coc_channel_receive():
 
 
 async def test_le_coc_credit_exhaustion():
-    """When credits are exhausted, send should block until credits added."""
+    """When credits are exhausted the SDU is queued, not a blocked caller.
+
+    Blocking here is what hung L2CAP/ECFC/BV-23's fourth SDU (BTP TIMEOUT), so
+    ``send`` returns and the credit grant resumes the queue.
+    """
     hci = FakeHCI()
     ch = LECoCChannel(
         connection_handle=0x0040,
@@ -132,15 +136,17 @@ async def test_le_coc_credit_exhaustion():
     await ch.send(b"first")  # uses the 1 credit
     assert len(hci.sent) == 1
 
-    # Next send should block
-    send_task = asyncio.ensure_future(ch.send(b"second"))
-    await asyncio.sleep(0.05)
-    assert not send_task.done()  # blocked
+    # Next send returns at once, leaving the SDU queued.
+    await asyncio.wait_for(ch.send(b"second"), timeout=0.5)
+    assert len(hci.sent) == 1
+    assert len(ch._tx_queue) == 1
 
-    # Add credit
+    # The credit grant flushes it.
     ch.add_credits(1)
-    await asyncio.wait_for(send_task, timeout=0.5)
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
     assert len(hci.sent) == 2
+    assert ch._tx_queue == []
 
 
 async def test_le_coc_channel_close():
@@ -215,3 +221,42 @@ async def test_le_coc_multi_segment_send():
         all_payload += seg[4:]
     # First 2 bytes are SDU length, rest is the original payload
     assert all_payload[2:] == payload
+
+
+async def test_le_coc_send_queues_instead_of_blocking_on_credits():
+    """A send that runs out of credits must return, not block.
+
+    L2CAP/ECFC/BV-23 sends four SDUs; the credit budget runs dry mid-stream and
+    a blocking ``send`` hung the BTP SEND_DATA command until auto-pts gave up
+    (BTP TIMEOUT) — even though the reconfigure the case was testing had already
+    been accepted. Queue it and let the credit grant drain it (the same fix the
+    RFCOMM credit path needed).
+    """
+    hci = FakeHCI()
+    ch = LECoCChannel(
+        connection_handle=0x0040, local_cid=0x0040, peer_cid=0x0041,
+        hci=hci, mtu=512, mps=5, initial_credits=1,   # one credit only
+    )
+    # 10 bytes over MPS=5 needs 2 segments but we only have 1 credit.
+    await asyncio.wait_for(ch.send(b"ABCDEFGH"), timeout=0.5)
+    assert len(hci.sent) == 1, "first segment goes out, the rest stays queued"
+
+    # The peer grants a credit -> the queued remainder is flushed.
+    assert ch.add_credits(1) is True
+    await asyncio.sleep(0)   # let the drain task run
+    await asyncio.sleep(0)
+    assert len(hci.sent) == 2
+    assert b"".join(seg[4:] for _, _, seg in hci.sent)[2:] == b"ABCDEFGH"
+
+
+async def test_le_coc_close_drops_queued_sdus():
+    """A closed channel must not keep credits-waiting SDUs around."""
+    hci = FakeHCI()
+    ch = LECoCChannel(
+        connection_handle=0x0040, local_cid=0x0040, peer_cid=0x0041,
+        hci=hci, mtu=512, mps=5, initial_credits=1,
+    )
+    await ch.send(b"ABCDEFGH")
+    assert len(hci.sent) == 1
+    await ch.close()
+    assert ch._tx_queue == []

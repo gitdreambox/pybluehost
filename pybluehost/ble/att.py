@@ -44,6 +44,9 @@ class ATTOpcode(IntEnum):
     HANDLE_VALUE_NOTIFICATION = 0x1B
     HANDLE_VALUE_INDICATION = 0x1D
     HANDLE_VALUE_CONFIRMATION = 0x1E
+    READ_MULTIPLE_VARIABLE_REQUEST = 0x20
+    READ_MULTIPLE_VARIABLE_RESPONSE = 0x21
+    MULTIPLE_HANDLE_VALUE_NTF = 0x23
     WRITE_COMMAND = 0x52
     SIGNED_WRITE_COMMAND = 0xD2
 
@@ -351,6 +354,67 @@ class ATT_Read_Multiple_Response(ATTPdu):
 
 
 @dataclass
+class ATT_Read_Multiple_Variable_Request(ATTPdu):
+    set_of_handles: bytes = field(default_factory=bytes)
+
+    def to_bytes(self) -> bytes:
+        return bytes([ATTOpcode.READ_MULTIPLE_VARIABLE_REQUEST]) + self.set_of_handles
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> ATT_Read_Multiple_Variable_Request:
+        return cls(set_of_handles=data[1:])
+
+
+@dataclass
+class ATT_Read_Multiple_Variable_Response(ATTPdu):
+    """Read Multiple Variable Length Response — a list of {length(u8), value} tuples."""
+    values: list = field(default_factory=list)  # list[bytes]
+
+    def to_bytes(self) -> bytes:
+        out = bytearray([ATTOpcode.READ_MULTIPLE_VARIABLE_RESPONSE])
+        for v in self.values:
+            out.append(len(v) & 0xFF)
+            out.extend(v)
+        return bytes(out)
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> ATT_Read_Multiple_Variable_Response:
+        # This PTS build (2026-10-29) encodes the Core-5.3 response with 16-bit
+        # LE lengths (three on-air captures, see tests). A u8-first parse of
+        # such a PDU can self-consume EXACTLY into bogus tuples (GAR/BV-10
+        # capture `01 00 05 03 00 65 05 34` u8-walks to (1,'00'),(5,'03 00 65
+        # 05 34') instead of (1,'05'),(3,'65 05 34')), so try u16 first and
+        # fall back to the spec's u8 form — true u8 PDUs are u16-exact only
+        # when a value byte happens to be 0x00 AND the chain still aligns.
+        values = cls._parse_tuples(data[1:], 2)
+        if values is None:
+            values = cls._parse_tuples(data[1:], 1)
+        if values is None:
+            raise ValueError("Malformed Read Multiple Variable Length Response")
+        return cls(values=values)
+
+    @staticmethod
+    def _parse_tuples(data: bytes, size_of_len: int) -> "list[bytes] | None":
+        """Walk a {length, value} tuple chain; ``None`` unless it consumes the
+        PDU exactly. The spec size for the length field is one octet, but this
+        PTS build (2026-10-29) encodes the Core-5.3 response with 16-bit LE
+        lengths — a per-spec-only parse desyncs on the first tuple, so accept
+        either form as long as the chain is exact."""
+        values = []
+        i = 0
+        while i < len(data):
+            if i + size_of_len > len(data):
+                return None
+            ln = int.from_bytes(data[i : i + size_of_len], "little")
+            i += size_of_len
+            if i + ln > len(data):
+                return None
+            values.append(data[i : i + ln])
+            i += ln
+        return values
+
+
+@dataclass
 class ATT_Read_By_Group_Type_Request(ATTPdu):
     starting_handle: int = 0
     ending_handle: int = 0
@@ -532,6 +596,24 @@ class ATT_Handle_Value_Notification(ATTPdu):
 
 
 @dataclass
+class ATT_Multiple_Handle_Value_Notification(ATTPdu):
+    """Multiple Handle Value Notification (0x23).
+
+    Carries a list of (handle, value) tuples, each encoded as
+    Handle(2 LE) + Length(2 LE) + Value(Length) — Core Vol 3 Part F §3.4.7.4.
+    """
+
+    hlv: list[tuple[int, bytes]] = field(default_factory=list)
+
+    def to_bytes(self) -> bytes:
+        out = bytearray([ATTOpcode.MULTIPLE_HANDLE_VALUE_NTF])
+        for handle, value in self.hlv:
+            out += struct.pack("<HH", handle, len(value))
+            out += value
+        return bytes(out)
+
+
+@dataclass
 class ATT_Handle_Value_Indication(ATTPdu):
     attribute_handle: int = 0
     attribute_value: bytes = field(default_factory=bytes)
@@ -602,6 +684,8 @@ _OPCODE_MAP: dict[int, type[ATTPdu]] = {
     ATTOpcode.READ_BLOB_RESPONSE: ATT_Read_Blob_Response,
     ATTOpcode.READ_MULTIPLE_REQUEST: ATT_Read_Multiple_Request,
     ATTOpcode.READ_MULTIPLE_RESPONSE: ATT_Read_Multiple_Response,
+    ATTOpcode.READ_MULTIPLE_VARIABLE_REQUEST: ATT_Read_Multiple_Variable_Request,
+    ATTOpcode.READ_MULTIPLE_VARIABLE_RESPONSE: ATT_Read_Multiple_Variable_Response,
     ATTOpcode.READ_BY_GROUP_TYPE_REQUEST: ATT_Read_By_Group_Type_Request,
     ATTOpcode.READ_BY_GROUP_TYPE_RESPONSE: ATT_Read_By_Group_Type_Response,
     ATTOpcode.WRITE_REQUEST: ATT_Write_Request,
@@ -622,7 +706,9 @@ def decode_att_pdu(data: bytes) -> ATTPdu:
     """Decode raw bytes into the appropriate ATT PDU object."""
     if not data:
         raise ValueError("Empty ATT PDU data")
-    logger.debug("ATT PDU opcode=0x%02X len=%d", data[0], len(data))
+    logger.debug(
+        "ATT PDU opcode=0x%02X len=%d data=%s", data[0], len(data), data.hex()
+    )
     opcode = data[0]
     pdu_cls = _OPCODE_MAP.get(opcode)
     if pdu_cls is None:
@@ -677,6 +763,30 @@ class ATTBearer:
             raise ATTError(resp.error_code)
         return b""
 
+    async def read_multiple(self, handles: list[int]) -> bytes:
+        """ATT Read Multiple Request (Vol 3 Part F §3.4.4.3) — one request for
+        several handles; returns the concatenated set of values."""
+        handles_ba = b"".join(h.to_bytes(2, "little") for h in handles)
+        req = ATT_Read_Multiple_Request(set_of_handles=handles_ba)
+        resp = await self._request(req, ATTOpcode.READ_MULTIPLE_RESPONSE)
+        if isinstance(resp, ATT_Read_Multiple_Response):
+            return resp.set_of_values
+        if isinstance(resp, ATT_Error_Response):
+            raise ATTError(resp.error_code)
+        return b""
+
+    async def read_multiple_variable(self, handles: list[int]) -> list[bytes]:
+        """ATT Read Multiple Variable Length Request (Vol 3 Part F §3.4.4.4) —
+        one request for several handles; returns a per-handle list of values."""
+        handles_ba = b"".join(h.to_bytes(2, "little") for h in handles)
+        req = ATT_Read_Multiple_Variable_Request(set_of_handles=handles_ba)
+        resp = await self._request(req, ATTOpcode.READ_MULTIPLE_VARIABLE_RESPONSE)
+        if isinstance(resp, ATT_Read_Multiple_Variable_Response):
+            return [bytes(v) for v in resp.values]
+        if isinstance(resp, ATT_Error_Response):
+            raise ATTError(resp.error_code)
+        return []
+
     async def write(self, handle: int, value: bytes) -> None:
         req = ATT_Write_Request(attribute_handle=handle, attribute_value=value)
         resp = await self._request(req, ATTOpcode.WRITE_RESPONSE)
@@ -722,12 +832,17 @@ class ATTBearer:
 
     async def execute_write(self, flags: int) -> None:
         req = ATT_Execute_Write_Request(flags=flags)
-        await self._request(req, ATTOpcode.EXECUTE_WRITE_RESPONSE)
+        resp = await self._request(req, ATTOpcode.EXECUTE_WRITE_RESPONSE)
+        # GATT/CL/GAW/BI-09: the server may accept every Prepare Write and
+        # defer the rejection to the Execute Write (Invalid Offset et al.) —
+        # the error must surface, not get swallowed as success.
+        if isinstance(resp, ATT_Error_Response):
+            raise ATTError(resp.error_code)
 
-    async def write_long(self, handle: int, value: bytes) -> None:
+    async def write_long(self, handle: int, value: bytes, offset: int = 0) -> None:
         chunk_size = self._mtu - 5
-        for offset in range(0, len(value), chunk_size):
-            await self.prepare_write(handle, offset, value[offset : offset + chunk_size])
+        for off in range(0, len(value), chunk_size):
+            await self.prepare_write(handle, offset + off, value[off : off + chunk_size])
         await self.execute_write(0x01)
 
     def set_notification_handler(

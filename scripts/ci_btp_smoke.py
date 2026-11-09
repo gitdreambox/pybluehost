@@ -23,6 +23,19 @@ async def _read_frame(reader: asyncio.StreamReader) -> BtpFrame:
     return decode_btp_frame(header + body)
 
 
+def _expect_success(resp: BtpFrame, req_opcode: int, name: str) -> int:
+    """auto-pts framing: success echoes the request opcode; failure is opcode 0x00
+    (BTP_STATUS) with a single status byte."""
+    if resp.opcode == op.OP_STATUS_RESPONSE:
+        print(f"smoke: {name} failed: status 0x{resp.data[0]:02X}", file=sys.stderr)
+        return 1
+    if resp.opcode != req_opcode:
+        print(f"smoke: {name} wrong response opcode 0x{resp.opcode:02X} "
+              f"(expected 0x{req_opcode:02X})", file=sys.stderr)
+        return 1
+    return 0
+
+
 async def _smoke(port: int) -> int:
     """Returns 0 on success, nonzero on failure."""
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
@@ -40,11 +53,11 @@ async def _smoke(port: int) -> int:
         )))
         await writer.drain()
         resp = await asyncio.wait_for(_read_frame(reader), timeout=5.0)
-        if resp.data[0] != op.BTP_STATUS_SUCCESS:
-            print(f"smoke: Read Supported Services failed: 0x{resp.data[0]:02X}", file=sys.stderr)
+        if _expect_success(resp, op.OP_CORE_READ_SUPPORTED_SERVICES, "Read Supported Services"):
             return 1
-        # Bitfield byte after status: bit 0 = Core, bit 1 = GAP, bit 2 = GATT, bit 3 = L2CAP.
-        services_bitfield = resp.data[1]
+        # Success payload is the services bitfield directly (no status byte):
+        # bit 0 = Core, bit 1 = GAP, bit 2 = GATT, bit 3 = L2CAP.
+        services_bitfield = resp.data[0]
         for name, bit in [("Core", 0), ("GAP", 1), ("GATT", 2), ("L2CAP", 3)]:
             if not (services_bitfield & (1 << bit)):
                 print(f"smoke: {name} service missing from bitfield", file=sys.stderr)
@@ -57,8 +70,7 @@ async def _smoke(port: int) -> int:
         )))
         await writer.drain()
         resp = await asyncio.wait_for(_read_frame(reader), timeout=5.0)
-        if resp.data[0] != op.BTP_STATUS_SUCCESS:
-            print(f"smoke: GAP Set Powered failed: 0x{resp.data[0]:02X}", file=sys.stderr)
+        if _expect_success(resp, op.OP_GAP_SET_POWERED, "GAP Set Powered"):
             return 1
 
         # 4. GATT Add Service (Battery Service 0x180F).
@@ -69,8 +81,7 @@ async def _smoke(port: int) -> int:
         )))
         await writer.drain()
         resp = await asyncio.wait_for(_read_frame(reader), timeout=5.0)
-        if resp.data[0] != op.BTP_STATUS_SUCCESS:
-            print(f"smoke: GATT Add Service failed: 0x{resp.data[0]:02X}", file=sys.stderr)
+        if _expect_success(resp, op.OP_GATT_ADD_SERVICE, "GATT Add Service"):
             return 1
 
         print(

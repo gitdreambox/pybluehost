@@ -1,14 +1,893 @@
 group: GAP
-last_updated: '2026-06-23'
+last_updated: '2026-11-04'
 runs: 0
 cases:
   GAP/CONN/CPUP/BV-01-C:
-    verdict: untested
-    last_run: null
+    verdict: pass
+    last_run: '2026-09-18'
     notes: ''
     bug_refs: []
   GAP/CONN/GCEP/BV-01-C:
-    verdict: untested
-    last_run: null
+    verdict: pass
+    last_run: '2026-09-18'
     notes: ''
+    bug_refs: []
+  GAP/ADV/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-08-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-11-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-12-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-13-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-14-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-17-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-18-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-19-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/ADV/BV-21-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: 'PASS attempt 1 (14:00) after switching the workspace to keys_shared_via_ixit
+      (commit b88b94c). The long-standing FAIL was the key-sharing mode: in connection
+      mode the LT GATT-reads our 0x2B88 characteristic and the decrypted plaintext
+      never matched; in IXIT mode both sides use the same TSPX_encrypted_data_key/IV
+      literals.'
+    bug_refs: []
+  GAP/BIS/BBM/BV-01-C:
+    verdict: blocked
+    last_run: '2026-10-29'
+    notes: 'controller-blocked on BOTH seats (re-probed 2026-10-29 on the new BE200
+      IUT A0:85, fw hci_rev/lmp_subver 0x5544): LE_Create_BIG (0x2068) answers Command
+      Status 0x01 Unknown Command with AND without an enabled extended adv set (4
+      runs), periodic family 0x203E/0x203F/0x2040 all 0x01, LE features ffd9013cee000000
+      lack bit 30 ISO_Broadcaster. Sharper picture than the AX201 probe: CIS family
+      IS known (0x2062/0x2064 answer 0x12 Invalid Parameters = parsed), so this firmware
+      has connected-ISO but NO broadcast-ISO and NO periodic advertising - BIG broadcast
+      is absent at the firmware cut, not state-gated. The AX201-era ''unlock = BE200
+      as IUT'' path is dead: that BIG-capable BE200 (94:53, fw 0x5500) is retired;
+      both dongles in the current rig are the 10-27 batch. Implementation kept ready
+      (IsoBroadcastManager + BTP 0x2d/0x2e + ev 0x95, unit-tested); runs on any BIG-capable
+      controller. BIS/BSE/BV-01 blocked the same way (see its note).'
+    bug_refs: []
+  GAP/BIS/BSE/BV-01-C:
+    verdict: blocked
+    last_run: '2026-10-29'
+    notes: 'Controller-blocked on the new BE200 IUT too (re-probed 2026-10-29): BIG_Create_Sync
+      (0x206B) is unreachable transitively - the periodic-advertising family it syncs
+      through (0x203E/0x203F/0x2040) answers 0x01 Unknown Command on this firmware
+      cut (hci_rev/lmp_subver 0x5544), and LE features ffd9013cee000000 lack ISO_Broadcaster
+      (bit 30) while the CIS family (0x2062/0x2064) answers 0x12 = known. Connected-ISO
+      yes, broadcast-ISO no - same firmware-absence verdict as BBM/BV-01, no dongle
+      in the current rig can unlock it.'
+    bug_refs: []
+  GAP/BOND/BON/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/BOND/BON/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/BOND/BON/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/BOND/BON/BV-04-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GAP/BOND/NBON/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/BOND/NBON/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/BOND/NBON/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/BROB/BCST/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/BROB/BCST/BV-02-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/BROB/BCST/BV-03-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GAP/BROB/BCST/BV-04-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/BROB/BCST/BV-05-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: 'PASS attempt 1 on current BE200 rig. Fix: retain the bonded peer across
+      disconnect and program its distributed IRK into the resolving list when RPA
+      mode activates, so the accept-listed LT identity matches its SCAN_REQ RPA and
+      the scan response goes on air.'
+    bug_refs: []
+  GAP/BROB/OBSV/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/BROB/OBSV/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/BROB/OBSV/BV-05-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/BROB/OBSV/BV-06-C:
+    verdict: blocked
+    last_run: '2026-10-31'
+    notes: 'LT-side blocker, not an IUT defect. WIDs stop at 78/208/1002: the SC passkey
+      pairing completes (Encryption_Change 0x00, IRK+CSRK distributed, ltk_stored=YES)
+      and then the LT sends SMP Pairing Failed 0x08 and disconnects; it never advertises,
+      so the observer/scan half of the case never runs. Reproduced 2/2 on 2026-10-31
+      (plus 3/3 on 2026-10-29) with a byte-identical signature; same LT behaviour
+      class as GAP/SEC/AUT/BV-27 and SM/PER/KDU.'
+    bug_refs: []
+  GAP/CONN/ACEP/BV-01-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: Re-verified PASS attempt 1 on the current BE200 rig after privacy/connect
+      changes.
+    bug_refs: []
+  GAP/CONN/ACEP/BV-03-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS on attempt 2 after SMP IdKey identity fix. Phase 3 now sends public
+      identity A0:85:27:2F:60:15 instead of the link RPA; LT Add_Device_To_Resolving_List
+      changes from 0x12 to 0x00. PTS FINAL_VERDICT PASS overrides client BTP ERROR
+      during cleanup.
+    bug_refs: []
+  GAP/CONN/ACEP/BV-04-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS attempt 1 after SMP IdKey identity fix. Phase 3 distributes stable
+      public identity instead of the connection RPA, enabling the LT resolving-list
+      setup. PTS FINAL_VERDICT PASS overrides client BTP ERROR during cleanup.
+    bug_refs: []
+  GAP/CONN/CPUP/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/CPUP/BV-05-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/CPUP/BV-06-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: 'Re-verified: shared initiator path regression check.'
+    bug_refs: []
+  GAP/CONN/CPUP/BV-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/DCON/BV-04-C:
+    verdict: blocked
+    last_run: '2026-10-31'
+    notes: 'PTS-limited: TS p188-189 wants Directed Connectable mode (AdvA=RPA(IUT
+      IRK), InitA=RPA(LT IRK)) but this PTS build only sends WID 118 (CAR read) +
+      WID 20001 twice (''prepare IUT into a connectable mode''); WID 406/407 (directed
+      order) never arrive, so no IUT driven by auto-pts can enter directed mode. Phase-1
+      LT scan is accept-list-only (0x2041 filter=0x01, list=our identity) with no
+      resolving-list add and no LE_Set_Address_Resolution_Enable, so our RPA advertisement
+      is dropped and the case dies in PTS TIMEOUT. Causal proof (2026-10-31): same
+      code advertising from the public identity made the LT log the report (HciLogs
+      SIG_DT t=1337) and connect via LE_Extended_Create_Connection 0x2043 (Enhanced
+      Connection Complete status=0x00). No reference IUT (zephyr/bluez/mynewt) registers
+      DCON/BV-04/05.'
+    bug_refs: []
+  GAP/CONN/NCON/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/NCON/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/NCON/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/PRDA/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/TERM/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/UCON/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CONN/UCON/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/CSUB/CSR/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/CSUB/CSU/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: 2026-10-29 harvest artifact (13s cold-start warmup INDCSV) deleted from
+      logs; genuine 2026-09-18 pass stands
+    bug_refs: []
+  GAP/DISC/GENM/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/GENM/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/GENP/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/GENP/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/GENP/BV-03-C:
+    verdict: pass
+    last_run: '2026-11-03'
+    notes: 'PASS 2026-11-03: AD-Flags discoverable-mode filter in GapService._on_scan_result
+      (general/limited); the negative DISC cases no longer surface the LT''s non-discoverable
+      advertising.'
+    bug_refs: []
+  GAP/DISC/GENP/BV-04-C:
+    verdict: pass
+    last_run: '2026-11-03'
+    notes: 'PASS 2026-11-03: AD-Flags discoverable-mode filter in GapService._on_scan_result
+      (general/limited); the negative DISC cases no longer surface the LT''s non-discoverable
+      advertising.'
+    bug_refs: []
+  GAP/DISC/GENP/BV-05-C:
+    verdict: pass
+    last_run: '2026-11-03'
+    notes: 'PASS 2026-11-03: AD-Flags discoverable-mode filter in GapService._on_scan_result
+      (general/limited); the negative DISC cases no longer surface the LT''s non-discoverable
+      advertising.'
+    bug_refs: []
+  GAP/DISC/LIMM/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/LIMM/BV-04-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/LIMP/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/LIMP/BV-02-C:
+    verdict: pass
+    last_run: '2026-11-03'
+    notes: 'PASS 2026-11-03: AD-Flags discoverable-mode filter in GapService._on_scan_result
+      (general/limited); the negative DISC cases no longer surface the LT''s non-discoverable
+      advertising.'
+    bug_refs: []
+  GAP/DISC/LIMP/BV-03-C:
+    verdict: pass
+    last_run: '2026-11-03'
+    notes: 'PASS 2026-11-03: AD-Flags discoverable-mode filter in GapService._on_scan_result
+      (general/limited); the negative DISC cases no longer surface the LT''s non-discoverable
+      advertising.'
+    bug_refs: []
+  GAP/DISC/LIMP/BV-04-C:
+    verdict: pass
+    last_run: '2026-11-03'
+    notes: 'PASS 2026-11-03: AD-Flags discoverable-mode filter in GapService._on_scan_result
+      (general/limited); the negative DISC cases no longer surface the LT''s non-discoverable
+      advertising.'
+    bug_refs: []
+  GAP/DISC/LIMP/BV-05-C:
+    verdict: pass
+    last_run: '2026-11-03'
+    notes: 'PASS 2026-11-03: AD-Flags discoverable-mode filter in GapService._on_scan_result
+      (general/limited); the negative DISC cases no longer surface the LT''s non-discoverable
+      advertising.'
+    bug_refs: []
+  GAP/DISC/NONM/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/NONM/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/DISC/RPA/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: 'Root cause was the extended-adv-report parser reading Event_Type as 1
+      byte (spec: 2) - every field shifted, LT RPA report garbled; fixed e7fa940,
+      controller resolves RPA to identity, first-run PASS (BE200 rig)'
+    bug_refs: []
+  GAP/GAT/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/GAT/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/GAT/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/GAT/BV-16-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/GAT/BV-17-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/GAT/BV-18-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/IDLE/NAMP/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/IDLE/NAMP/BV-02-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/PADV/PAM/BV-01-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PASE/BV-01-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PASE/BV-02-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PASE/BV-03-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PASE/BV-04-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PASE/BV-05-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PASE/BV-06-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PASM/BV-01-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PAST/BV-01-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PADV/PAST/BV-02-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: "Controller-blocked on this rig: the IUT dongle (hci_rev=0x4455, mfr=0x0002)\
+      \ answers 0x01 Unknown HCI Command to the whole periodic-advertising OCF range\
+      \ (0x203E/203F/2040/2044/2045/2046/2059/205A/205C/205D), re-probed 2026-11-02\
+      \ with scripts/_padv_cap_probe.py. This is firmware, not the chip: the pre-10-27\
+      \ BE200 units implemented it (10/10 PASS on 2026-09-16) \u2014 the historical\
+      \ pass is real, it just is not reachable on the current dongle."
+    bug_refs: []
+  GAP/PRIV/CONN/BV-10-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: Re-verified PASS attempt 1 after retaining the bonded peer IRK and stopping
+      host RPA rotation for outgoing connects.
+    bug_refs: []
+  GAP/PRIV/CONN/BV-11-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: 'PASS attempt 1 on current BE200 rig (PTS verdict overrides client BTP
+      ERROR). Fix: register SET_PRIVACY for BV-11 and use host-programmed RPA own_address_type=0x01
+      for the central CONNECT_IND.'
+    bug_refs: []
+  GAP/PRIV/CONN/BV-12-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SCN/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: "PASS x2 (13:46, 13:53) with keys_shared_via_ixit PIXIT push. The old blocked\
+      \ premise (upstream MissingWIDError 505) no longer holds on the refreshed auto-pts\
+      \ tree: the case only issues WID 502, whose upstream handler passive-scans then\
+      \ decrypts via BTP DECRYPT_EAD_DATA (0x33) \u2014 our handler + raw-EIR DEVICE_FOUND\
+      \ path were already in place. IUT needs no scanner changes; decryption is client-side."
+    bug_refs: []
+  GAP/SEC/AUT/BV-11-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/AUT/BV-13-C:
+    verdict: blocked
+    last_run: '2026-09-16'
+    notes: 'BLOCKED BY PTS ERRATUM ES-28650 (auto-pts errata/common.yaml). GAP.TS
+      Initial Condition "previous bond exists ... unauthenticated pairing" is never
+      established by the Lower Tester: PTS deletes its host LTK at case start and
+      BV-13 script has one MMI (WID 78). IUT correctly resumes with the pre-existing
+      LTK -> PTS replies HCI_LONG_TERM_KEY_REQUESTED_NEGATIVE_REPLY -> "Security Failed.
+      result=8" -> INDCSV. Reproduces on bluez reference (same plain pre-conditions).
+      Verified 2026-09-16.'
+    bug_refs: []
+  GAP/SEC/AUT/BV-14-C:
+    verdict: blocked
+    last_run: '2026-09-16'
+    notes: 'BLOCKED BY PTS ERRATUM ES-28650 (auto-pts errata/common.yaml). GAP.TS
+      Initial Condition "previous bond exists ... unauthenticated pairing" is never
+      established by the Lower Tester: PTS deletes its host LTK at case start and
+      BV-13 script has one MMI (WID 78). IUT correctly resumes with the pre-existing
+      LTK -> PTS replies HCI_LONG_TERM_KEY_REQUESTED_NEGATIVE_REPLY -> "Security Failed.
+      result=8" -> INDCSV. Reproduces on bluez reference (same plain pre-conditions).
+      Verified 2026-09-16.'
+    bug_refs: []
+  GAP/SEC/AUT/BV-17-C:
+    verdict: pass
+    last_run: '2026-11-02'
+    notes: PTS FINAL_VERDICT PASS (client summary said BTP TIMEOUT)
+    bug_refs: []
+  GAP/SEC/AUT/BV-18-C:
+    verdict: pass
+    last_run: '2026-11-02'
+    notes: PTS FINAL_VERDICT PASS (client summary said BTP TIMEOUT)
+    bug_refs: []
+  GAP/SEC/AUT/BV-19-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS attempt 1 after routing HCI Encryption Key Refresh Complete (0x30)
+      to encryption listeners; legacy re-pair now advances from STK_ENCRYPTING into
+      Phase 3.
+    bug_refs: []
+  GAP/SEC/AUT/BV-20-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/AUT/BV-21-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/AUT/BV-22-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/AUT/BV-23-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/AUT/BV-24-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/AUT/BV-25-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PASS attempt 1 after removing autonomous reconnect gated on the peer-abort
+      fingerprint shared with BV-27.
+    bug_refs: []
+  GAP/SEC/AUT/BV-26-C:
+    verdict: pass
+    last_run: '2026-11-02'
+    notes: PTS FINAL_VERDICT PASS (client summary said BTP TIMEOUT)
+    bug_refs: []
+  GAP/SEC/AUT/BV-28-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: PTS FINAL_VERDICT PASS on attempt 1; client BTP TIMEOUT overridden by per-case
+      PTS verdict.
+    bug_refs: []
+  GAP/SEC/SEM/BI-09-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BI-13-C:
+    verdict: blocked
+    last_run: '2026-10-29'
+    notes: 'Hardware-blocked on BE200 IUT (2026-10-29): TS p118 procedure step 1 is
+      literally GAP/BIS/BSE/BV-01-C (attempt BIG sync, IUT must NOT synchronize at
+      lower security) and LE_Big_Create_Sync (0x206B) answers 0x01 Unknown HCI Command
+      on this controller (probe evidence in BSE/BV-01 notes) - the sync flow WID 301
+      expects can never run. Same bucket as the already-blocked BSE/BV-01.'
+    bug_refs: []
+  GAP/SEC/SEM/BI-20-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BI-21-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BI-22-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BI-23-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-21-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-22-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-23-C:
+    verdict: blocked
+    last_run: '2026-11-02'
+    notes: 'auto-pts side gap, not an IUT defect: the case asks WID 550 ("confirm
+      that the established security is not sufficient to open the outgoing service")
+      and auto-pts raises MissingWIDError("No hdl_wid_550 found!") because no hdl_wid_550
+      exists in the reference implementation. Reproduced 3/3 on 2026-11-01 and 2/2
+      on 2026-11-02 on the new BE200 rig.'
+    bug_refs: []
+  GAP/SEC/SEM/BV-24-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-27-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-28-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-37-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-38-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-39-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-40-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-41-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: 'FIXED 2026-11-04 (PASS attempt 1): SC-only no longer forces MITM in the
+      initiator Pairing Request. On-air 2026-11-01 showed IUT 01 00 00 0d 10 07 07
+      (MITM=1) vs LT level-2 response 02 04 00 09 10 00 00 (no MITM) -> association-model
+      split -> LT disconnect after the public key. GAP.TS Tables 4.17/4.18: BV-41/43
+      are SC-only LEVEL 2 (unauthenticated); MITM is now per-case (BV-42/44 + BV-28/29
+      carry gap_set_mitm_on).'
+    bug_refs: []
+  GAP/SEC/SEM/BV-42-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-43-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: 'FIXED 2026-11-04 (PASS attempt 1): SC-only no longer forces MITM in the
+      initiator Pairing Request. On-air 2026-11-01 showed IUT 01 00 00 0d 10 07 07
+      (MITM=1) vs LT level-2 response 02 04 00 09 10 00 00 (no MITM) -> association-model
+      split -> LT disconnect after the public key. GAP.TS Tables 4.17/4.18: BV-41/43
+      are SC-only LEVEL 2 (unauthenticated); MITM is now per-case (BV-42/44 + BV-28/29
+      carry gap_set_mitm_on).'
+    bug_refs: []
+  GAP/SEC/SEM/BV-44-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-45-C:
+    verdict: blocked
+    last_run: '2026-10-29'
+    notes: 'PTS-side, IUT exhausted (2026-10-29): mode 1 = preamble encryption 0x08
+      from PTS.exe workspace degradation after pairing cases (restart autoptsserver);
+      mode 2 = after LT scripted WID-77 disconnect it never re-arms advertising (6/6
+      dead air, initiator scan and air-peek empty). Generic peer-abort autoreconnect
+      was removed on 2026-11-04 because BV-25 shares the same fingerprint; WID-driven
+      reconnect is the only non-racing behavior.'
+    bug_refs: []
+  GAP/SEC/SEM/BV-56-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-57-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: Reverified PASS on BE200 rig; retry attempt 1.
+    bug_refs: []
+  GAP/SEC/SEM/BV-58-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-59-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-60-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-61-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-64-C:
+    verdict: pass
+    last_run: '2026-11-01'
+    notes: SEM reconnect cluster re-verified on new BE200 rig post 8c2e983 (controller
+      RPA resolution gated on active privacy)
+    bug_refs: []
+  GAP/SEC/SEM/BV-66-C:
+    verdict: pass
+    last_run: '2026-11-02'
+    notes: 'SEM reconnect cluster complete on the new BE200 rig: last unverified member
+      now PASS on attempt 1 after 8c2e983 gated controller RPA resolution on active
+      privacy (BV-62/63/64/65/66/67 all verified 2026-11-01/02).'
+    bug_refs: []
+  GAP/SEC/SEM/BV-67-C:
+    verdict: pass
+    last_run: '2026-11-01'
+    notes: SEM reconnect cluster re-verified on new BE200 rig post 8c2e983 (controller
+      RPA resolution gated on active privacy)
+    bug_refs: []
+  GAP/SEC/SEM/BV-26-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-62-C:
+    verdict: pass
+    last_run: '2026-11-01'
+    notes: SEM reconnect cluster re-verified on new BE200 rig post 8c2e983 (controller
+      RPA resolution gated on active privacy)
+    bug_refs: []
+  GAP/SEC/SEM/BV-65-C:
+    verdict: pass
+    last_run: '2026-11-01'
+    notes: SEM reconnect cluster re-verified on new BE200 rig post 8c2e983 (controller
+      RPA resolution gated on active privacy)
+    bug_refs: []
+  GAP/SEC/AUT/BV-12-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/AUT/BV-27-C:
+    verdict: blocked
+    last_run: '2026-10-28'
+    notes: 'LT-structural, IUT exhausted (6/6 deterministic, 2026-10-28): after unsolicited
+      post-key-distribution Pairing Failed 0x0508 and ACL drop, LT never re-advertises.
+      Registration matches mynewt (PIXIT TRUE + mitm_on + user_interaction False).
+      Generic peer-abort autoreconnect was removed on 2026-11-04 because BV-25 shares
+      the fingerprint and regressed; no unambiguous IUT-side trigger remains.'
+    bug_refs: []
+  GAP/SEC/SEM/BI-10-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GAP/SEC/SEM/BV-29-C:
+    verdict: pass
+    last_run: '2026-11-04'
+    notes: Reverified PASS on BE200 rig; retry attempt 1.
+    bug_refs: []
+  GAP/SEC/SEM/BV-63-C:
+    verdict: pass
+    last_run: '2026-11-01'
+    notes: SEM reconnect cluster re-verified on new BE200 rig post 8c2e983 (controller
+      RPA resolution gated on active privacy)
     bug_refs: []

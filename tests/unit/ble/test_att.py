@@ -232,6 +232,30 @@ async def test_att_bearer_read_error():
     assert exc_info.value.error_code == 0x0A
 
 
+async def test_att_bearer_execute_write_error_raises():
+    """GATT/CL/GAW/BI-09: PTS accepts the Prepare Writes and defers the
+    rejection to the Execute Write, answering it with an Error Response
+    (Invalid Offset). execute_write must surface that error — swallowing it
+    made the whole long write look successful and the IUT reported ATT
+    status 0x00, so the Upper Tester's error verification failed."""
+    ch = FakeChannel()
+    bearer = ATTBearer(channel=ch, mtu=23)
+
+    async def inject_response():
+        await asyncio.sleep(0.01)
+        resp = ATT_Error_Response(
+            request_opcode_in_error=ATTOpcode.EXECUTE_WRITE_REQUEST,
+            attribute_handle_in_error=0x0000,
+            error_code=0x07,  # Invalid Offset
+        )
+        await bearer._on_pdu(resp.to_bytes())
+
+    asyncio.ensure_future(inject_response())
+    with pytest.raises(ATTError) as exc_info:
+        await bearer.execute_write(0x01)
+    assert exc_info.value.error_code == 0x07
+
+
 async def test_att_bearer_write():
     ch = FakeChannel()
     bearer = ATTBearer(channel=ch, mtu=23)
@@ -285,3 +309,16 @@ async def test_att_bearer_indication_auto_confirm():
     # Should have auto-sent confirmation
     assert len(ch.sent) == 1
     assert ch.sent[0][0] == ATTOpcode.HANDLE_VALUE_CONFIRMATION
+
+
+def test_multiple_handle_value_notification_encodes_hlv_tuples():
+    """ATT 0x23 encodes each tuple as Handle(2 LE)+Length(2 LE)+Value."""
+    from pybluehost.ble.att import ATT_Multiple_Handle_Value_Notification
+
+    pdu = ATT_Multiple_Handle_Value_Notification(
+        hlv=[(0x0003, b"\x01\x02"), (0x0005, b"\xAA")])
+    assert pdu.to_bytes() == (
+        b"\x23"
+        + b"\x03\x00" + b"\x02\x00" + b"\x01\x02"
+        + b"\x05\x00" + b"\x01\x00" + b"\xAA"
+    )

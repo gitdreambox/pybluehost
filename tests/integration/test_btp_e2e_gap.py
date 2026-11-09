@@ -45,10 +45,11 @@ async def test_btp_gap_read_controller_info_via_bridge(unused_tcp_port):
                 await writer.drain()
                 resp = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
                 assert resp.service == op.SERVICE_GAP
-                assert resp.opcode == op.OP_STATUS_RESPONSE
-                assert resp.data[0] == op.BTP_STATUS_SUCCESS
-                # Payload: [status][6 BD_ADDR][4 supported][4 current][3 CoD][249 name][11 short]
-                assert len(resp.data) >= 1 + 6 + 4 + 4
+                # Success echoes the request opcode and carries only data; the
+                # 0x00 + status form is reserved for failures (tester._dispatch).
+                assert resp.opcode == op.OP_GAP_READ_CONTROLLER_INFO
+                # Payload: [6 BD_ADDR][4 supported][4 current][3 CoD][249 name][11 short]
+                assert len(resp.data) >= 6 + 4 + 4
             finally:
                 writer.close()
                 await writer.wait_closed()
@@ -81,8 +82,8 @@ async def test_btp_gap_set_powered_via_bridge(unused_tcp_port):
                 )))
                 await writer.drain()
                 resp = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
-                assert resp.data[0] == op.BTP_STATUS_SUCCESS
-                settings = int.from_bytes(resp.data[1:5], "little")
+                assert resp.opcode == op.OP_GAP_SET_POWERED
+                settings = int.from_bytes(resp.data[0:4], "little")
                 assert settings & 0x01    # powered bit 0
             finally:
                 writer.close()

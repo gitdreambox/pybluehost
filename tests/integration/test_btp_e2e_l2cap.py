@@ -57,8 +57,10 @@ async def test_btp_l2cap_listen_via_bridge(unused_tcp_port):
                 )))
                 await writer.drain()
                 resp = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
-                assert resp.opcode == op.OP_STATUS_RESPONSE
-                assert resp.data == bytes([op.BTP_STATUS_SUCCESS])
+                # Success echoes the request opcode; the 0x00 + status form is
+                # reserved for failures (tester._dispatch).
+                assert resp.opcode == op.OP_L2CAP_LISTEN
+                assert resp.data == b""
             finally:
                 writer.close()
                 await writer.wait_closed()
@@ -112,7 +114,8 @@ async def test_btp_l2cap_incoming_connect_emits_event(unused_tcp_port):
                 )))
                 await writer.drain()
                 resp = await asyncio.wait_for(_read_frame(reader), timeout=1.0)
-                assert resp.data == bytes([op.BTP_STATUS_SUCCESS])
+                assert resp.opcode == op.OP_L2CAP_LISTEN
+                assert resp.data == b""
 
                 # Now the peer initiates LE CoC connect to PSM 0x0080.
                 ch = await peer_stack.l2cap.connect_le_coc_channel(

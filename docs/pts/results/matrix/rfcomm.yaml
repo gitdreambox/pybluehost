@@ -1,0 +1,89 @@
+group: RFCOMM
+last_updated: '2026-10-31'
+runs: 0
+cases:
+  RFCOMM/DEVA-DEVB/RFC/BV-03-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-04-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-07-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-08-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-11-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA/RFC/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA/RFC/BV-05-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVB/RFC/BV-02-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVB/RFC/BV-06-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-13-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-14-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-15-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-17-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-19-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-21-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-22-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  RFCOMM/DEVA-DEVB/RFC/BV-25-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []

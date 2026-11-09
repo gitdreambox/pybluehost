@@ -95,7 +95,9 @@ class AdvertisingData:
     Each AD structure: [length][type][data...]
     """
 
-    # AD Type constants
+    # AD Type constants — mirrors the SIG assigned numbers
+    # (pybluehost/lib/sig/assigned_numbers/core/ad_types.yaml);
+    # unassigned values (e.g. 0x0B-0x0C, 0x13, 0x33, 0x35-0x3C) are intentionally absent.
     AD_FLAGS = 0x01
     AD_UUID16_MORE = 0x02
     AD_UUID16_COMPLETE = 0x03
@@ -106,12 +108,62 @@ class AdvertisingData:
     AD_SHORT_LOCAL_NAME = 0x08
     AD_COMPLETE_LOCAL_NAME = 0x09
     AD_TX_POWER = 0x0A
-    AD_SLAVE_CONN_INTERVAL = 0x12
+    AD_CLASS_OF_DEVICE = 0x0D
+    AD_SP_HASH_C192 = 0x0E
+    AD_SP_RANDOMIZER_R192 = 0x0F
+    AD_SM_TK_VALUE = 0x10  # also Device ID when used in EIR data
+    AD_SM_OOB_FLAGS = 0x11
+    AD_PERIPHERAL_CONN_INTERVAL = 0x12
+    AD_UUID16_SOLICITATION = 0x14
+    AD_UUID128_SOLICITATION = 0x15
+    AD_SERVICE_DATA16 = 0x16
+    AD_PUBLIC_TARGET_ADDRESS = 0x17
+    AD_RANDOM_TARGET_ADDRESS = 0x18
     AD_APPEARANCE = 0x19
+    AD_ADVERTISING_INTERVAL = 0x1A
+    AD_LE_DEVICE_ADDRESS = 0x1B
+    AD_LE_ROLE = 0x1C
+    AD_SP_HASH_C256 = 0x1D
+    AD_SP_RANDOMIZER_R256 = 0x1E
+    AD_UUID32_SOLICITATION = 0x1F
+    AD_SERVICE_DATA32 = 0x20
+    AD_SERVICE_DATA128 = 0x21
+    AD_LE_SC_CONFIRMATION_VALUE = 0x22
+    AD_LE_SC_RANDOM_VALUE = 0x23
+    AD_URI = 0x24
+    AD_INDOOR_POSITIONING = 0x25
+    AD_TRANSPORT_DISCOVERY_DATA = 0x26
+    AD_LE_SUPPORTED_FEATURES = 0x27
+    AD_CHANNEL_MAP_UPDATE_INDICATION = 0x28
+    AD_PB_ADV = 0x29
+    AD_MESH_MESSAGE = 0x2A
+    AD_MESH_BEACON = 0x2B
+    AD_BIG_INFO = 0x2C
+    AD_BROADCAST_CODE = 0x2D
+    AD_RESOLVABLE_SET_IDENTIFIER = 0x2E
+    AD_ADVERTISING_INTERVAL_LONG = 0x2F
+    AD_BROADCAST_NAME = 0x30
+    AD_ENCRYPTED_ADVERTISING_DATA = 0x31
+    AD_PA_RESPONSE_TIMING = 0x32
+    AD_ESL = 0x34
+    AD_3D_INFORMATION_DATA = 0x3D
     AD_MANUFACTURER_SPECIFIC = 0xFF
+
+    # Backward-compatible alias (CSS renamed "Slave Connection Interval Range").
+    AD_SLAVE_CONN_INTERVAL = AD_PERIPHERAL_CONN_INTERVAL
 
     def __init__(self) -> None:
         self._structures: dict[int, bytes] = {}
+
+    # -- Generic accessors ---------------------------------------------------
+
+    def set(self, ad_type: int, data: bytes) -> None:
+        if not isinstance(ad_type, int) or isinstance(ad_type, bool) or not 0 <= ad_type <= 0xFF:
+            raise ValueError(f"AD type must be an int in 0..0xFF, got {ad_type!r}")
+        self._structures[ad_type] = bytes(data)
+
+    def get(self, ad_type: int) -> bytes | None:
+        return self._structures.get(ad_type)
 
     # -- Setters -------------------------------------------------------------
 
@@ -127,6 +179,9 @@ class AdvertisingData:
     def add_service_uuid16(self, uuid: int) -> None:
         existing = self._structures.get(self.AD_UUID16_COMPLETE, b"")
         self._structures[self.AD_UUID16_COMPLETE] = existing + struct.pack("<H", uuid)
+
+    def set_service_data16(self, uuid: int, data: bytes) -> None:
+        self._structures[self.AD_SERVICE_DATA16] = struct.pack("<H", uuid) + bytes(data)
 
     def set_manufacturer_specific(self, company_id: int, data: bytes) -> None:
         self._structures[self.AD_MANUFACTURER_SPECIFIC] = struct.pack("<H", company_id) + data

@@ -114,29 +114,46 @@ Edit `auto_pts_project/pybluehost_iut/ixit.py` and set
 `TSPX_bd_addr_iut` (all four groups) to your adapter's BD address —
 **uppercase hex, no separators**, e.g. `AC1F09FFEE12`.
 
-### Step 3: Run autoptsclient
+### Step 3: Run autoptsserver + the PyBlueHost client
 
-From the autoptsclient checkout:
+Two processes, both on the PTS Windows host:
 
 ```bash
-autoptsclient \
-  --project pybluehost_iut \
-  --project-path /path/to/pybluehost/auto_pts_project \
-  --server <windows-host>:65000 \
-  --workspace /path/to/PTS-workspace \
-  --test-cases GAP/CONN/CPUP/BV-01-C    # or a list
+# 1. autoptsserver (NOT as admin — it refuses with exit_if_admin). Pin the PTS
+#    dongle so PTS doesn't grab the CSR8510 IUT by mistake. The dongle string is
+#    the GetDeviceList() entry for the Intel tester dongle (see note below).
+python autoptsserver.py -S 65000 --dongle "USB_INTEL:Free:7&27F179B6&0&4"
+
+# 2. PyBlueHost client (from the PyBlueHost repo root), driving the CSR8510 IUT.
+#    -C picks a client callback port OUTSIDE the Windows excluded-port ranges.
+python autoptsclient-pybluehost.py /path/to/workspace.pqw6 \
+  -i 127.0.0.1 -l 127.0.0.1 -S 65000 -C 65110 \
+  --pybluehost-transport "usb:0A12:0001#1" \
+  -c GAP/CONN/ACEP/BV-01-C    # or a prefix like GAP/DISC, or a list
 ```
 
-The client:
-1. Imports `auto_pts_project.pybluehost_iut`
-2. Calls `iutctl.iut_init({'transport': 'usb', 'listen': '127.0.0.1:65103'})`
-3. Pulls `PICS_GAP / PICS_GATT / ...` and `IXIT_GAP / ...`
-4. Issues `autoptsserver.RunTestCase(...)` for each requested test case
-5. Bridges PTS's MMI prompts via `wid/*` handlers → BTP commands → PyBlueHost
-6. Records pass/fail per case
-7. Calls `iutctl.iut_cleanup(ctx)`
+The client spawns `pybluehost app pts-tester --connect <host>:<port>` per test
+case (via `iutctl.py`) which dials OUT to auto-pts's BTP socket.
 
-Results land in autoptsclient's log directory (run with `--log-dir` to control).
+> **Two deployment gotchas that cost real time (Windows):**
+>
+> 1. **PTS grabs the wrong dongle.** If the CSR8510 IUT shows `USB:InUse:...`
+>    and PTS auto-selects it, `GetPTSBluetoothAddress()` fails with
+>    `HRESULT:0x849C0043` and autoptsserver aborts ("check your dongle
+>    connection"). Diagnose with a COM `GetDeviceList()`; the Intel tester shows
+>    as `USB_INTEL:Free:<instance>`. Pin it with `--dongle` (auto-pts normalises
+>    InUse↔Free when matching, so the `Free` form is stable across restarts).
+> 2. **Default client port 65001 is in a Windows excluded-port range** (Hyper-V
+>    dynamic reservation — check `netsh int ipv4 show excludedportrange
+>    protocol=tcp`). The client's callback server then fails to bind with
+>    `WinError 10013`, and the server's result callback is `ConnectionRefused`
+>    (10061) → client hangs on `restart_pts`. Pick a free port, e.g. `-C 65110`
+>    (65101–65123 was free here). Server port 65000 is fine.
+
+Results land in autoptsclient's log directory. For PTS ground-truth verdicts
+(auto-pts's own XML records the *client-side* status, which can diverge), parse
+the per-case logs with `scripts/pts_collect_verdicts.py`.
+
 
 ---
 

@@ -5,6 +5,8 @@ from pybluehost.hci.constants import (
     EventCode,
     ErrorCode,
     LEMetaSubEvent,
+    LEEventMaskBit,
+    DEFAULT_LE_EVENT_MASK,
     make_opcode,
     ogf_ocf,
     HCI_COMMAND_PACKET,
@@ -39,6 +41,7 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_ADVERTISE_ENABLE,
     HCI_LE_CREATE_CONNECTION,
     HCI_LE_CREATE_CONNECTION_CANCEL,
+    HCI_LE_EXTENDED_CREATE_CONNECTION,
     HCI_LE_CLEAR_WHITE_LIST,
     HCI_LE_ADD_DEVICE_TO_WHITE_LIST,
     HCI_LE_REMOVE_DEVICE_FROM_WHITE_LIST,
@@ -48,7 +51,12 @@ from pybluehost.hci.constants import (
     HCI_LE_SET_EXTENDED_ADVERTISING_ENABLE,
 )
 from pybluehost.hci.capabilities import SupportedCommands
-from pybluehost.hci.controller import ConnectionManager, HCIConnection, HCIController
+from pybluehost.hci.controller import (
+    ConnectionManager,
+    HCIConnection,
+    HCIController,
+    command_status,
+)
 from pybluehost.hci.flow import ACLFlowController, CommandFlowController
 from pybluehost.hci.virtual import VirtualController
 from pybluehost.hci.packets import (
@@ -95,6 +103,8 @@ __all__ = [
     "EventCode",
     "ErrorCode",
     "LEMetaSubEvent",
+    "LEEventMaskBit",
+    "DEFAULT_LE_EVENT_MASK",
     "make_opcode",
     "ogf_ocf",
     "HCI_COMMAND_PACKET",
@@ -129,6 +139,7 @@ __all__ = [
     "HCI_LE_SET_ADVERTISE_ENABLE",
     "HCI_LE_CREATE_CONNECTION",
     "HCI_LE_CREATE_CONNECTION_CANCEL",
+    "HCI_LE_EXTENDED_CREATE_CONNECTION",
     "HCI_LE_CLEAR_WHITE_LIST",
     "HCI_LE_ADD_DEVICE_TO_WHITE_LIST",
     "HCI_LE_REMOVE_DEVICE_FROM_WHITE_LIST",
@@ -181,6 +192,7 @@ __all__ = [
     "HCIConnection",
     "ConnectionManager",
     "HCIController",
+    "command_status",
     # Virtual
     "VirtualController",
 ]

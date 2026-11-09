@@ -1,9 +1,767 @@
 group: GATT
-last_updated: '2026-06-23'
+last_updated: '2026-10-31'
 runs: 0
 cases:
   GATT/SR/GAS/BV-01-C:
-    verdict: untested
-    last_run: null
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAC/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAD/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAD/BV-03-C:
+    verdict: blocked
+    last_run: '2026-09-01'
+    notes: "auto-pts TOOL GAP: gattc_find_included_rsp(store_rsp=True) clears verify_values\
+      \ each round but round-3 verify_description still expects round-2 handles \u2014\
+      \ verify can never pass on a 3-round case. IUT reports the actual PTS db byte-exact\
+      \ (btsnoop-verified). Not an IUT protocol error."
+    bug_refs: []
+  GATT/CL/GAD/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAD/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAD/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAI/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAI/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAN/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAN/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-11-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-12-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-13-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-14-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-15-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-16-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-17-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-18-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-20-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-21-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-22-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-35-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-36-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-38-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-40-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-42-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BI-44-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: 'Re-verified: shared initiator path regression check.'
+    bug_refs: []
+  GATT/CL/GAR/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BV-08-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAR/BV-10-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: 'Read Multiple Variable Length over ATT+EATT bearers (GATT.TS 4.6.1). Three
+      fixes: (1) EATT_CONNECT 0x1f now also registers a GATT-client ATT bearer per
+      EATT channel (server attach alone left it server-only); (2) the service fires
+      both RMVL requests on the first BTP 0x20 and collects the EATT future on the
+      second, because BTP dispatch is serial while the MSC needs both requests on
+      air before LT answers; (3) hdl_wid_147 override drives both commands and stores
+      the WID-55 verify value (upstream never stores one, so WID 55 always answered
+      No). ATT mux routes the EATT response by opcode. PTS PASS 2026-10-29 WID 2/142/402/147/55/3.'
+    bug_refs: []
+  GATT/CL/GAS/BV-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: 'Harvest 2026-09-16: PTS Final Verdict PASS. Upstream errata common.yaml
+      lists this case (Request ID 184148), but it passes on this IUT anyway - the
+      erratum does not automatically apply to us.'
+    bug_refs: []
+  GATT/CL/GAS/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAS/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAS/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-08-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-11-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-12-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BI-13-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BV-08-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/CL/GAW/BV-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-09-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAC/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: 'Root cause was HCI ACL fragmentation, not MTU handling: continuations
+      were sent with PB 0b11 (auto-flushable) and the Intel BE200 silently discards
+      every one after the first fragment (on-air 251 of 516 bytes; controller still
+      reports them completed). send_acl_data now uses PB 0b01, verified by a two-BE200
+      probe and by this case PASSing on attempt 1.'
+    bug_refs: []
+  GATT/SR/GAC/BI-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAD/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAD/BV-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAD/BV-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAD/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAD/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAD/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAN/BV-02-C:
+    verdict: blocked
+    last_run: '2026-09-02'
+    notes: 'Hardware-blocked: case requires LT2 (a second PTS station) per its MSC.
+      MHNV itself is fully implemented (ATT 0x23 + BTP NOTIFY_MULTIPLE 0x21, unit-tested).
+      Unblock = second PTS rig.'
+    bug_refs: []
+  GATT/SR/GAR/BI-01-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-06-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-07-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-08-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-11-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-12-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-13-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-14-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-15-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-16-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-17-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-18-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-19-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-22-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-36-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-38-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-44-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-45-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-03-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-04-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-08-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-11-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-12-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAS/BV-02-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: BTP ADD_INCLUDED_SERVICE now materialises the 0x2802 include, so PTS discovers
+      the secondary service (hash input now complete); Database Hash characteristic
+      serves the AES-CMAC byte-swapped (LE, Core Vol 3 Part F 3.3.1 / zephyr db_hash_gen).
+      Received == calculated 3968-6A9F-... over 318 bytes.
+    bug_refs: []
+  GATT/SR/GAS/BV-03-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAS/BV-04-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAS/BV-05-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAS/BV-06-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAS/BV-07-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-02-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-04-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-06-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-13-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: 'Harvest 2026-09-16: PTS Final Verdict PASS. Was inconc since 2026-08-31;
+      flipped by the GAW legacy-write / standalone-security-permission fixes.'
+    bug_refs: []
+  GATT/SR/GAW/BI-32-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-39-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-01-C:
+    verdict: blocked
+    last_run: '2026-09-16'
+    notes: BLOCKED BY PTS ERRATUM (auto-pts errata/common.yaml, Request ID 191618).
+      Harvest 2026-09-16 -> INDCSV.
+    bug_refs: []
+  GATT/SR/GAW/BV-03-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-05-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-08-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-12-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-14-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GPM/BV-05-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/UNS/BI-03-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-05-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-20-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-21-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-40-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BI-42-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-05-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAR/BV-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-08-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-09-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-11-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-12-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BI-33-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-06-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-07-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-09-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-10-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-11-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAW/BV-13-C:
+    verdict: pass
+    last_run: '2026-09-18'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAN/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAN/BV-03-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAI/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  GATT/SR/GAI/BV-02-C:
+    verdict: pass
+    last_run: '2026-10-31'
     notes: ''
     bug_refs: []

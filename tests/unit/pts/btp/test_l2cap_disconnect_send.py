@@ -11,14 +11,19 @@ class _FakeChannel:
     def __init__(self):
         self.send_log: list[bytes] = []
         self.send = AsyncMock(side_effect=lambda data: self.send_log.append(bytes(data)))
+        self.initial_credits = 10
 
 
 class _FakeL2CAPManager:
     def __init__(self):
         self.disconnect_calls: list = []
+        self.grant_calls: list = []
 
     async def disconnect_le_coc_channel(self, ch):
         self.disconnect_calls.append(ch)
+
+    async def grant_le_coc_credits(self, ch, credits):
+        self.grant_calls.append((ch, credits))
 
 
 class _FakeStack:
@@ -112,3 +117,58 @@ async def test_send_data_empty_payload_ok():
     )
     assert status == op.BTP_STATUS_SUCCESS
     assert ch.send_log == [b""]
+
+
+@pytest.mark.asyncio
+async def test_credits_grants_initial_credits():
+    """CREDITS (0x08): body chan_id(u8) → grant_le_coc_credits(ch, initial_credits)."""
+    svc, actions, ch = _make_svc_with_channel(chan_id=2)
+    status, data = await svc.dispatch(
+        opcode=op.OP_L2CAP_CREDITS, controller_index=0, data=bytes([2]),
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    assert data == b""
+    assert actions._stack.l2cap.grant_calls == [(ch, 10)]
+
+
+@pytest.mark.asyncio
+async def test_credits_unknown_chan_id_fails():
+    svc, _, _ = _make_svc_with_channel(chan_id=1)
+    status, _ = await svc.dispatch(
+        opcode=op.OP_L2CAP_CREDITS, controller_index=0, data=bytes([9]),
+    )
+    assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_reconfigured_event_tells_autopts_the_new_channel_sizes():
+    """BTP L2CAP_EV_RECONFIGURED (0x84), body chan_id(u8) + peer_mtu(u16) +
+    peer_mps(u16) + our_mtu(u16) + our_mps(u16). auto-pts's `l2cap.reconfigured`
+    just stores these on the channel model — without the event it keeps grading
+    later steps (the SDU sizes it asks for) against the pre-reconfigure values."""
+    svc, actions, ch = _make_svc_with_channel(chan_id=2)
+    emitted: list = []
+    svc._emit_event = lambda opcode, payload: emitted.append((opcode, payload))
+
+    ch._mtu = 512
+    ch._mps = 247
+    ch._rx_mtu = 65
+    ch._rx_mps = 64
+    svc._on_channel_reconfigured(ch)
+
+    assert len(emitted) == 1
+    opcode, payload = emitted[0]
+    assert opcode == op.OP_L2CAP_EVENT_RECONFIGURED
+    assert payload == (
+        bytes([2])
+        + (512).to_bytes(2, "little") + (247).to_bytes(2, "little")
+        + (65).to_bytes(2, "little") + (64).to_bytes(2, "little")
+    )
+
+
+def test_reconfigured_event_ignores_channels_it_does_not_own():
+    svc, actions, ch = _make_svc_with_channel(chan_id=1)
+    emitted: list = []
+    svc._emit_event = lambda opcode, payload: emitted.append(opcode)
+    svc._on_channel_reconfigured(object())
+    assert emitted == []

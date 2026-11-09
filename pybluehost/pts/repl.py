@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 _KNOWN_COMMANDS = {
     "advertise",
     "scan",
+    "connectable",
+    "discoverable",
     "connect",
     "disconnect",
     "pair",
@@ -98,9 +100,19 @@ async def run_repl(actions, *, prompt: str = "pts> ") -> None:
 
 def _print_help() -> None:
     """Print REPL command help."""
-    print("commands: advertise / scan / connect / disconnect / pair / encrypt /")
-    print("          notify / indicate / read / write / sdp-browse / rfcomm-open /")
-    print("          l2cap-connect / set-io-cap / status / help / quit")
+    print("commands: advertise / scan / connectable / discoverable / connect /")
+    print("          disconnect / pair / encrypt / notify / indicate / read / write /")
+    print("          sdp-browse / rfcomm-open / l2cap-connect / set-io-cap / status /")
+    print("          help / quit")
+    print("  connectable [on|off]   — Classic page scan (accept incoming ACL)")
+    print("  discoverable [on|off]  — Classic inquiry scan")
+
+
+def _onoff(pos: list) -> bool:
+    """Parse an optional on/off positional; default True (enable)."""
+    if not pos:
+        return True
+    return pos[0].lower() not in ("off", "false", "0", "no")
 
 
 async def _dispatch(actions, cmd: str, args: dict) -> None:
@@ -111,6 +123,10 @@ async def _dispatch(actions, cmd: str, args: dict) -> None:
         await actions.advertise(data=data)
     elif cmd == "scan":
         await actions.scan(active=args.get("active", False))
+    elif cmd == "connectable":
+        await actions.set_connectable(_onoff(pos))
+    elif cmd == "discoverable":
+        await actions.set_discoverable(_onoff(pos))
     elif cmd == "connect":
         if not pos:
             raise ValueError("connect requires <addr>")

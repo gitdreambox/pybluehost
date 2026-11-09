@@ -31,6 +31,10 @@ class UUID16:
     def to_bytes(self) -> bytes:
         return self.value.to_bytes(2, "little")
 
+    def to_bytes_le(self) -> bytes:
+        """ATT/HCI wire bytes — identical to :meth:`to_bytes` for a 16-bit UUID."""
+        return self.to_bytes()
+
     @classmethod
     def from_bytes(cls, data: bytes) -> UUID16:
         if len(data) != 2:
@@ -54,9 +58,9 @@ class UUID128:
     Internal `value` is stored in RFC 4122 big-endian byte order, matching
     the hyphenated string form (e.g. ``0000180d-0000-1000-8000-00805f9b34fb``).
 
-    ATT/HCI wire encoding requires little-endian. Callers writing to the wire
-    must reverse the bytes; a future ATT layer is expected to provide a
-    ``to_bytes_le()`` helper or do the reversal inline.
+    ATT/HCI wire encoding requires little-endian: use :meth:`to_bytes_le` for
+    anything that goes on air (ATT declarations, Find Information, discovery
+    results).  :meth:`to_bytes` stays the RFC 4122 big-endian form.
     """
 
     value: bytes
@@ -81,6 +85,10 @@ class UUID128:
 
     def to_bytes(self) -> bytes:
         return self.value
+
+    def to_bytes_le(self) -> bytes:
+        """ATT/HCI wire bytes (Little Endian) for this RFC 4122 big-endian UUID."""
+        return bytes(reversed(self.value))
 
     @property
     def is_bluetooth_base(self) -> bool:

@@ -25,8 +25,8 @@ class _FakeL2CAPManager:
     def __init__(self):
         self.listen_calls: list = []
 
-    def listen_le_coc_channel(self, psm, handler):
-        self.listen_calls.append((psm, handler))
+    def listen_le_coc_channel(self, psm, handler, required_security=0):
+        self.listen_calls.append((psm, handler, required_security))
 
 
 class _FakeStack:
@@ -72,9 +72,10 @@ async def test_listen_registers_with_stack_manager():
     assert data == b""
     # Listener registered.
     assert len(actions._stack.l2cap.listen_calls) == 1
-    psm, handler = actions._stack.l2cap.listen_calls[0]
+    psm, handler, required_security = actions._stack.l2cap.listen_calls[0]
     assert psm == 0x0080
     assert callable(handler)
+    assert required_security == 0
 
 
 @pytest.mark.asyncio
@@ -85,6 +86,76 @@ async def test_listen_short_body_fails():
         opcode=op.OP_L2CAP_LISTEN, controller_index=0, data=b"\x00\x01",
     )
     assert status == op.BTP_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_listen_accepts_seven_byte_autopts_body():
+    """auto-pts master ``l2cap_listen`` packs only 7 octets (PSM+Transport+MTU+
+    Response) — it predates the spec's Security_Type/Key_Size fields. The handler
+    must accept the 7-octet form, not just the 9-octet spec form."""
+    actions = _FakeActions()
+    svc = LeCoCService(actions=actions, tester=MagicMock())
+    body = (
+        (0x0080).to_bytes(2, "little")    # PSM
+        + bytes([0])                       # Transport (LE)
+        + (512).to_bytes(2, "little")      # MTU
+        + (0).to_bytes(2, "little")        # Response (success)
+    )
+    assert len(body) == 7
+    status, _ = await svc.dispatch(
+        opcode=op.OP_L2CAP_LISTEN, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    psm, handler, required_security = actions._stack.l2cap.listen_calls[0]
+    assert psm == 0x0080
+    assert required_security == 0
+
+
+@pytest.mark.asyncio
+async def test_listen_passes_security_response_to_manager():
+    """The LISTEN Response field (offset 5) must reach the manager as
+    required_security so the listener enforces it (PTS security-responder cases
+    L2CAP/LE/CFC/BV-11/13/15/25)."""
+    actions = _FakeActions()
+    svc = LeCoCService(actions=actions, tester=MagicMock())
+    body = (
+        (0x0080).to_bytes(2, "little")    # PSM
+        + bytes([0])                       # Transport (LE)
+        + (512).to_bytes(2, "little")      # MTU
+        + (1).to_bytes(2, "little")        # Response = insufficient_authentication
+    )
+    status, _ = await svc.dispatch(
+        opcode=op.OP_L2CAP_LISTEN, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    psm, handler, required_security = actions._stack.l2cap.listen_calls[0]
+    assert psm == 0x0080
+    assert required_security == 1
+
+
+@pytest.mark.asyncio
+async def test_listen_v2_registers_listener_with_response_security():
+    """LISTEN_V2 (0x0c) — auto-pts l2cap_listen_v2 packs PSM(2)+Transport(1)+
+    MTU(2)+Response(2)+Mode(1)+Options(4). The Response must reach the manager
+    as required_security (ECFC listener setup)."""
+    actions = _FakeActions()
+    svc = LeCoCService(actions=actions, tester=MagicMock())
+    body = (
+        (0x0080).to_bytes(2, "little")    # PSM
+        + bytes([0])                       # Transport (LE)
+        + (512).to_bytes(2, "little")      # MTU
+        + (4).to_bytes(2, "little")        # Response = insufficient_encryption
+        + bytes([0])                       # Mode (basic)
+        + (0).to_bytes(4, "little")        # Options
+    )
+    assert len(body) == 12
+    status, _ = await svc.dispatch(
+        opcode=op.OP_L2CAP_LISTEN_V2, controller_index=0, data=body,
+    )
+    assert status == op.BTP_STATUS_SUCCESS
+    psm, handler, required_security = actions._stack.l2cap.listen_calls[0]
+    assert psm == 0x0080
+    assert required_security == 4
 
 
 @pytest.mark.asyncio

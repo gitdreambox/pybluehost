@@ -216,3 +216,19 @@ async def test_gatt_browser_prints_connection_events(monkeypatch, capsys, caplog
     assert rc == 1
     assert "Disconnected handle=0x0041 reason=FAILED_TO_ESTABLISH_CONNECTION (0x3E)" in captured.err
     assert "LE connection failed: FAILED_TO_ESTABLISH_CONNECTION (0x3E)" in caplog.text
+
+
+def test_format_uuid_reads_the_att_wire_byte_order():
+    from pybluehost.cli.app.gatt_browser import _format_uuid
+    from pybluehost.core.uuid import UUID128
+
+    # A Bluetooth-base 128-bit UUID collapses to its 16-bit shorthand; the
+    # reversed (RFC) input would not, so this pins the wire→host reversal.
+    base = UUID128.from_string("0000180d-0000-1000-8000-00805f9b34fb")
+    assert _format_uuid(base.to_bytes_le()) == "0x180D"
+
+    custom = UUID128.from_string("0000feed-0000-1000-8000-0000746573e2")
+    assert (
+        _format_uuid(custom.to_bytes_le())
+        == "0000feed-0000-1000-8000-0000746573e2"
+    )

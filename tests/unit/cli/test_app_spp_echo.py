@@ -62,7 +62,10 @@ async def test_spp_echo_registers_sdp_record_and_rfcomm_listener():
     await task
 
     assert stack.rfcomm.listen_calls[0][0] == 1
-    assert len(stack.sdp._records) == 1
+    # The SDPServer always hosts the mandatory ServiceDiscoveryServer record at
+    # handle 0; the SPP record is the dynamically-registered one.
+    spp_records = [r for h, r in stack.sdp._records.items() if h != 0]
+    assert len(spp_records) == 1
     assert stack.gap.classic_discoverability.device_names == ["PyBlueHost SPP Echo"]
     assert stack.gap.classic_discoverability.discoverable == [True, False]
     assert stack.gap.classic_discoverability.connectable == [True, False]

@@ -12,6 +12,7 @@ class TestUUID16:
 
     def test_to_bytes_le(self):
         assert UUID16(0x180D).to_bytes() == b"\x0D\x18"
+        assert UUID16(0x180D).to_bytes_le() == b"\x0D\x18"
 
     def test_from_bytes_le(self):
         u = UUID16.from_bytes(b"\x0D\x18")
@@ -63,6 +64,11 @@ class TestUUID128:
     def test_to_bytes(self):
         val = bytes(range(16))
         assert UUID128(val).to_bytes() == val
+
+    def test_to_bytes_le_reverses_the_rfc4122_form(self):
+        u = UUID128.from_string("0000feed-0000-1000-8000-0000746573e2")
+        assert u.to_bytes_le() == bytes.fromhex("e27365740000008000100000edfe0000")
+        assert u.to_bytes_le() == u.to_bytes()[::-1]
 
     def test_from_bytes(self):
         val = bytes(range(16))

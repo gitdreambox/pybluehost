@@ -103,8 +103,8 @@ def test_sc_association_model_just_works_for_both_keyboard_only():
 
 @pytest.mark.asyncio
 async def test_sc_passkey_send_round_confirm_initiator_round_1(monkeypatch):
-    """Round 1 uses MSB of passkey; computes f4(PKax, PKbx, Na_1, 0x80|bit_19)
-    and sends Pairing_Confirm."""
+    """Round 1 uses LSB (bit 0) of passkey; computes f4(PKax, PKbx, Na_1, 0x80|bit_0)
+    and sends Pairing_Confirm. (LSB-first matches zephyr `passkey >> passkey_round`.)"""
     from pybluehost.ble import _smp_state as state_mod
     from pybluehost.ble.smp import PairingRole
 
@@ -126,7 +126,7 @@ async def test_sc_passkey_send_round_confirm_initiator_round_1(monkeypatch):
         role=PairingRole.INITIATOR,
         local_public_key=pkax + bytes(32),
         peer_public_key=pkbx + bytes(32),
-        passkey=0b10000000000000000000,   # bit_19 = 1, others 0 (passkey = 524288)
+        passkey=1,   # bit_0 = LSB = 1 → round 1 uses it
         passkey_round=1,
         send=_send,
     )
@@ -147,7 +147,7 @@ async def test_sc_passkey_send_round_confirm_initiator_round_1(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sc_passkey_send_round_confirm_initiator_round_20(monkeypatch):
-    """Round 20 uses LSB of passkey."""
+    """Round 20 uses MSB (bit 19) of passkey (LSB-first: round i → bit i-1)."""
     from pybluehost.ble import _smp_state as state_mod
     from pybluehost.ble.smp import PairingRole
 
@@ -166,12 +166,12 @@ async def test_sc_passkey_send_round_confirm_initiator_round_20(monkeypatch):
         role=PairingRole.INITIATOR,
         local_public_key=bytes(64),
         peer_public_key=bytes(64),
-        passkey=1,    # bit_0 = LSB = 1
+        passkey=0b10000000000000000000,    # bit_19 = MSB = 1 (passkey = 524288)
         passkey_round=20,
         send=_send,
     )
     await state_mod._sc_passkey_send_round_confirm(ctx)
-    # Round 20 → bit_index = 20 - 20 = 0 → bit = (1 >> 0) & 1 = 1
+    # Round 20 → bit_index = 20 - 1 = 19 → bit = (524288 >> 19) & 1 = 1
     assert captured_args[0][3] == 0x81
 
 
@@ -257,7 +257,7 @@ async def test_sc_passkey_recv_peer_confirm_responder_computes_and_sends_confirm
         role=PairingRole.RESPONDER,
         local_public_key=pkbx + bytes(32),
         peer_public_key=pkax + bytes(32),
-        passkey=0b10000000000000000000,   # bit_19 = 1
+        passkey=1,   # bit_0 = LSB = 1 → round 1 uses it (LSB-first)
         passkey_round=1,
         passkey_round_phase="AWAIT_PEER_CONFIRM",
         send=_send,
@@ -509,6 +509,11 @@ async def test_sc_initiator_pubkey_passkey_display_role_enters_round(monkeypatch
         "pybluehost.ble._smp_sc_crypto.compute_dhkey",
         lambda priv, pub: b"\xdd" * 32,
     )
+    # The dummy peer pubkey is off-curve; accept it so the role logic runs.
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.peer_public_key_valid",
+        lambda pub: True,
+    )
 
     displayed: list = []
     class _CapturingDelegate:
@@ -558,6 +563,11 @@ async def test_sc_initiator_pubkey_passkey_input_role_enters_input_pending(monke
     monkeypatch.setattr(
         "pybluehost.ble._smp_sc_crypto.compute_dhkey",
         lambda priv, pub: b"\xdd" * 32,
+    )
+    # The dummy peer pubkey is off-curve; accept it so the role logic runs.
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.peer_public_key_valid",
+        lambda pub: True,
     )
 
     await_called: list = []
@@ -611,6 +621,11 @@ async def test_sc_responder_pubkey_passkey_display_skips_cb_send(monkeypatch):
     monkeypatch.setattr(
         "pybluehost.ble._smp_sc_crypto.compute_dhkey",
         lambda priv, pub: b"\xdd" * 32,
+    )
+    # The dummy peer pubkey is off-curve; accept it so the role logic runs.
+    monkeypatch.setattr(
+        "pybluehost.ble._smp_sc_crypto.peer_public_key_valid",
+        lambda pub: True,
     )
 
     displayed: list = []
@@ -738,6 +753,8 @@ async def test_persist_bond_authenticated_true_for_sc_passkey(monkeypatch):
     fut = asyncio.get_event_loop().create_future()
     ctx = SimpleNamespace(
         peer_address=BDAddress(bytes(6)),
+        local_auth_req=0x0D,
+        peer_auth_req=0x0D,
         received_identity_address=(0, bytes(6)),
         ltk_sc=b"\x11" * 16,
         received_irk=None,
@@ -750,3 +767,38 @@ async def test_persist_bond_authenticated_true_for_sc_passkey(monkeypatch):
     await state_mod._persist_bond(ctx)
     assert saved[0].authenticated is True
     assert saved[0].sc is True
+
+
+# ---------------------------------------------------------------------------
+# _sc_f6_r — f6 DHKey-check "r" input depends on association model
+# ---------------------------------------------------------------------------
+
+def test_sc_f6_r_zero_for_just_works_and_numeric_comparison():
+    """JW / NC use r = 0 for the f6 DHKey check."""
+    from pybluehost.ble import _smp_state as state_mod
+
+    for model in ("just_works", "numeric_comparison"):
+        ctx = SimpleNamespace(passkey=0)
+        # _sc_f6_r consults _association_model; stub it directly.
+        orig = state_mod._association_model
+        state_mod._association_model = lambda _c, m=model: m
+        try:
+            assert state_mod._sc_f6_r(ctx) == b"\x00" * 16
+        finally:
+            state_mod._association_model = orig
+
+
+def test_sc_f6_r_passkey_little_endian_for_passkey_entry():
+    """Passkey Entry uses the shared passkey (20-bit) little-endian-padded to 16
+    octets as the f6 r input (zephyr memcpy(r, &passkey, sizeof(passkey)))."""
+    from pybluehost.ble import _smp_state as state_mod
+
+    orig = state_mod._association_model
+    state_mod._association_model = lambda _c: "passkey_entry"
+    try:
+        ctx = SimpleNamespace(passkey=665370)
+        assert state_mod._sc_f6_r(ctx) == (665370).to_bytes(16, "little")
+        # high 12 bytes stay zero (20-bit value fits in low 4)
+        assert state_mod._sc_f6_r(ctx)[3:] == b"\x00" * 13
+    finally:
+        state_mod._association_model = orig

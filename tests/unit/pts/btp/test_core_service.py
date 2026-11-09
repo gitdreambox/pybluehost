@@ -19,8 +19,9 @@ async def test_read_supported_commands_returns_bitfield():
         controller_index=op.CONTROLLER_INDEX_NONE, data=b"",
     )
     assert status == op.BTP_STATUS_SUCCESS
-    # Core supports opcodes 0x01..0x06 → bits 0..5 → 0b00111111 = 0x3F
-    assert data == bytes([0x3F])
+    # auto-pts: bit n = opcode n. Core supports opcodes 0x01..0x06 →
+    # bits 1..6 → 0b01111110 = 0x7E.
+    assert data == bytes([0x7E])
 
 
 async def test_read_supported_services_returns_registry_bitfield():

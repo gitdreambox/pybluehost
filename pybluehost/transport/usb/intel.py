@@ -831,7 +831,7 @@ class IntelUSBTransport(USBTransport):
             exact_name = self._legacy_firmware_name(version_data)
             if exact_name is not None:
                 return mgr.find(exact_name)
-        pattern = self._chip_info.firmware_pattern if self._chip_info else "ibt-*"
+        pattern = self._chip_info.firmware_pattern if self._chip_info else "ibt-*.sfi"
         for search_dir in mgr._search_dirs():
             matches = sorted(search_dir.glob(pattern))
             if matches:

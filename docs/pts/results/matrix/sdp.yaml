@@ -1,0 +1,19 @@
+group: SDP
+last_updated: '2026-10-31'
+runs: 0
+cases:
+  SDP/CL/SA/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []
+  SDP/CL/SSA/BV-01-C:
+    verdict: pass
+    last_run: '2026-08-31'
+    notes: ''
+    bug_refs: []
+  SDP/SR/SA/BV-01-C:
+    verdict: pass
+    last_run: '2026-10-31'
+    notes: ''
+    bug_refs: []

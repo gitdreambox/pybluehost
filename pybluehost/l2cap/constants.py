@@ -17,6 +17,9 @@ PSM_SDP     = 0x0001
 PSM_RFCOMM  = 0x0003
 PSM_AVDTP   = 0x0019
 PSM_ATT     = 0x001F
+# Enhanced ATT bearers ride Enhanced Credit-Based channels on this fixed SPSM
+# (Core Vol 3 Part F §5.2, "the EATT fixed PSM").
+PSM_EATT    = 0x0027
 
 class SignalingCode(IntEnum):
     COMMAND_REJECT         = 0x01

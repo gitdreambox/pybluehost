@@ -157,6 +157,31 @@ async def test_async_encryption_listener_does_not_block_acl_credit_events():
     await asyncio.wait_for(listener_done.wait(), timeout=0.2)
 
 
+async def test_encryption_key_refresh_complete_advances_encryption_listeners():
+    """Re-pairing an already encrypted LE link refreshes its session key.
+
+    The controller then emits Encryption Key Refresh Complete (0x30), whose
+    payload is only status + handle, instead of another Encryption Change
+    (0x08). It is the success event SMP must use to enter Phase 3; dropping it
+    leaves GAP/SEC/AUT/BV-19 deferred in STK_ENCRYPTING until timeout.
+    """
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    seen: list[tuple[int, int, int]] = []
+    ctrl.on_encryption_change(lambda h, s, e: seen.append((h, s, e)))
+
+    refresh_event = bytes([
+        HCI_EVENT_PACKET,
+        0x30,  # Encryption Key Refresh Complete
+        0x03,  # status(1) + connection_handle(2); no enabled byte
+        0x00,
+        0x00, 0x08,
+    ])
+    await transport.inject(refresh_event)
+
+    assert seen == [(0x0800, 0x00, 0x01)]
+
+
 async def test_send_command_timeout():
     """send_command should raise CommandTimeoutError when no response arrives."""
     transport = FakeTransport()
@@ -236,6 +261,55 @@ def test_acl_flow_for_le_shared_pool_falls_back_to_bredr():
     # _le_acl_flow intentionally left unconfigured (shared-pool case)
     ctrl._conn_link_type[0x0002] = LINK_TYPE_LE
     assert ctrl._acl_flow_for(0x0002) is ctrl._acl_flow
+
+
+async def test_send_acl_data_fragments_to_the_le_buffer_size():
+    """An L2CAP PDU larger than the controller's ACL buffer is split into
+    fragments with the PB continuation flag.
+
+    GATT/SR/GAC/BV-01-C: after Exchange MTU (512) the Lower Tester reads a
+    512-byte characteristic value. The 512-byte ATT PDU went out as a single
+    516-byte ACL packet, far past the LE buffers (251 bytes) advertised by
+    Read_Buffer_Size, and never reached the air - PTS timed out after 30 s and
+    failed with "Cannot find characteristic value with size equal to MTU-1".
+
+    Continuations must carry PB 0b01 (non-automatically-flushable), not the
+    0b11 that ``pb_flag | 0b01`` produced: the Intel BE200 transmits the first
+    fragment and then silently discards every 0b11 continuation (on-air:
+    251 of 516 bytes), while 0b01 delivers the whole PDU.
+    """
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    ctrl._acl_flow.configure(num_buffers=4, buffer_size=1021)
+    ctrl._le_acl_flow.configure(num_buffers=6, buffer_size=251)
+    ctrl._conn_link_type[0x0800] = LINK_TYPE_LE
+
+    payload = bytes([0x1B]) + bytes(511)  # 512-byte ATT Read Response
+    await ctrl.send_acl_data(0x0800, 0x02, payload)
+
+    packets = [HCIACLData.from_bytes(raw[1:]) for raw in transport.sent]
+    assert [len(p.data) for p in packets] == [251, 251, 10]
+    assert [p.pb_flag for p in packets] == [0x02, 0x01, 0x01]
+    assert b"".join(p.data for p in packets) == payload
+    # each fragment costs one controller buffer
+    assert ctrl._le_acl_flow.available == 3
+
+
+async def test_send_acl_data_keeps_small_payloads_in_one_packet():
+    """Payloads that fit stay a single ACL packet with the original PB flag."""
+    transport = FakeTransport()
+    ctrl = HCIController(transport)
+    ctrl._le_acl_flow.configure(num_buffers=6, buffer_size=251)
+    ctrl._conn_link_type[0x0800] = LINK_TYPE_LE
+
+    l2cap = bytes([0x04, 0x00, 0x04, 0x00]) + b"hello"
+    await ctrl.send_acl_data(0x0800, 0x02, l2cap)
+
+    assert len(transport.sent) == 1
+    packet = HCIACLData.from_bytes(transport.sent[0][1:])
+    assert packet.pb_flag == 0x02
+    assert packet.data == l2cap
+    assert ctrl._le_acl_flow.available == 5
 
 
 async def test_conn_link_type_tracked_on_bredr_connect_and_disconnect():

@@ -40,6 +40,12 @@ class SecurityConfig:
     ctkd_enable: bool = False
     mitm_required: bool = False     # Sub-Plan 3a: triggers NC when IO caps + SC permit
     sc_only_mode: bool = False      # SC-only (PTS mode v1.2)
+    # Smallest Max_Encryption_Key_Size the IUT will accept. 7 = the Core floor,
+    # which is what a plain "security mode 1 level 1/2" device uses. Raising it
+    # to 16 models "security mode 1 level 3/4": PTS GAP/SEC/SEM/BI-09/20/21/22/23
+    # offer [7,15] and require Pairing Failed 0x06 every round. Set through BTP
+    # GAP SET_MIN_ENC_KEY_SIZE (0x20).
+    min_encryption_key_size: int = 7
     # Future hooks (commented stubs):
     # lea_enable: bool = False
     # le_security_mode: str = "1_2"

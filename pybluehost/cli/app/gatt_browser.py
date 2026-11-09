@@ -100,7 +100,9 @@ def _format_uuid(uuid_bytes: bytes) -> str:
     if len(uuid_bytes) == 2:
         return f"0x{UUID16.from_bytes(uuid_bytes).value:04X}"
     if len(uuid_bytes) == 16:
-        uuid = UUID128.from_bytes(uuid_bytes)
+        # Discovery hands back the ATT wire bytes (little-endian); UUID128's
+        # constructor expects the RFC 4122 big-endian form.
+        uuid = UUID128.from_bytes(bytes(reversed(uuid_bytes)))
         uuid16 = uuid.to_uuid16()
         if uuid16 is not None:
             return f"0x{uuid16.value:04X}"

@@ -13,18 +13,45 @@ def test_single_fragment_reassembly():
     # L2CAP header: length=5, CID=0x0004 (ATT), then 5 bytes payload
     data = struct.pack("<HH", 5, CID_ATT) + b"\x01\x02\x03\x04\x05"
     result = r.feed(handle=0x0040, pb_flag=ACL_PB_FIRST_AUTO_FLUSH, data=data)
-    assert result == (CID_ATT, b"\x01\x02\x03\x04\x05")
+    assert result == [(CID_ATT, b"\x01\x02\x03\x04\x05")]
+
+def test_single_fragment_carrying_two_pdus():
+    """A controller may coalesce several L2CAP PDUs into one ACL packet. PTS
+    does exactly that for L2CAP/COS/CED/BI-29-C, packing the invalid-identifier
+    response and the refusal together — returning only the first dropped the
+    refusal and the pending connect timed out into a BTP ERROR."""
+    r = Reassembler()
+    first = struct.pack("<HH", 2, CID_LE_SIGNALING) + b"\x15\x00"
+    second = struct.pack("<HH", 3, CID_LE_SIGNALING) + b"\x15\x01\x04"
+    result = r.feed(handle=0x0040, pb_flag=ACL_PB_FIRST_AUTO_FLUSH,
+                    data=first + second)
+    assert result == [
+        (CID_LE_SIGNALING, b"\x15\x00"),
+        (CID_LE_SIGNALING, b"\x15\x01\x04"),
+    ]
+
+def test_complete_pdu_followed_by_partial_is_reassembled():
+    """A complete PDU plus the head of the next one in the same packet: emit the
+    first, keep the tail for the continuation fragment."""
+    r = Reassembler()
+    head = struct.pack("<HH", 2, CID_ATT) + b"\xAA\xBB"
+    tail = struct.pack("<HH", 4, CID_SMP) + b"\x01"
+    result = r.feed(handle=0x0040, pb_flag=ACL_PB_FIRST_AUTO_FLUSH, data=head + tail)
+    assert result == [(CID_ATT, b"\xAA\xBB")]
+
+    result = r.feed(handle=0x0040, pb_flag=ACL_PB_CONTINUING, data=b"\x02\x03\x04")
+    assert result == [(CID_SMP, b"\x01\x02\x03\x04")]
 
 def test_multi_fragment_reassembly():
     r = Reassembler()
     # First fragment: L2CAP header says total payload = 6, but only 3 bytes of payload here
     first = struct.pack("<HH", 6, CID_ATT) + b"\x01\x02\x03"
     result = r.feed(handle=0x0001, pb_flag=ACL_PB_FIRST_AUTO_FLUSH, data=first)
-    assert result is None  # incomplete
+    assert result == []  # incomplete
 
     cont = b"\x04\x05\x06"
     result = r.feed(handle=0x0001, pb_flag=ACL_PB_CONTINUING, data=cont)
-    assert result == (CID_ATT, b"\x01\x02\x03\x04\x05\x06")
+    assert result == [(CID_ATT, b"\x01\x02\x03\x04\x05\x06")]
 
 def test_reassembler_reset_on_new_start():
     r = Reassembler()
@@ -33,23 +60,23 @@ def test_reassembler_reset_on_new_start():
     # New start packet resets state
     complete = struct.pack("<HH", 3, CID_ATT) + b"\xAA\xBB\xCC"
     result = r.feed(handle=0x0001, pb_flag=ACL_PB_FIRST_AUTO_FLUSH, data=complete)
-    assert result == (CID_ATT, b"\xAA\xBB\xCC")
+    assert result == [(CID_ATT, b"\xAA\xBB\xCC")]
 
 def test_multi_handle_isolation():
     """Two handles reassemble independently."""
     r = Reassembler()
     # Handle A: first fragment (incomplete)
     a_first = struct.pack("<HH", 4, CID_ATT) + b"\x01\x02"
-    assert r.feed(handle=0x0001, pb_flag=ACL_PB_FIRST_AUTO_FLUSH, data=a_first) is None
+    assert r.feed(handle=0x0001, pb_flag=ACL_PB_FIRST_AUTO_FLUSH, data=a_first) == []
 
     # Handle B: complete in one fragment
     b_data = struct.pack("<HH", 2, CID_SMP) + b"\xAA\xBB"
     result_b = r.feed(handle=0x0002, pb_flag=ACL_PB_FIRST_AUTO_FLUSH, data=b_data)
-    assert result_b == (CID_SMP, b"\xAA\xBB")
+    assert result_b == [(CID_SMP, b"\xAA\xBB")]
 
     # Handle A: continuation
     result_a = r.feed(handle=0x0001, pb_flag=ACL_PB_CONTINUING, data=b"\x03\x04")
-    assert result_a == (CID_ATT, b"\x01\x02\x03\x04")
+    assert result_a == [(CID_ATT, b"\x01\x02\x03\x04")]
 
 def test_segmenter_single():
     s = Segmenter(max_size=251)

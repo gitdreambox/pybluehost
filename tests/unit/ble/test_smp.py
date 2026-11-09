@@ -241,6 +241,31 @@ class TestSMPCrypto:
 
         assert result == bytes.fromhex("b5877dbe04a37bad65cd17dd979f6ff4")
 
+    def test_c1_flips_nonzero_key_at_aes_boundary(self) -> None:
+        """Legacy c1 must reverse a NON-ZERO TK before AES (e() is little-endian for
+        key, plaintext and ciphertext). The two vectors above use a zero TK, for
+        which the flip is a no-op — they cannot catch an unflipped key. This vector
+        was validated against PTS on real hardware: SM/CEN/PKE/BV-01-C FAILed with
+        Pairing Failed 0x04 (Confirm Value Failed) before the key flip, PASS after.
+        """
+        k = bytes.fromhex("835f0200000000000000000000000000")  # passkey 155523 LE TK
+        r = bytes.fromhex("346c5c701e6ed8768d549d09a52d99c9")
+        preq = bytes.fromhex("0100000d100707")
+        pres = bytes.fromhex("02020004100000")
+        ia = bytes.fromhex("5c67830704ee")
+        ra = bytes.fromhex("9453ff1e6aee")
+
+        result = SMPCrypto.c1(k, r, preq, pres, 0, 0, ia, ra)
+
+        assert result == bytes.fromhex("835cf9fd4bfc5fc015cce8c00cb3635b")
+
+    def test_s1_flips_nonzero_key_at_aes_boundary(self) -> None:
+        """s1 derives the STK from the TK via the same little-endian e() — flip the key."""
+        k = bytes.fromhex("01020304050607080900010203040506")
+        r1 = bytes.fromhex("000F0E0D0C0B0A091122334455667788")
+        r2 = bytes.fromhex("010203040506070899AABBCCDDEEFF00")
+        assert SMPCrypto.s1(k, r1, r2) == bytes.fromhex("704f88d8e31dc50269e6b54b9a3265b7")
+
     def test_s1(self) -> None:
         """Local s1 vector using SMP on-air byte order."""
         k = bytes(16)
