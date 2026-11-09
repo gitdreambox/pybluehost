@@ -283,6 +283,23 @@ stack.attach_eatt_bearer(channel)  # channel = LECoCChannel（psm==PSM_EATT）
 - 测试：`tests/unit/ble/test_gatt_eatt.py`、`tests/unit/test_stack_eatt.py`、`tests/unit/pts/btp/test_gatt_eatt_btp.py`、`test_l2cap_disconnect_eatt.py`、`tests/e2e/test_le_coc_lifecycle.py`（EATT loopback）。
 - **不做**：CL 侧 per-bearer 发起（auto-pts 无 BTP 驱动入口）、通知经 EATT 发送、BR/EDR EATT。
 
+### Remote HCI information
+
+`Stack.read_remote_information(handle, *, peer_address=None, timeout=2.0)` 返回 `RemoteDeviceInformation`：依次查询 `HCI_Remote_Name_Request`、`HCI_Read_Remote_Supported_Features`、`HCI_Read_Remote_Extended_Features`（仅 page 1）、`HCI_Read_Remote_Version_Information`。`Company_ID` 经 `format_company_id()` 解析 SIG 公司名。
+
+```python
+snapshot = await stack.read_remote_information(handle, peer_address=addr)
+if snapshot.version_information:
+    format_company_id(snapshot.version_information.company_id)   # → "0x0002 (Intel Corp.)"
+snapshot.errors   # {查询名: 错误描述}，只包含失败的项
+```
+
+- 四项均 **best-effort**：命令状态非 0、完成事件带错误状态、载荷畸形、或等待超时，都写进 `snapshot.errors` 并打 warning，**不抛给调用方，也不中断其余查询**。
+- `timeout` 只界定「等待完成事件」的时长；`HCIController` 另有一套命令超时，所以最坏情况单次调用可能超过 `timeout`。
+- 线格式与解析：`pybluehost/hci/remote_info.py`；单测：`tests/unit/hci/test_remote_info.py`、`tests/unit/test_stack_remote_info.py`、`tests/unit/cli/test_app_sdp_browser.py`、`tests/unit/hci/test_virtual_remote_info.py`。
+- **纪律**：这四个 Link Control 命令回的是 **`HCI_Command_Status`**，结果在**单独的完成事件**里（不是 `Command_Complete`）。`VirtualController._handlers` 只建模 `Command_Complete`，所以它们的虚拟实现直接写在 `pybluehost/hci/virtual.py::process()` 里。`VirtualClassicLink` 只是把帧桥接给 `VirtualController`，**不要在那边重复实现**——重复过一次，两份各自只被测一半、且互不约束，评审时删掉了。
+- 调用方：`app sdp-browser` 在连接 ACL 之后、认证之前打印这些信息，任何查询失败都不影响后续 SDP 浏览。
+
 ### 28 个 CLI 命令一览
 
 `app`（需要 transport）21 个 + `tools`（离线）7 个。完整使用例在 [`README.md`](README.md) §1.3–1.10。如果你（AI agent）需要加一个新 CLI 子命令：

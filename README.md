@@ -113,7 +113,7 @@ pybluehost app hr-monitor --transport usb
 
 # 一次性：浏览远端 GATT 数据库（services / characteristics / descriptors / properties）
 # 地址格式：`A0:90:B5:10:40:82` 或 `A090B5104082` 都接受。
-pybluehost app gatt-browser --transport usb --addr A0:90:B5:10:40:82
+pybluehost app gatt-browser --transport usb --target A0:90:B5:10:40:82
 ```
 
 
@@ -127,9 +127,11 @@ pybluehost app classic-inquiry --transport usb
 pybluehost app spp-echo --transport usb
 
 # 一次性：浏览远端 SDP records
-pybluehost app sdp-browser --transport usb --addr 1A:8D:8D:1B:F5:6B
-pybluehost app sdp-browser --transport usb --addr 1A8D8D1BF56B --uuid 0x1101
+pybluehost app sdp-browser --transport usb --target 1A:8D:8D:1B:F5:6B
+pybluehost app sdp-browser --transport usb --target 1A8D8D1BF56B --uuid 0x1101
 ```
+
+连接 ACL 后，`sdp-browser` 会先通过 HCI 尽力读取并打印远端名称、LMP 支持/扩展特性，以及 `Read_Remote_Version_Information_Complete` 中的 `Company_ID`、LMP 版本和 subversion；任一查询失败只记 warning，不影响后续 SDP 浏览。
 
 ## 1.5 本地 UART/USB HCI transport 转接成网络 TCP/UDP H4 前端
 pybluehost app bridge --transport usb --btsnoop test.cfa
@@ -836,7 +838,7 @@ uv run pytest tests/ --transport=virtual --cov=pybluehost --cov-fail-under=85
 |---|---|
 | `ble-scan` / `ble-adv` / `classic-inquiry` | 基础 BLE / Classic 扫描+广播 |
 | `gatt-browser` / `gatt-server` | GATT client / server |
-| `sdp-browser` / `spp-echo` | Classic SDP / RFCOMM |
+| `sdp-browser` / `spp-echo` | Classic SDP（连接后先读远端名称 / 特性 / Company_ID）/ RFCOMM |
 | `bridge` | UART/USB HCI ⇄ TCP/UDP H4 转接 |
 | `mitm` | BLE/BR 双 radio 透传抓包(scan/relay 两步式,详见 docs/MITM.md) |
 | `a2dp-source` / `a2dp-sink` | A2DP 流推 / 收（WAV 或 sounddevice） |

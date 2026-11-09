@@ -261,6 +261,13 @@ class HCIController:
         self._link_key_notification_listeners: list = []
         self._link_key_request_listeners: list = []
 
+        # Removable observers for raw HCI events. Listeners receive every
+        # event (including Command_Complete / Command_Status /
+        # Number_Of_Completed_Packets, which never reach the upstream
+        # callback) before the single upstream callback, and stay registered
+        # until the callable returned from on_hci_event_listener() is invoked.
+        self._hci_event_listeners: list = []
+
         # Register ourselves as the transport's sink
         if hasattr(transport, "set_sink"):
             transport.set_sink(self)  # type: ignore[union-attr]
@@ -279,6 +286,26 @@ class HCIController:
         self._on_hci_event = on_hci_event
         self._on_acl_data = on_acl_data
         self._on_sco_data = on_sco_data
+
+    def on_hci_event_listener(self, listener: Callable[[HCIEvent], object]) -> Callable[[], None]:
+        """Register a persistent raw HCI event observer; return a removal callable.
+
+        Synchronous listeners run before the upstream callback and before the
+        controller's own bookkeeping for the event. Coroutine listeners are
+        scheduled as tasks and therefore run later. Listener exceptions are
+        logged and swallowed. The returned removal callable is idempotent and
+        deregisters one registration of ``listener``; registering the same
+        callable twice therefore shares a removal.
+        """
+        self._hci_event_listeners.append(listener)
+
+        def remove() -> None:
+            for index, existing in enumerate(self._hci_event_listeners):
+                if existing is listener:
+                    del self._hci_event_listeners[index]
+                    return
+
+        return remove
 
     def on_encryption_change(self, listener) -> None:
         """Register listener called as (handle: int, status: int, encryption_enabled: int) when HCI_Encryption_Change event arrives."""
@@ -1065,7 +1092,20 @@ class HCIController:
     # ------------------------------------------------------------------
 
     async def _handle_event(self, event: HCIEvent) -> None:
-        """Route an HCI event to the appropriate handler."""
+        """Route an HCI event to the appropriate handler.
+
+        Also fans the raw event out to removable observers before its own
+        handling.
+        """
+        if self._hci_event_listeners:
+            for listener in list(self._hci_event_listeners):
+                try:
+                    result = listener(event)
+                    if asyncio.iscoroutine(result):
+                        _schedule_listener_result(result)
+                except Exception:
+                    logger.exception("HCI event listener failed for event 0x%02X", event.event_code)
+
         if isinstance(event, HCI_Command_Complete_Event):
             self._cmd_flow.release(event.num_hci_command_packets)
             self._cmd_flow.resolve(event.command_opcode, event)

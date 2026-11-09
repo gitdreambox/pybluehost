@@ -112,11 +112,20 @@ def format_uuid16(value: int, *, sig_lookup: Callable[[int], str | None]) -> str
     return f"0x{value:04X} ({name})"
 
 
-def format_company_id(value: int) -> str:
-    """Company identifier (Bluetooth assigned numbers)."""
+def lookup_company_name(value: int) -> str | None:
+    """Raw SIG company name for *value*, or ``None`` when unassigned.
+
+    Raises when the SIG dataset is missing — callers that must not fail wrap
+    this (see :func:`pybluehost.hci.remote_info.company_name`).
+    """
     from pybluehost.core.sig_db import SIGDatabase
 
-    name = SIGDatabase.get().company_name(value)
+    return SIGDatabase.get().company_name(value)
+
+
+def format_company_id(value: int) -> str:
+    """Company identifier (Bluetooth assigned numbers)."""
+    name = lookup_company_name(value)
     if name is None:
         return f"0x{value:04X}"
     return f"0x{value:04X} ({name})"

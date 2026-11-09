@@ -411,6 +411,7 @@ async def test_sdp_browser_cli_app_queries_spp_echo_record(
         )
         assert "ServiceClassIDList" in caplog.text
         assert "ProtocolDescriptorList" in caplog.text
+        assert "Remote Company_ID" in caplog.text
     finally:
         await _stop_app_task(stop_spp, spp_task)
         if link is not None:

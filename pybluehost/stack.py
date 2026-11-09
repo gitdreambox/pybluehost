@@ -6,12 +6,31 @@ import contextlib
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from pybluehost.ble.security import SecurityConfig
 from pybluehost.ble.smp import BondStorage
 from pybluehost.core.address import AddressType, BDAddress
 from pybluehost.core.types import IOCapability
+from pybluehost.hci.constants import EventCode
+from pybluehost.hci.packets import (
+    HCI_Command_Complete_Event,
+    HCI_Command_Status_Event,
+    HCICommand,
+    HCIEvent,
+)
+from pybluehost.hci.remote_info import (
+    RemoteDeviceInformation,
+    RemoteInformationError,
+    build_read_remote_extended_features,
+    build_read_remote_supported_features,
+    build_read_remote_version_information,
+    build_remote_name_request,
+    parse_remote_extended_features_complete,
+    parse_remote_name_request_complete,
+    parse_remote_supported_features_complete,
+    parse_remote_version_information_complete,
+)
 from pybluehost.pts.config import PTSModeConfig  # noqa: F401  (used by StackConfig type hint)
 
 
@@ -83,6 +102,54 @@ def _hci_status_text(status: int) -> str:
         return f"{ErrorCode(status).name} (0x{status:02X})"
     except ValueError:
         return f"UNKNOWN_STATUS (0x{status:02X})"
+
+
+# Only extended-features page 1 is read; further pages are out of scope for the
+# current API (see ``Stack.read_remote_information``).
+_EXTENDED_FEATURES_PAGE = 1
+
+
+def _matches_peer(peer: BDAddress) -> Callable[[HCIEvent], bool]:
+    """Match a Remote_Name_Request_Complete that echoes *peer*'s BD_ADDR.
+
+    A failure completion is accepted only when it zeroes the echoed address
+    (the documented "failure completion may leave it zeroed" case); a non-zero
+    status carrying another address is rejected. A payload too short to hold
+    the address is still accepted so the parser reports truncation instead of
+    a misleading timeout.
+    """
+    peer_bytes = peer.to_hci()
+
+    def matches(event: HCIEvent) -> bool:
+        parameters = event.parameters
+        if len(parameters) < 7:
+            return True  # too short to correlate; let the parser report truncation
+        address = parameters[1:7]
+        if address == peer_bytes:
+            return True
+        return parameters[0] != 0 and address == b"\x00" * 6
+
+    return matches
+
+
+def _matches_handle(handle: int) -> Callable[[HCIEvent], bool]:
+    """Match a completion that echoes *handle* as its Connection_Handle.
+
+    Same allowances as :func:`_matches_peer`: a failure completion is accepted
+    only when it zeroes the echoed handle, and a payload too short to hold the
+    handle is still this request's completion.
+    """
+
+    def matches(event: HCIEvent) -> bool:
+        parameters = event.parameters
+        if len(parameters) < 3:
+            return True  # too short to correlate; let the parser report truncation
+        echoed = int.from_bytes(parameters[1:3], "little")
+        if echoed == handle:
+            return True
+        return parameters[0] != 0 and echoed == 0
+
+    return matches
 
 
 # ---------------------------------------------------------------------------
@@ -1815,6 +1882,194 @@ class Stack:
                     waiters.remove(waiter)
                 if not waiters:
                     self._classic_encryption_waiters.pop(handle, None)
+
+    # -- Remote HCI information ----------------------------------------------
+
+    @staticmethod
+    def _remote_info_command_status(event: HCIEvent) -> int:
+        """Status byte of a Command_Status / Command_Complete reply, else 0."""
+        if isinstance(event, HCI_Command_Status_Event):
+            return event.status
+        if isinstance(event, HCI_Command_Complete_Event) and event.return_parameters:
+            return event.return_parameters[0]
+        return 0
+
+    async def _send_and_wait_remote_info_event(
+        self,
+        command: HCICommand,
+        *,
+        event_code: int,
+        timeout: float,
+        matches: Callable[[HCIEvent], bool],
+    ) -> HCIEvent:
+        """Send one remote-information command and await its completion event.
+
+        The raw-event listener is registered *before* the command is sent so a
+        controller (real or fake) that reports the completion synchronously
+        cannot race past the waiter. ``send_command`` resolves on the
+        Command_Status reply; the completion event arrives later and is caught
+        by the listener. ``matches`` correlates the completion with this
+        request, so concurrent calls cannot resolve each other's waiters.
+
+        A command the controller rejects is reported in the status byte of the
+        reply rather than by an exception, so that status is checked here
+        instead of waiting out the full completion timeout.
+        """
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[HCIEvent] = loop.create_future()
+
+        def on_event(event: HCIEvent) -> None:
+            if event.event_code == event_code and matches(event) and not waiter.done():
+                waiter.set_result(event)
+
+        remove = self._hci.on_hci_event_listener(on_event)
+        try:
+            reply = await self._hci.send_command(command)
+            status = self._remote_info_command_status(reply)
+            if status != 0:
+                raise RemoteInformationError(_hci_status_text(status))
+            try:
+                return await asyncio.wait_for(waiter, timeout=timeout)
+            except (asyncio.TimeoutError, TimeoutError):
+                raise RemoteInformationError(
+                    f"timed out after {timeout}s waiting for event 0x{event_code:02X}"
+                ) from None
+        finally:
+            remove()
+
+    @staticmethod
+    def _raise_on_failed_completion(event: HCIEvent) -> None:
+        """Raise the completion's own status before any correlation is parsed.
+
+        The parsers validate the echoed handle/address *before* they expose
+        ``status``, so a failed operation whose correlation field is zeroed
+        would otherwise be reported as a correlation mismatch instead of its
+        real reason.
+        """
+        status = event.parameters[0] if event.parameters else 0
+        if status != 0:
+            raise RemoteInformationError(_hci_status_text(status))
+
+    async def _query_remote_name(
+        self, command: HCICommand, peer: BDAddress, *,
+        timeout: float, snapshot: RemoteDeviceInformation,
+    ) -> None:
+        event = await self._send_and_wait_remote_info_event(
+            command,
+            event_code=int(EventCode.REMOTE_NAME_REQUEST_COMPLETE),
+            timeout=timeout,
+            matches=_matches_peer(peer),
+        )
+        self._raise_on_failed_completion(event)
+        snapshot.remote_name = parse_remote_name_request_complete(event, peer)
+
+    async def _query_remote_supported_features(
+        self, command: HCICommand, *, timeout: float,
+        snapshot: RemoteDeviceInformation,
+    ) -> None:
+        event = await self._send_and_wait_remote_info_event(
+            command,
+            event_code=int(EventCode.READ_REMOTE_SUPPORTED_FEATURES_COMPLETE),
+            timeout=timeout,
+            matches=_matches_handle(snapshot.handle),
+        )
+        self._raise_on_failed_completion(event)
+        snapshot.supported_features = parse_remote_supported_features_complete(
+            event, snapshot.handle,
+        )
+
+    async def _query_remote_extended_features(
+        self, command: HCICommand, *, timeout: float,
+        snapshot: RemoteDeviceInformation,
+    ) -> None:
+        event = await self._send_and_wait_remote_info_event(
+            command,
+            event_code=int(EventCode.READ_REMOTE_EXTENDED_FEATURES_COMPLETE),
+            timeout=timeout,
+            matches=_matches_handle(snapshot.handle),
+        )
+        self._raise_on_failed_completion(event)
+        snapshot.extended_features.append(
+            parse_remote_extended_features_complete(
+                event, snapshot.handle, page_number=_EXTENDED_FEATURES_PAGE,
+            )
+        )
+
+    async def _query_remote_version_information(
+        self, command: HCICommand, *, timeout: float,
+        snapshot: RemoteDeviceInformation,
+    ) -> None:
+        event = await self._send_and_wait_remote_info_event(
+            command,
+            event_code=int(EventCode.READ_REMOTE_VERSION_COMPLETE),
+            timeout=timeout,
+            matches=_matches_handle(snapshot.handle),
+        )
+        self._raise_on_failed_completion(event)
+        snapshot.version_information = parse_remote_version_information_complete(
+            event, snapshot.handle,
+        )
+
+    async def read_remote_information(
+        self,
+        handle: int,
+        *,
+        peer_address: BDAddress | None = None,
+        timeout: float = 2.0,
+    ) -> RemoteDeviceInformation:
+        """Read remote name, feature, and version information over HCI.
+
+        Every query is best-effort: a failure is recorded in the returned
+        snapshot's ``errors`` mapping and does not abort later queries.
+
+        ``timeout`` bounds only the wait for each query's completion event;
+        ``HCIController`` applies its own separate command timeout, so a
+        worst-case call can take longer than ``timeout``. Only extended-features
+        page 1 is fetched in this version — reading further pages is a non-goal.
+        """
+        self._check_writable()
+        if self._hci is None:
+            raise RuntimeError("Stack is not initialized")
+        snapshot = RemoteDeviceInformation(handle=handle)
+        # Factories rather than coroutines: a query that is never reached then
+        # creates no coroutine object, so no "coroutine was never awaited"
+        # warning can be raised if the caller cancels before it runs.
+        queries: list[tuple[str, Callable[[], Awaitable[None]]]] = []
+        if peer_address is None:
+            snapshot.errors["remote_name"] = "peer_address_required"
+        else:
+            queries.append((
+                "remote_name",
+                lambda: self._query_remote_name(
+                    build_remote_name_request(peer_address),
+                    peer_address, timeout=timeout, snapshot=snapshot,
+                ),
+            ))
+        queries.extend([
+            ("supported_features", lambda: self._query_remote_supported_features(
+                build_read_remote_supported_features(handle),
+                timeout=timeout, snapshot=snapshot,
+            )),
+            ("extended_features", lambda: self._query_remote_extended_features(
+                build_read_remote_extended_features(
+                    handle, page_number=_EXTENDED_FEATURES_PAGE,
+                ),
+                timeout=timeout, snapshot=snapshot,
+            )),
+            ("version_information", lambda: self._query_remote_version_information(
+                build_read_remote_version_information(handle),
+                timeout=timeout, snapshot=snapshot,
+            )),
+        ])
+        # The single best-effort boundary: any per-query failure above lands in
+        # ``errors`` and the remaining queries still run.
+        for key, query in queries:
+            try:
+                await query()
+            except Exception as exc:
+                snapshot.errors[key] = str(exc) or type(exc).__name__
+                logger.warning("Remote HCI %s query failed: %s", key, exc)
+        return snapshot
 
     # -- Lifecycle -----------------------------------------------------------
 

@@ -8,6 +8,10 @@ import logging
 from pybluehost.classic.sdp import DataElement, DataElementType, SDPClient
 from pybluehost.cli._target import TARGET_HELP, parse_target_arg
 from pybluehost.cli._lifecycle import add_common_arguments, run_app_command, trace_kwargs_from_args
+from pybluehost.core.address import BDAddress
+from pybluehost.hci.features_decode import hci_version_name
+from pybluehost.hci.format_fields import format_company_id
+from pybluehost.hci.remote_info import RemoteDeviceInformation
 from pybluehost.l2cap.constants import PSM_SDP
 from pybluehost.stack import Stack
 
@@ -125,7 +129,7 @@ async def _sdp_browser_main(args: argparse.Namespace) -> int:
 async def _sdp_browser_run(
     stack: Stack,
     stop: asyncio.Event,
-    addr,
+    addr: BDAddress,
     service_uuid: int | None,
     sdp_timeout: float,
     max_attribute_bytes: int,
@@ -134,6 +138,7 @@ async def _sdp_browser_run(
     logger.info("Connecting to %s", addr)
     handle = await stack.connect_classic(addr)
     logger.info("Connected ACL handle=0x%04X", handle)
+    await _log_remote_device_information(stack, handle, addr)
     await stack.authenticate_classic(handle)
     logger.info("Authenticated ACL handle=0x%04X", handle)
     await stack.enable_classic_encryption(handle)
@@ -153,6 +158,50 @@ async def _sdp_browser_run(
         logger.info("Record %d:", index)
         for attr_id, value in sorted(record.items()):
             logger.info("  %s: %s", _format_sdp_attr_id(attr_id), _format_sdp_value(value))
+
+
+_QUERY_LABELS = {
+    "remote_name": "name",
+    "supported_features": "LMP features",
+    "extended_features": "extended features",
+    "version_information": "version",
+}
+
+
+async def _log_remote_device_information(stack: Stack, handle: int, addr: BDAddress) -> None:
+    """Query and log remote HCI identity; never block SDP browsing."""
+    try:
+        snapshot = await stack.read_remote_information(handle, peer_address=addr)
+        _log_remote_device_snapshot(snapshot)
+    except Exception as exc:
+        logger.warning("Remote HCI information unavailable: %s", exc)
+
+
+def _log_remote_device_snapshot(snapshot: RemoteDeviceInformation) -> None:
+    if snapshot.remote_name is not None:
+        logger.info("Remote name: %s", snapshot.remote_name.name)
+    if snapshot.supported_features is not None:
+        logger.info(
+            "Remote LMP features: %s", snapshot.supported_features.lmp_features.hex()
+        )
+    for features in snapshot.extended_features:
+        logger.info(
+            "Remote extended features page %d/%d: %s",
+            features.page_number, features.max_page_number,
+            features.extended_lmp_features.hex(),
+        )
+    version = snapshot.version_information
+    if version is not None:
+        logger.info("Remote Company_ID: %s", format_company_id(version.company_id))
+        logger.info(
+            "Remote LMP version: 0x%02X (%s) subversion=0x%04X",
+            version.lmp_version, hci_version_name(version.lmp_version),
+            version.lmp_subversion,
+        )
+    for query, error in sorted(snapshot.errors.items()):
+        logger.warning(
+            "Remote HCI %s unavailable: %s", _QUERY_LABELS.get(query, query), error
+        )
 
 
 async def _query_sdp_records(

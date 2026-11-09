@@ -40,6 +40,10 @@ from pybluehost.hci.constants import (
     HCI_READ_LOCAL_SUPPORTED_COMMANDS,
     HCI_READ_LOCAL_SUPPORTED_FEATURES,
     HCI_READ_LOCAL_VERSION,
+    HCI_READ_REMOTE_EXTENDED_FEATURES,
+    HCI_READ_REMOTE_SUPPORTED_FEATURES,
+    HCI_READ_REMOTE_VERSION_INFORMATION,
+    HCI_REMOTE_NAME_REQUEST,
     HCI_RESET,
     HCI_SET_EVENT_MASK,
     HCI_SETUP_SYNCHRONOUS_CONNECTION,
@@ -268,6 +272,58 @@ class VirtualController:
             if result is not None:
                 return result
 
+        # --- Remote information: these four Link Control commands answer with
+        # Command Status and deliver the result in a separate completion event,
+        # so they cannot be modelled as Command Complete handlers in _handlers. ---
+        if opcode == HCI_REMOTE_NAME_REQUEST:
+            if len(raw_params) < 10:
+                return self._make_command_status(
+                    opcode, status=ErrorCode.INVALID_PARAMETERS,
+                )
+            peer = raw_params[:6]
+            self._emit_remote_info_completion(
+                EventCode.REMOTE_NAME_REQUEST_COMPLETE,
+                b"\x00" + peer + b"Virtual Peer".ljust(248, b"\x00"),
+            )
+            return self._make_command_status(opcode, status=0)
+
+        if opcode == HCI_READ_REMOTE_SUPPORTED_FEATURES:
+            if len(raw_params) < 2:
+                return self._make_command_status(
+                    opcode, status=ErrorCode.INVALID_PARAMETERS,
+                )
+            handle = struct.unpack_from("<H", raw_params, 0)[0]
+            self._emit_remote_info_completion(
+                EventCode.READ_REMOTE_SUPPORTED_FEATURES_COMPLETE,
+                b"\x00" + struct.pack("<H", handle) + bytes(8),
+            )
+            return self._make_command_status(opcode, status=0)
+
+        if opcode == HCI_READ_REMOTE_EXTENDED_FEATURES:
+            if len(raw_params) < 3:
+                return self._make_command_status(
+                    opcode, status=ErrorCode.INVALID_PARAMETERS,
+                )
+            handle = struct.unpack_from("<H", raw_params, 0)[0]
+            page = raw_params[2]
+            self._emit_remote_info_completion(
+                EventCode.READ_REMOTE_EXTENDED_FEATURES_COMPLETE,
+                b"\x00" + struct.pack("<H", handle) + bytes([page, 2]) + bytes(8),
+            )
+            return self._make_command_status(opcode, status=0)
+
+        if opcode == HCI_READ_REMOTE_VERSION_INFORMATION:
+            if len(raw_params) < 2:
+                return self._make_command_status(
+                    opcode, status=ErrorCode.INVALID_PARAMETERS,
+                )
+            handle = struct.unpack_from("<H", raw_params, 0)[0]
+            self._emit_remote_info_completion(
+                EventCode.READ_REMOTE_VERSION_COMPLETE,
+                b"\x00" + struct.pack("<H", handle) + struct.pack("<BHH", 0x0C, 0x0002, 0x0001),
+            )
+            return self._make_command_status(opcode, status=0)
+
         # --- Encryption commands with special response sequences ---
         if opcode == HCI_LE_START_ENCRYPTION:
             handle = struct.unpack_from("<H", raw_params, 0)[0]
@@ -366,6 +422,26 @@ class VirtualController:
             event_code=int(EventCode.NUM_COMPLETED_PACKETS), parameters=params,
         )
         await self._send_event_to_host(event)
+
+    def _emit_remote_info_completion(
+        self, event_code: EventCode, parameters: bytes,
+    ) -> None:
+        """Deliver a remote-information completion event after the status reply.
+
+        The four Link Control commands that answer with Command Status promise
+        their result in a separate completion event. Yielding once gives the
+        status reply a chance to reach the host first; that ordering is not a
+        guarantee the emitter enforces — ``Stack`` registers its completion
+        listener before sending the command, so either order resolves the
+        waiter.
+        """
+        async def emit() -> None:
+            await asyncio.sleep(0)  # give the Command Status a chance to land first
+            await self._send_event_to_host(
+                HCIEvent(event_code=int(event_code), parameters=parameters)
+            )
+
+        asyncio.create_task(emit())
 
     async def _emit_synchronous_connection_complete(
         self, acl_handle: int, sco_handle: int
