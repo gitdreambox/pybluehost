@@ -7,6 +7,17 @@ from typing import Any, Protocol
 
 from pybluehost.core.errors import TransportError
 
+#: How many octets a transport asks for when reading one HCI event.
+#:
+#: The largest event on the wire is 257 octets: event code (1) +
+#: parameter total length (1) + 255 parameter octets --
+#: ``HCI_Remote_Name_Request_Complete`` fills that body with Status(1) +
+#: BD_ADDR(6) + Name(248).  A shorter read does not fail; the OS returns a
+#: truncated transfer and the host then rejects a perfectly good event
+#: (``remote name completion truncated: 253 bytes (need >= 255)``).
+#: 260 mirrors BlueZ's ``HCI_MAX_EVENT_SIZE``.
+HCI_EVENT_READ_SIZE = 260
+
 
 class TransportSink(Protocol):
     """Callback: how a transport delivers received bytes to a consumer."""

@@ -1679,6 +1679,14 @@ PYBLUEHOST_TRACE=hci=debug uv run --frozen pytest tests/                    # �
 - **19 例不可对照（btpclient 能力边界，这是本条最有复用价值的结论）**：BlueZ 的 `client/btpclient/gap.c` 只注册约 20 个 opcode，`grep -rniE "padv|periodic|create_sync"` **零命中**；`gatt.c` 是 client-only（无 server opcode、无 `FIND_INCLUDED_SVCS`）；`core.c` 不注册 L2CAP service。因此 PADV(8)、BIS(2)、L2CAP(2)、GATT server(3)、`SEM/BV-23`、`AUT/BV-13/14`、`SEM/BI-13`、`SM/CEN/SCPK/BI-03` 都在 pre_condition 或首个用例步骤就 BTP ERROR，**跑不到签名所在阶段**——它们既未被确认也未被推翻。
 - **纪律**：① **不要再花时间重跑 BlueZ** 来复核这批 blocked，结论已经定案（详细逐例表见 `docs/pts/results/2026-11-07-bluez-comparison.md`）；② 要真正复核那 19 例，得换**实现了对应 BTP service 的参考 IUT**（如 zephyr 的 `ptsprojects/zephyr`）或走 PTS 手动 workspace，BlueZ 的 btpclient 永远做不到；③ 判「换 IUT 能否翻正」之前，先查参考实现**有没有注册该用例所需的 BTP opcode**——参考实现的「跑不通」常常是能力缺失，而不是结论。
 
+### Q: `HCI name unavailable: remote name completion truncated: 253 bytes (need >= 255)`，但抓包/Wireshark 里该事件字段完整 → A: **USB 中断端点读缓冲写死 255 字节**，而完整的 `Remote_Name_Request_Complete` 是 257 字节 （本 commit）
+
+- **现象**：`app sdp-browser` 连上远端设备后**只有名称查询失败**（supported features / extended features / version 三项正常），日志 `HCI name unavailable: remote name completion truncated: 253 bytes (need >= 255)`；btsnoop / Wireshark 里同一条事件解析得干干净净。
+- **根因**：`Remote_Name_Request_Complete` = event code(1) + parameter total length(1) + Status(1) + BD_ADDR(6) + Name(**248**) = **257 字节**。而 `pybluehost/transport/usb/base.py` 的 `_read_interrupt_loop` 和 `_wait_for_event` 都用 `read_interrupt(size=255)` 读，pyusb 超限**静默返回前 255 字节**（不抛错），参数体只剩 253 → 解析器按 spec 要求 255，判为截断。**抓包能解析是因为它记录在 USB 之上、我们的读缓冲之下——「抓包里有」和「我们读到了」是两件事。**
+- **修法**：新增 `pybluehost/transport/base.py::HCI_EVENT_READ_SIZE = 260`（对齐 BlueZ 的 `HCI_MAX_EVENT_SIZE`），两条事件投递路径都用它。**同一上限也在悄悄截断其他最大长度事件**（如 LE Meta extended advertising report），所以受影响的不止名称查询。
+- **回归测试**：`tests/unit/transport/test_usb_event_read.py`（常量 ≥ 257；两条读路径实际请求的 size；用 257 字节事件驱动 `_read_interrupt_loop` 验证原文完整转交）。
+- **经验**：`read_interrupt(size=N)` 的 N 是**上限**且超限不报错——凡「控制器明明发了、我们只收到短一截」的现象，先算该 HCI 事件的理论最大长度（event code + parameter length + 255 = 257），再回头看读缓冲。
+
 ## 文件约定
 | 路径 | 说明 |
 |------|------|

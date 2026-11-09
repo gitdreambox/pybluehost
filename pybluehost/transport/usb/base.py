@@ -14,7 +14,11 @@ from dataclasses import asdict
 from typing import Any
 
 from pybluehost.core.errors import USBAccessDeniedError
-from pybluehost.transport.base import Transport, TransportInfo
+from pybluehost.transport.base import (
+    HCI_EVENT_READ_SIZE,
+    Transport,
+    TransportInfo,
+)
 from pybluehost.transport.firmware import FirmwarePolicy
 from pybluehost.transport.usb.chips import ChipInfo
 from pybluehost.transport.usb.discovery import (
@@ -726,13 +730,13 @@ class USBTransport(Transport):
 
     async def _wait_for_event(self, timeout: float = 5.0) -> bytes:
         """Wait for HCI event via interrupt IN endpoint."""
-        return await self.read_interrupt(size=255, timeout=timeout)
+        return await self.read_interrupt(size=HCI_EVENT_READ_SIZE, timeout=timeout)
 
     async def _read_interrupt_loop(self) -> None:
         """Background task: read HCI events from Interrupt IN and push to sink."""
         while self._is_open:
             try:
-                data = await self.read_interrupt(size=255, timeout=0.5)
+                data = await self.read_interrupt(size=HCI_EVENT_READ_SIZE, timeout=0.5)
                 if self._sink is not None and data:
                     await self._sink.on_transport_data(b"\x04" + data)
             except asyncio.CancelledError:
